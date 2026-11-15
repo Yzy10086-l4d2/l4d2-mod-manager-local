@@ -40,6 +40,25 @@ L4D2LocalSetup.exe --treeself --layoutself --addonself --workshopself ...
 
 加环境变量 `L4D2_LOG_CONSOLE=1` 可以把日志同时打到控制台，排查用。
 
-## 状态
+## 已验证（2026-11-15，真实网络 + 真实游戏目录）
 
-0.2.0 开发中：已剥掉模式下拉、主库设置、组件包勾选项；下一步删装机里的复制/组件分支与回收、清单还原。
+| 能力 | 结果 |
+|---|---|
+| 树状分级 / 位置识别 | 9 大类、72 个标准位置，空位照常列出 |
+| 工坊搜索 | 抓 30 条/页、去重、翻页正常 |
+| 工坊详情 | 标题/大小/直链/正文清洗（1744 字 → 1280 字） |
+| 中文翻译 | MyMemory 分块翻，实测输出 471 字中文 |
+| 下载 + 自动改名 | 9,391,149 B 下载完整、VPK 魔数对、按 addoninfo 改名 |
+| 离线自检 | 11 组全绿（treeself / layoutself / recogself / addonself / dupself / safeself / workshopself / launchself / tweakself / gallerself / deskself） |
+
+## 已知限制
+
+- 翻译走 MyMemory 公共接口，匿名每天约 5000 字符；长文只翻前面若干段，其余提示「看原文」
+- 工坊里「文件夹式」的物品没有直链，只能走 Steam 客户端订阅
+- 组件包（L4N / Skeeto / dxvk）不提供——那是便携版的事
+
+## 版本
+
+- 0.3.2 — 修翻译缓存把报错文案当译文存下来的问题
+- 0.3.1 — 接 MyMemory 兜底
+- 0.3.0 — 首个可下载版本：无模式切换、无组件包、无主库
