@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -33,7 +33,7 @@ namespace Installer
         private string pendingRoot;
         private bool syncing = true;
 
-        internal bool WantLocal { get { return segMode != null && segMode.SelectedIndex == 1; } }
+        internal bool WantLocal { get { return false; } }      // 本地版只有一个口径
         internal bool WantReduceMotion { get { return tglMotion != null && tglMotion.Checked; } }
         internal ThemeMode WantAppearance { get { return segAppearance == null ? Theme.Mode : (ThemeMode)segAppearance.SelectedIndex; } }
         /// <summary>自测用：模拟在设置窗口里点「外观」分段（走的是真实的点击 + SelectedIndexChanged 路径）。</summary>
@@ -84,12 +84,10 @@ namespace Installer
 
             BuildGeneral();
             BuildGameDir();
-            BuildLibrary();
             BuildDiagnostics();
             BuildFooter();
 
             syncing = false;
-            SyncModeState();
             UpdateGameState();
             UpdatePkgState();
 
@@ -158,23 +156,11 @@ namespace Installer
         {
             Card s = AddGroup(Lang.S("常规"), 56, 200);
 
-            RowTitle(s, Lang.S("工作模式"), 16, 7, 200);
-            RowNote(s, Lang.S("U 盘模式扫所选主库，本地模式只看游戏目录"), 16, 25, 300);
-
-            segMode = new Segmented();
-            segMode.Items = new string[] { "U 盘模式", "本地模式" };
-            segMode.SetBounds(332, 8, 232, 30);
-            segMode.SelectedIndex = Core.IsLocal ? 1 : 0;
-            segMode.SelectedIndexChanged += delegate { if (!syncing) SyncModeState(); };
-            s.Controls.Add(segMode);
-
-            s.Separate(50);
-
-            RowTitle(s, Lang.S("减少动态效果"), 16, 57, 220);
-            RowNote(s, Lang.S("关掉按钮与状态切换的过渡，低配机器更轻快"), 16, 75, 320);
+            RowTitle(s, Lang.S("减少动态效果"), 16, 7, 220);
+            RowNote(s, Lang.S("关掉按钮与状态切换的过渡，低配机器更轻快"), 16, 25, 320);
 
             tglMotion = new Toggle();
-            tglMotion.SetBounds(520, 65, 44, 26);
+            tglMotion.SetBounds(520, 15, 44, 26);
             tglMotion.Checked = Core.Cfg.ReduceMotion;
             s.Controls.Add(tglMotion);
 
@@ -314,67 +300,9 @@ namespace Installer
             RowNote(s, Lang.S("选里面有 left4dead2.exe 的那一层；本地模式只扫这里的 left4dead2\\addons。"), 16, 79, 548);
         }
 
-        private void BuildLibrary()
-        {
-            Card s = AddGroup(Lang.S("MOD 主库"), 434, 146);
-
-            RowTitle(s, Lang.S("库所在盘"), 16, 6, 200);
-
-            cboLibDrive = new ComboBox();
-            cboLibDrive.SetBounds(16, 26, 240, 24);
-            cboLibDrive.DropDownStyle = ComboBoxStyle.DropDownList;
-            Theme.Dress(cboLibDrive);
-            cboLibDrive.SelectedIndexChanged += delegate { if (!syncing) OnDriveChanged(); };
-            s.Controls.Add(cboLibDrive);
-            FillDrives();
-
-            btnLibBrowse = SoftButton(s, Lang.S("选择文件夹…"), 264, 26, 110, 24);
-            btnLibBrowse.Click += delegate { BrowseLibrary(); };
-
-            // 本地模式下把下拉框整个换掉：禁用的原生下拉框在深色主题里仍是一块白，
-            // 而且这时候它本来就不可选，留着只会让人以为能改
-            lblLocalOnly = new Label();
-            lblLocalOnly.SetBounds(16, 30, 420, 18);
-            lblLocalOnly.Font = Theme.UISmall;
-            lblLocalOnly.ForeColor = Theme.Ink3;
-            lblLocalOnly.BackColor = Color.Transparent;
-            lblLocalOnly.Text = Lang.S("本地模式不使用外部库，只读游戏目录里的 addons");
-            lblLocalOnly.Visible = false;
-            s.Controls.Add(lblLocalOnly);
-
-            s.Separate(56);
-
-            lblLibMain = new Label();
-            lblLibMain.SetBounds(16, 62, 548, 16);
-            lblLibMain.Font = Theme.UISmall;
-            lblLibMain.ForeColor = Theme.Ink2;
-            lblLibMain.AutoEllipsis = true;
-            s.Controls.Add(lblLibMain);
-
-            lblLibExtra = new Label();
-            lblLibExtra.SetBounds(16, 79, 548, 16);
-            lblLibExtra.Font = Theme.UISmall;
-            lblLibExtra.ForeColor = Theme.Ink2;
-            lblLibExtra.AutoEllipsis = true;
-            s.Controls.Add(lblLibExtra);
-
-            s.Separate(100);
-
-            btnLibManage = SoftButton(s, Lang.S("附加库目录…"), 16, 110, 140, 24);
-            btnLibManage.Click += delegate { ManageLibrary(); };
-
-            lblLibHint = new Label();
-            lblLibHint.SetBounds(164, 115, 396, 16);
-            lblLibHint.Font = Theme.UISmall;
-            lblLibHint.ForeColor = Theme.Ink3;
-            lblLibHint.AutoEllipsis = true;
-            lblLibHint.BackColor = Color.Transparent;
-            s.Controls.Add(lblLibHint);
-        }
-
         private void BuildDiagnostics()
         {
-            Card s = AddGroup(Lang.S("位置与诊断"), 604, 160);
+            Card s = AddGroup(Lang.S("位置与诊断"), 458, 160);
 
             lblCfg = new Label();
             lblCfg.SetBounds(16, 8, 548, 16);
@@ -659,18 +587,6 @@ namespace Installer
                 { cboLibDrive.SelectedIndex = i; break; }
             }
             syncing = false;
-        }
-
-        private void SyncModeState()
-        {
-            bool local = WantLocal;
-            bool canPick = !local;
-
-            if (cboLibDrive != null) { cboLibDrive.Enabled = canPick; cboLibDrive.Visible = canPick; }
-            if (btnLibBrowse != null) { btnLibBrowse.Enabled = canPick; btnLibBrowse.Visible = canPick; }
-            if (btnLibManage != null) { btnLibManage.Enabled = canPick; btnLibManage.Visible = canPick; }
-            if (lblLocalOnly != null) lblLocalOnly.Visible = !canPick;
-            UpdateLibraryState();
         }
 
         private void UpdateLibraryState()
