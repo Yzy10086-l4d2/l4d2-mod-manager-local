@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -658,7 +658,9 @@ namespace Installer
 
         // ---------------- 找游戏 ----------------
         // 本地模式：游戏目录 addons 直接当库用，删除放行、装机只翻开关
-        public static bool IsLocal { get { return Cfg.Mode == "local"; } }
+        // 本地版：游戏目录 addons 就是库，没有第二条路。
+        // （便携版是另一个程序：U 盘库 → 复制进游戏。）
+        public static bool IsLocal { get { return true; } }
 
 
         public static bool TestGame(string path)

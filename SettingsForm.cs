@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -935,11 +935,7 @@ namespace Installer
                     Core.Log("INFO", "设置：外观→" + Theme.ModeLabel);
                 }
 
-                if (newLocal != oldLocal && cboMode != null)
-                {
-                    cboMode.SelectedIndex = newLocal ? 1 : 0;   // 复用原有切换逻辑：保存并后台重扫
-                }
-                else if (gameChanged || rootChanged)
+                if (gameChanged || rootChanged)
                 {
                     ReloadLibrary(gameChanged && !rootChanged ? "正在按新的游戏目录重扫…" : null);
                 }

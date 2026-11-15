@@ -11,8 +11,6 @@ namespace Installer
     public partial class MainForm : Form
     {
         private ComboBox txtGame;
-        private ComboBox cboMode;          // 工作模式：U 盘模式 / 本地模式
-        private bool modeSync;             // 回填下拉时别触发重扫
         private FlatButton btnBrowse, btnFind, btnSettings, btnInstall, btnRestore, btnOpen, btnSwitch, btnCancel, btnClearSearch;
         private FlatButton btnView, btnPanel;     // 顶部：台面/方案树 切换、左栏抽屉
         private FlatButton btnWorkshop;           // 顶部：从创意工坊导入
@@ -461,7 +459,6 @@ namespace Installer
 
             // ---- 顶部：游戏目录 ----
             Label l1 = new Label(); l1.Text = Lang.S("游戏目录"); l1.SetBounds(Theme.M, 20, 60, 20); Theme.Dress(l1); l1.Font = Theme.UISmall; l1.ForeColor = Theme.Ink3; Controls.Add(l1);
-            const int modeW = 104;
             const int findW = 76;
             const int browseW = 76;
             const int settingsW = 60;
@@ -475,16 +472,9 @@ namespace Installer
             int viewX = panelX - topGap - viewW;
             int findX = viewX - topGap - findW;
             int browseX = findX - topGap - browseW;
-            int modeX = browseX - topGap - modeW;
-            txtGame = new ComboBox(); txtGame.SetBounds(80, 18, modeX - 8 - 80, 24);
+            txtGame = new ComboBox(); txtGame.SetBounds(80, 18, browseX - topGap - 8 - 80, 24);
             txtGame.DropDownStyle = ComboBoxStyle.DropDown; Theme.Dress(txtGame); Controls.Add(txtGame);
             txtGame.TextChanged += delegate { QueuePrecheck(); };   // 手输路径时底栏那句提示跟着变
-            cboMode = new ComboBox(); cboMode.SetBounds(modeX, 18, modeW, 24);
-            cboMode.DropDownStyle = ComboBoxStyle.DropDownList; Theme.Dress(cboMode);
-            cboMode.Items.Add("U 盘模式"); cboMode.Items.Add("本地模式");
-            cboMode.SelectedIndexChanged += delegate { OnModeChanged(); };
-            tips.SetToolTip(cboMode, Lang.S("U 盘模式：所选主库是主，装 MOD = 从库里复制到游戏。\r\n游戏目录里和库里同名同大小的那份会合并显示（标「已装」），不再重复列。\r\n本地模式：只看游戏目录 addons，不扫主库和附加目录；删除 = 从游戏里卸掉（文件真删）。"));
-            Controls.Add(cboMode);
             btnBrowse = new FlatButton(); btnBrowse.Soft = true; btnBrowse.Text = Lang.S("浏览…"); btnBrowse.SetBounds(browseX, 16, browseW, Theme.H); btnBrowse.Click += delegate { BrowseGame(); }; Controls.Add(btnBrowse);
             btnFind = new FlatButton(); btnFind.Soft = true; btnFind.Text = Lang.S("自动找"); btnFind.SetBounds(findX, 16, findW, Theme.H); btnFind.Click += delegate { FindGame(); }; Controls.Add(btnFind);
             // 工坊导入：入口放顶栏而不是藏在设置里 —— 这是「往库里加东西」的主路径之一
@@ -873,7 +863,6 @@ namespace Installer
             Rectangle wmin = Screen.PrimaryScreen.WorkingArea;
             MinimumSize = new Size(Math.Min(1120, wmin.Width - 20), Math.Min(740, wmin.Height - 20));
             txtGame.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            cboMode.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnBrowse.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnFind.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             gp.Anchor = AnchorStyles.Top | AnchorStyles.Left;
@@ -1053,80 +1042,11 @@ namespace Installer
             // 本地模式没有来源库：配置里就算存着 Overwrite=true，界面也不能显示成「能覆盖」，
             // 否则用户勾着它装机、以为重写了一遍，实际 Work.CopyMods 早就按 FromGame 跳过了。
             if (Core.IsLocal) { rdOver.Checked = false; rdOver.Enabled = false; rdSkip.Checked = true; }
-            modeSync = true;
-            try { cboMode.SelectedIndex = Core.IsLocal ? 1 : 0; }
-            finally { modeSync = false; }
             FillTweaks(Core.Cfg.TweakSet);
             foreach (string m in Core.Cfg.Mods) checkedKeys.Add(m);
             CheckRowsByKeys();
             UpdateSel();
             Log("已载入上次勾选（" + checkedKeys.Count + " 个 MOD）");
-        }
-
-        /// <summary>
-        /// 切工作模式：存进配置，再按新模式重扫。
-        /// U 盘模式 = U 盘库是主，游戏目录里同名同大小的那份合并显示；本地模式 = 只把游戏 addons 当库。
-        /// </summary>
-        private void OnModeChanged()
-        {
-            if (modeSync || cboMode == null || cboMode.SelectedIndex < 0) return;
-            string want = cboMode.SelectedIndex == 1 ? "local" : "usb";
-            if (string.Equals(want, Core.Cfg.Mode, StringComparison.OrdinalIgnoreCase)) return;
-            // 扫库没结束时切模式 = 两个扫库线程并发重建同一张表，
-            // 还会两路同时写识别缓存（实测能把 2.7MB 落盘拖到 42 秒，界面就一直「正在扫库」）。
-            // 这里直接把下拉弹回去，等扫完再切。
-            if (scanning)
-            {
-                modeSync = true;
-                cboMode.SelectedIndex = string.Equals(Core.Cfg.Mode, "local", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-                modeSync = false;
-                SetStatus("正在扫库，等扫完再切工作模式");
-                Core.Log("INFO", "扫库进行中切工作模式被拦下，先记着不动");
-                return;
-            }
-            string prev = Core.Cfg.Mode;
-            Core.Cfg.Mode = want;
-            Core.SaveConfig();
-            Core.Log("OK", "工作模式：" + (want == "local" ? "本地模式（游戏目录 addons 当库）" : "U 盘模式（U 盘库是主，游戏目录重复项合并）"));
-            lblStatus.Text = want == "local" ? "正在按「本地模式」重扫游戏目录…" : "正在按「U 盘模式」重扫库…";
-            btnInstall.Enabled = false;
-            scanning = true;
-            StartScanWatch();
-            ShowLoading(want == "local" ? "正在按「本地模式」重扫游戏目录…" : "正在按「U 盘模式」重扫库…",
-                "重扫期间不会改动任何文件", treeView == null || treeView.SlotCount == 0);
-            System.Threading.Thread th = new System.Threading.Thread(delegate()
-            {
-                bool ok = true;
-                try { Core.ScanMods(); }
-                catch (Exception ex) { ok = false; Core.Log("FAIL", "切换模式后重扫失败: " + ex.Message); }
-                SafeInvoke(delegate()
-                {
-                    scanning = false;
-                    HideLoading();
-                    if (!ok)
-                    {
-                        // 扫描失败时别把用户留在「配置已经切了、界面还是旧数据」的错位状态：
-                        // 模式回滚、下拉跟着回去，下次启动也不会拿着一个跑不通的模式。
-                        Core.Cfg.Mode = prev;
-                        Core.SaveConfig();
-                        modeSync = true;
-                        cboMode.SelectedIndex = string.Equals(prev, "local", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-                        modeSync = false;
-                        SetStatus("切换工作模式失败，已恢复原模式（详见日志）");
-                        Core.Log("WARN", "工作模式已回滚到 " + prev);
-                        return;
-                    }
-                    QueuePrecheck();            // 按钮亮不亮交给校验条算（模式变了勾选也可能变了）
-                    RefreshMods();
-                    RefreshConflicts();
-                    AutoSeedIfNeeded("切工作模式");   // 本地模式下勾选就该等于游戏现状
-                    if (treeView != null) RebuildViews();
-                    RunPendingRoot();
-                    lblStatus.Text = Lang.S("就绪");
-                });
-            });
-            th.IsBackground = true;
-            th.Start();
         }
 
         // ---------------------------------------------------------- 参数配置
@@ -3971,9 +3891,6 @@ namespace Installer
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
             sb.AppendLine("窗口客户区: " + ClientSize.Width + " x " + ClientSize.Height);
             sb.AppendLine("游戏路径框: " + txtGame.Width + " x " + txtGame.Height);
-            sb.AppendLine("模式下拉  : " + cboMode.Left + "," + cboMode.Top + " " + cboMode.Width + "x" + cboMode.Height
-                          + "  文本=" + (cboMode.SelectedIndex >= 0 ? cboMode.SelectedItem.ToString() : "(未选)")
-                          + "  可见=" + cboMode.Visible);
             sb.AppendLine("MOD 库分组: " + gMod.Width + " x " + gMod.Height);
             sb.AppendLine("方案树    : 树可见=" + (treeView != null && treeView.Visible) + "，树尺寸="
                           + (treeView == null ? "-" : treeView.Width + "x" + treeView.Height)
@@ -4119,8 +4036,7 @@ namespace Installer
             btnClearSearch.Left = Dpi.S(rightW - 68);
             btnManage.Left = Dpi.S(rightW - 12 - 88);
 
-            // 顶部：游戏目录 / 模式 / 浏览 / 自动找 / 设置
-            const int modeW = 104;
+            // 顶部：游戏目录 / 浏览 / 自动找 / 设置
             const int findW = 76;
             const int browseW = 76;
             const int settingsW = 60;
@@ -4134,10 +4050,7 @@ namespace Installer
             int viewX = panelX - topGap - viewW;
             int findX = viewX - topGap - findW;
             int browseX = findX - topGap - browseW;
-            int modeX = browseX - topGap - modeW;
-            txtGame.Width = Dpi.S(modeX - 8 - 76);
-            cboMode.Left = Dpi.S(modeX);
-            cboMode.Top = Dpi.S(18);
+            txtGame.Width = Dpi.S(browseX - topGap - 8 - 80);
             btnBrowse.Left = Dpi.S(browseX);
             btnFind.Left = Dpi.S(findX);
             btnSettings.Left = Dpi.S(settingsX);
