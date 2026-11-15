@@ -511,7 +511,9 @@ namespace Installer
                 if (!File.Exists(CfgPath)) return;
                 foreach (string raw in File.ReadAllLines(CfgPath, Encoding.UTF8))
                 {
-                    string s = raw.Trim();
+                    // 记事本存 UTF-8 会带 BOM，第一行的键名会变成 "\uFEFFGameRoot" 认不出来。
+                    // 用户手改配置后设置全丢，所以这里先把 BOM 剥掉。
+                    string s = raw.Trim().TrimStart('\uFEFF');
                     if (s.Length == 0 || s.StartsWith("#") || s.StartsWith("[")) continue;
                     int eq = s.IndexOf('=');
                     if (eq <= 0) continue;
@@ -745,7 +747,7 @@ namespace Installer
                 catch { }
             }
 
-            string[] bases = new string[] { "Steam", "SteamLibrary", "storygames", "Games", "" };
+            string[] bases = new string[] { "Steam", "SteamLibrary", "storygames", "stargames", "Games", "" };
             foreach (DriveInfo di in DriveInfo.GetDrives())
             {
                 try
@@ -758,10 +760,14 @@ namespace Installer
                         add(Path.Combine(p1, "steamapps\\common\\Left 4 Dead 2"));
                         add(Path.Combine(p1, "Left 4 Dead 2"));
                     }
-                    // 网维：storygames\<编号>\steamapps\common\...
-                    string sg = Path.Combine(root, "storygames");
-                    if (Directory.Exists(sg))
+                    // 网吧 / 网维：<品牌>\<编号>\steamapps\common\...
+                    // 品牌名各家用得不一样（storygames / stargames / …），所以两个都试；
+                    // 另外任何一级目录底下只要有 steamapps\common\Left 4 Dead 2 也认 —— 硬编码品牌
+                    // 迟早会漏（这次就漏了 stargames，用户只能手选目录）。
+                    foreach (string brand in new string[] { "storygames", "stargames" })
                     {
+                        string sg = Path.Combine(root, brand);
+                        if (!Directory.Exists(sg)) continue;
                         foreach (string sub in Directory.GetDirectories(sg))
                         {
                             add(Path.Combine(sub, "steamapps\\common\\Left 4 Dead 2"));
@@ -769,6 +775,35 @@ namespace Installer
                                 add(Path.Combine(sub2, "steamapps\\common\\Left 4 Dead 2"));
                         }
                     }
+                    // 一级目录直接带 steamapps（Y:\Games\steamapps…）
+                    // 以及名字像 Steam 目录的再下一层（Y:\mystream\Steam\steamapps…、Z:\mystream\2[steam]\steamapps…）
+                    // 只对名字含 steam / stream / game 的目录下探，避免在 C:\ 上扫几万个目录。
+                    try
+                    {
+                        string[] tops = Directory.GetDirectories(root);
+                        int n = 0;
+                        foreach (string d in tops)
+                        {
+                            if (n++ > 80) break;
+                            add(Path.Combine(d, "steamapps\\common\\Left 4 Dead 2"));
+                            string nm = Path.GetFileName(d).ToLowerInvariant();
+                            if (nm.IndexOf("steam", StringComparison.Ordinal) < 0
+                                && nm.IndexOf("stream", StringComparison.Ordinal) < 0
+                                && nm.IndexOf("game", StringComparison.Ordinal) < 0) continue;
+                            try
+                            {
+                                string[] subs = Directory.GetDirectories(d);
+                                int m = 0;
+                                foreach (string s in subs)
+                                {
+                                    if (m++ > 80) break;
+                                    add(Path.Combine(s, "steamapps\\common\\Left 4 Dead 2"));
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
                 }
                 catch { }
             }
