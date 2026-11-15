@@ -166,8 +166,7 @@ namespace Installer
         static string token = "";
         static DateTime tokenAt = DateTime.MinValue;
         static bool msDown;                 // 微软那条链路确定挂了就别每次再试，省得详情页卡 15 秒
-        static bool mmDown;                 // MyMemory 兜底也挂了（当天额度用完/断网），别再试
-        const int MyMemoryChunk = 400;      // MyMemory 匿名请求单次上限约 500 字符，切碎一点
+        const int MyMemoryChunk = 300;      // MyMemory 单次上限按 URL 编码后算（空格变 %20）：400 太容易超，压到 300
         const int MyMemoryMaxParts = 8;     // 免费额度按天算，一篇最多翻这么多段，剩下的提示看原文
 
         /// <summary>上一次翻译实际用的通道（日志/自检用）。</summary>
@@ -229,7 +228,9 @@ namespace Installer
                 //    它的鉴权端点是私有的，随时可能下线 —— 实测 edge.microsoft.com/translate/auth 已经 404，
                 //    所以这里必须有第二条路，不能像原来那样一次失败就整篇退原文。
                 string ms = TranslateVia(text, MaxChunk, true);
-                if (ms.Length > 0)
+                // 微软那条中途断了也只留下前面几段（返回的不是空串）：那种情况别当成功，
+                // 否则用户看到「翻译了 58 个字」后面全是原文，比不翻还困惑。
+                if (ms.Length > 0 && ms.Length * 3 >= text.Length)
                 {
                     LastProvider = "微软";
                     WriteCache(id, updated, ms);
@@ -238,11 +239,18 @@ namespace Installer
 
                 // 二、退到 MyMemory（免 key、实测可用）。单次只能 500 字符，所以切碎翻、翻一部分。
                 string mm = TranslateVia(text, MyMemoryChunk, false);
-                if (mm.Length > 0)
+                // 两边都是残篇时取长的那个：短的那份基本只翻了开头一段。
+                if (mm.Length > ms.Length)
                 {
                     LastProvider = "MyMemory";
                     WriteCache(id, updated, mm);
                     return mm;
+                }
+                if (ms.Length > 0)
+                {
+                    LastProvider = "微软(部分)";
+                    WriteCache(id, updated, ms);
+                    return ms;
                 }
 
                 LastProvider = "";
@@ -353,68 +361,15 @@ namespace Installer
         }
 
 
-        /// <summary>
-        /// 免费兜底：MyMemory 公共接口（不要 key，匿名每天 5000 字符）。
-        /// 微软 Edge 那条 /translate/auth 已经 404 下线（2026-11-15 实测），所以这条是主力。
-        /// </summary>
-        static string MyMem(string text)
-        {
-            if (mmDown || string.IsNullOrEmpty(text)) return null;
-            try
-            {
-                string u = "https://api.mymemory.translated.net/get?langpair="
-                    + Uri.EscapeDataString("en|zh-CN") + "&q=" + Uri.EscapeDataString(text);
-                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(u);
-                req.Method = "GET";
-                req.UserAgent = Ua;
-                req.Timeout = 20000;
-                req.ReadWriteTimeout = 20000;
-                string json;
-                using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
-                using (StreamReader sr = new StreamReader(r.GetResponseStream(), Encoding.UTF8))
-                    json = sr.ReadToEnd();
-                Match m = Regex.Match(json, "\"translatedText\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
-                if (!m.Success) return null;
-                string t = Unescape(m.Groups[1].Value);
-                return t.Length > 0 ? t : null;
-            }
-            catch (Exception ex)
-            {
-                Core.Log("WARN", "MyMemory 翻译失败: " + ex.Message);
-                return null;
-            }
-        }
-
-        static string Unescape(string s)
-        {
-            StringBuilder sb = new StringBuilder(s.Length);
-            for (int i = 0; i < s.Length; i++)
-            {
-                if (s[i] != '\\' || i + 1 >= s.Length) { sb.Append(s[i]); continue; }
-                char c = s[++i];
-                if (c == 'n') sb.Append('\n');
-                else if (c == 'r') sb.Append('\r');
-                else if (c == 't') sb.Append('\t');
-                else if (c == 'u' && i + 4 < s.Length)
-                {
-                    int code;
-                    if (int.TryParse(s.Substring(i + 1, 4), System.Globalization.NumberStyles.HexNumber, null, out code))
-                    { sb.Append((char)code); i += 4; }
-                }
-                else sb.Append(c);
-            }
-            return sb.ToString();
-        }
-
         static string Call(string text)
         {
-            if (msDown) return MyMem(text);     // 微软那条不通就走免费兜底
+            if (msDown) return null;        // 已经确定这条路不通，别再花 15 秒超时（兜底在 TranslateVia 里）
             for (int attempt = 0; attempt < 2; attempt++)
             {
                 try
                 {
                     string tk = Token();
-                    if (tk.Length < 20) { msDown = true; return MyMem(text); }
+                    if (tk.Length < 20) { msDown = true; return null; }
 
                     ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
                     HttpWebRequest req = (HttpWebRequest)WebRequest.Create(
@@ -449,7 +404,7 @@ namespace Installer
                     if (hr == null || (int)hr.StatusCode == 404 || (int)hr.StatusCode == 403 || (int)hr.StatusCode == 405)
                         msDown = true;
                     Core.Log("WARN", "工坊翻译失败: " + we.Message);
-                    return MyMem(text);
+                    return null;
                 }
                 catch (Exception ex)
                 {
