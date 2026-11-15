@@ -518,7 +518,10 @@ namespace Installer
 
             // ---- 左栏上：装什么 ----
             Section gp = new Section();
-            gp.Caption = Lang.S("装什么"); gp.SetBounds(Theme.M, 56, leftW, 222); Controls.Add(gp);
+            gp.SetBounds(Theme.M, 56, leftW, 104); Controls.Add(gp);
+            // 本地版不装「环境组件」（那是便携版从 U 盘组件包里复制进游戏的东西）。
+            // 先把这几项藏起来，下一步连带装机逻辑一起删。
+            gp.Caption = Lang.S("启动项");
             chkL4N = AddChk(gp, Lang.S("L4N 平台（只有 MQCam 相机要用它）"), 12, 28, true, true);
             tips.SetToolTip(chkL4N, Lang.S("L4N 不是强依赖：不装它照样能装 Skeeto / dxvk / MOD。\r\n只有 MQCam 相机要跑在它的 neko 框架里 —— 勾 MQCam 时会自动把 L4N 带上，取消 L4N 会把 MQCam 一起取消。\r\n装过一次之后再装会自动跳过（除非在下面选「覆盖重装」）。"));
             chkSkeeto = AddChk(gp, Lang.S("Skeeto 增强框架（命中反馈 / 准星 / HUD）"), 12, 52, true, true);
@@ -542,15 +545,19 @@ namespace Installer
             chkLaunch = AddChk(gp, Lang.S("写 Steam 启动项"), 12, 148, true, true);
             chkCfg = AddChk(gp, Lang.S("写参数配置（L4N 按键 + Skeeto 设置）"), 12, 172, true, true);
             tips.SetToolTip(chkCfg, Lang.S("从 U 盘的参数存档里取出你调好的 autoexec.cfg 和 skeeto_setting.ini，\r\n直接写进这台机器。换机器装机就不用再手调了。\r\n下面那行选套用哪一套；没有存档就退回旧做法（搬 U 盘根目录的 autoexec.cfg）。"));
-            Label l4 = new Label(); l4.Text = Lang.S("启动项"); l4.SetBounds(12, 198, 44, 20); Theme.Dress(l4); gp.Controls.Add(l4);
-            txtLaunch = new TextBox(); txtLaunch.SetBounds(60, 196, 246, 24); Theme.Dress(txtLaunch); gp.Controls.Add(txtLaunch);
+            // 本地版没有「组件包」可复制：这六项全部藏起来（下一步连装机逻辑一起删）
+            chkL4N.Visible = false; chkSkeeto.Visible = false; chkAsset.Visible = false;
+            chkMqcam.Visible = false; chkDxvk.Visible = false; chkCfg.Visible = false;
+            chkLaunch.SetBounds(12, 56, leftW - 24, 22);
+            Label l4 = new Label(); l4.Text = Lang.S("启动项"); l4.SetBounds(12, 30, 44, 20); Theme.Dress(l4); gp.Controls.Add(l4);
+            txtLaunch = new TextBox(); txtLaunch.SetBounds(60, 28, 246, 24); Theme.Dress(txtLaunch); gp.Controls.Add(txtLaunch);
             // 一行输入框放不下 130 个字符：外面只给个预览，真正的编辑交给「…」里的放大窗口
             txtLaunch.TextChanged += delegate { UpdateLaunchTip(); };
             txtLaunch.DoubleClick += delegate { EditLaunch(); };
 
             // 复制 / 放大：两个按钮都靠右，位置统一由 LayoutLaunchRow 算，拖动窗口也不会错位
             btnLaunchCopy = new FlatButton(); btnLaunchCopy.Text = Lang.S("复制");
-            btnLaunchCopy.SetBounds(310, 196, 44, 24);
+            btnLaunchCopy.SetBounds(310, 28, 44, 24);
             btnLaunchCopy.Click += delegate { CopyLaunch(); };
             tips.SetToolTip(btnLaunchCopy, Lang.S("把当前启动项整段复制到剪贴板，方便贴到 Steam、记事本或发给别人。"));
             gp.Controls.Add(btnLaunchCopy);
@@ -563,7 +570,7 @@ namespace Installer
 
             btnLaunchEdit = new FlatButton(); btnLaunchEdit.Text = "…"; btnLaunchEdit.Font = Theme.UIBold;
             btnLaunchEdit.AccessibleName = "放大编辑启动项";
-            btnLaunchEdit.SetBounds(358, 196, 26, 24);
+            btnLaunchEdit.SetBounds(358, 28, 26, 24);
             btnLaunchEdit.Click += delegate { EditLaunch(); };
             tips.SetToolTip(btnLaunchEdit, Lang.S("放大编辑启动项（可换行、可恢复默认、可把 0/1 换成 0 或 1）。双击输入框也能打开。"));
             gp.Controls.Add(btnLaunchEdit);
@@ -573,7 +580,7 @@ namespace Installer
 
             // ---- 左栏中：安装选项（原来挤在 MOD 列表底部，语义上属于"怎么装"，跟"挑什么"分开）----
             gOpt = new Section();
-            gOpt.Caption = Lang.S("安装选项"); gOpt.SetBounds(Theme.M, 286, leftW, 144); Controls.Add(gOpt);
+            gOpt.Caption = Lang.S("安装选项"); gOpt.SetBounds(Theme.M, 168, leftW, 144); Controls.Add(gOpt);
             chkSwap = new CheckBox(); chkSwap.Text = Lang.S("换整套（把不在这套里的 MOD 关掉）");
             chkSwap.SetBounds(12, 28, leftW - 24, 22); Theme.Dress(chkSwap); gOpt.Controls.Add(chkSwap);
             chkSwap.Checked = true;
@@ -3964,7 +3971,7 @@ namespace Installer
                 // 左栏底部成组：日志按钮 + 一行库信息，都贴底但留 16px。
                 // 试过让按钮紧跟「安装选项」，结果中间空出一块、底部也空 —— 上密下疏比"中间漏一块"自然。
                 int infoTop = H - BottomBarH - 24;
-                const int btnLogTop = 438;                  // 紧跟「安装选项」卡片
+                const int btnLogTop = 320;                  // 紧跟「安装选项」卡片
                 int logTop = btnLogTop + Theme.H + Theme.S;
                 int logH = Math.Max(0, infoTop - Theme.S - logTop);
                 if (btnLogToggle != null)
