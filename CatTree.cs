@@ -3379,13 +3379,36 @@ namespace Installer
             FillDetail();
         }
 
-        /// <summary>给某个位置换候选（台面共用）：先清空这个位置，再勾这一个。</summary>
+        /// <summary>
+        /// 给某个位置换候选（台面共用）：先清空这个位置，再勾这一个。
+        /// 本地版里点一下就直接生效 —— 把这个位置开着的换成这一个，同位置其它的写成 0。
+        /// 只写 addonlist，不复制、不移动、不删除任何文件；点错了再点回来就行。
+        /// </summary>
         internal void ChooseInSlot(Slot s, ModGroup g)
         {
             if (s == null) return;
             foreach (ModGroup o in s.Items) mf.UncheckGroup(o);
             if (g != null) mf.CheckGroupDefault(g);
             mf.AfterTreePick();
+
+            if (!Core.IsLocal || g == null) return;
+            // 只动「已经在这个位置的游戏目录里」的 vpk：还没进游戏的（理论上本地版不会出现）
+            // 没法凭空启用，跳过，别写出一个指向不存在文件的开关。
+            Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (ModGroup o in s.Items)
+            {
+                bool on = o == g;
+                foreach (ModItem p in o.Parts)
+                    if (p.FromGame || p.Installed) st[p.Name] = on;
+            }
+            if (st.Count == 0) return;
+            if (!mf.ApplySwitches(st)) return;
+            bool running = false;
+            try { running = System.Diagnostics.Process.GetProcessesByName("left4dead2").Length > 0; } catch { }
+            if (lblFoot != null)
+                lblFoot.Text = "已替换「" + s.Name + "」为 " + g.Name + "（只写开关，没动文件）"
+                    + (running ? "　· 游戏正在运行：下次进游戏生效，游戏退出时可能把这个文件覆盖回去" : "");
+            Core.Log("OK", "点选即生效：" + s.Name + " → " + g.Name + "（同位置其它写成 0）");
         }
 
         /// <summary>这个位置的候选里有没有组合装（模型+材质+颜色的套装）。</summary>
