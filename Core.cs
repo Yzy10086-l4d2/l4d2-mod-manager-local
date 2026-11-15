@@ -103,6 +103,7 @@ namespace Installer
         public static string PkgRoot;
         public static string CfgPath;
         public static string LogDir;
+        public static string CfgDir;
         public static string LogFile;
         public static Config Cfg = new Config();
 
@@ -156,10 +157,15 @@ namespace Installer
             UsbRoot = WalkUp(Here);
             ModRoot = Path.Combine(Path.Combine(UsbRoot, "游戏内容"), "求生之路2各项MOD");
             DefaultModRoot = ModRoot;
-            // 本地版跟便携版可能躺在同一个 U 盘上：配置和日志都用自己的名字，
-            // 不然两个 exe 会互相覆盖设置（模式、勾选全乱）。
-            CfgPath = Path.Combine(PkgDir, "L4D2MOD管理工具.本地版.ini");
-            LogDir = EnsureLogDir(Path.Combine(PkgDir, "_本地版记录"));
+            // 配置和日志放 %APPDATA%\L4D2Local：本地版是「这台机器上的工具」，
+            // exe 被拖到桌面 / 挪到别处时设置不能跟着丢（实测：拷到桌面后配置找不到，
+            // 整个库扫出 0 个 MOD，看着像坏了）。
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            if (string.IsNullOrEmpty(appData)) appData = PkgDir;
+            CfgDir = Path.Combine(appData, "L4D2Local");
+            try { Directory.CreateDirectory(CfgDir); } catch { CfgDir = PkgDir; }
+            CfgPath = Path.Combine(CfgDir, "L4D2MOD管理工具.本地版.ini");
+            LogDir = EnsureLogDir(Path.Combine(CfgDir, "_本地版记录"));
             LogFile = Path.Combine(LogDir, "log-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".txt");
             // 日志改成攒批落了，正常退出时也要把最后几行写下去（以前只有致命异常那条路会关日志）
             try { AppDomain.CurrentDomain.ProcessExit += delegate { CloseLog(); }; } catch { }
@@ -211,6 +217,13 @@ namespace Installer
         {
             try
             {
+                // 早期版本把配置写在 exe 旁边（包里那一份），搬到 %APPDATA% 时沿用设置
+                string oldLocal = Path.Combine(PkgDir, "L4D2MOD管理工具.本地版.ini");
+                if (!File.Exists(CfgPath) && File.Exists(oldLocal))
+                {
+                    try { File.Copy(oldLocal, CfgPath, true); Log("INFO", "配置已搬到 " + CfgPath); }
+                    catch { }
+                }
                 string legacy = Path.Combine(PkgDir, "装机台.配置.ini");
                 if (File.Exists(CfgPath) || !File.Exists(legacy)) return;
                 File.Move(legacy, CfgPath);
