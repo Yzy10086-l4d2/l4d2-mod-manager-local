@@ -391,7 +391,9 @@ namespace Installer
             {
                 lock (_logGate)
                 {
-                    if (_logWriter == null)
+                    if (Environment.GetEnvironmentVariable("L4D2_LOG_CONSOLE") == "1")
+                try { Console.WriteLine(level + " " + text); } catch { }
+            if (_logWriter == null)
                     {
                         _logWriter = new StreamWriter(new FileStream(LogFile, FileMode.Append, FileAccess.Write, FileShare.ReadWrite), new UTF8Encoding(false));
                     }

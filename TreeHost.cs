@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
@@ -214,7 +214,9 @@ namespace Installer
         }
 
         /// <summary>
-        /// 布局自检：把窗口撑到 1440×940，挑一个带扩展的位置，看右半是不是真的并排了。
+        /// 布局自检：把窗口撑到 1920×940，挑一个带扩展的位置，看右半是不是真的并排了。
+        /// 右半宽 = 面板宽 − 树列(46%，封顶 430)，要 ≥ SideMin(900) 才会并排；
+        /// 1440/1600 设计宽下算下来只有 537/670，按设计就该退回上下堆叠，别拿它当失败。
         /// 排布算法本身在 CatTree.LayoutSelf 里，这里只负责给一个真实尺寸和真实位置。
         /// </summary>
         internal int TriPaneSelfTest()
@@ -223,7 +225,7 @@ namespace Installer
             Size saved = ClientSize;
             try
             {
-                ClientSize = new Size(Dpi.S(1440), Dpi.S(940));
+                ClientSize = new Size(Dpi.S(1920), Dpi.S(940));
                 lastRespW = lastRespH = -1;
                 ApplyResponsive();
                 EnsureTree();
@@ -255,7 +257,7 @@ namespace Installer
                 if (!side)
                 {
                     bad++;
-                    Core.Log("FAIL", "TRI 1440 宽下没走并排（右半要 ≥ " + Theme.SideMin + " 设计像素，扩展栏该独立成右栏）");
+                    Core.Log("FAIL", "TRI 1920 宽下没走并排（右半要 ≥ " + Theme.SideMin + " 设计像素，扩展栏该独立成右栏）");
                 }
             }
             finally
