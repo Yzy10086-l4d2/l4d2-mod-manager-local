@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -2715,7 +2715,9 @@ namespace Installer
                     pool.Add(m);
                     if (pool.Count >= 3) break;
                 }
-                if (pool.Count < 3) { Console.WriteLine("ADDON 库里不到 3 个 MOD，测不了"); return 1; }
+                // 干净 runner / 刚装完的机器上库里没有 MOD：这是环境不足，不是功能坏了。
+                // 跟 tripane 一样明确跳过（返回 0），否则这条自检永远只能挂着，当不了门禁。
+                if (pool.Count < 3) { Console.WriteLine("addonself skipped: 库里不到 3 个 MOD"); return 0; }
 
                 foreach (ModItem m in pool) File.WriteAllText(Path.Combine(addons, m.Name), "x");
                 string mine = "我自己放的.vpk";
