@@ -169,10 +169,14 @@ namespace Installer
                     return p;
 
                 case "misc":
+                    // 工具箱：箱体 + 提手（提手用 Alternate 挖空）+ 中间搭扣。
+                    // 原来画的是两个叠着的方块，17px 下看不出是什么，用户也点出来「没含义」。
                     p.Dispose();
                     p = New(FillMode.Alternate);
-                    p.AddRectangle(new RectangleF(1.4f, 2.2f, 9.0f, 9.0f));
-                    p.AddRectangle(new RectangleF(5.6f, 5.6f, 9.0f, 9.0f));
+                    p.AddRectangle(new RectangleF(1.6f, 6.2f, 12.8f, 8.0f));   // 箱体
+                    p.AddRectangle(new RectangleF(5.0f, 2.2f, 6.0f, 4.2f));    // 提手外框
+                    p.AddRectangle(new RectangleF(6.6f, 3.4f, 2.8f, 3.0f));    // 提手内空
+                    p.AddRectangle(new RectangleF(6.8f, 8.2f, 2.4f, 2.2f));    // 搭扣（挖空）
                     return p;
 
                 // ---- 枪械小类
