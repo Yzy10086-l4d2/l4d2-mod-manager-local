@@ -4893,17 +4893,8 @@ namespace Installer
             InstallJob j = new InstallJob();
             j.Root = root;
             j.Sel = Selected();
-            j.L4N = chkL4N.Checked;
-            j.Dxvk = chkDxvk.Checked;
-            j.Skeeto = chkSkeeto.Checked;
-            j.Asset = chkAsset.Checked;
-            j.Mqcam = chkMqcam.Checked;
-            // 唯一真依赖：MQCam 跑在 L4N 的 neko 框架里。别的（Skeeto / dxvk / MOD）都不需要 L4N
-            if (j.Mqcam && !j.L4N)
-            {
-                j.L4N = true;
-                Core.Log("WARN", "MQCam 要用 L4N 的 neko 框架，这次把 L4N 一起装上");
-            }
+            // 本地版不装「环境组件」：L4N / Skeeto / 素材包 / MQCam / dxvk 全是从 U 盘组件包复制进来的东西，
+            // 这个版本没有库可复制，所以这五项恒为 false（方案文件里的字段照旧读写，不破坏老方案）。
             j.Launch = chkLaunch.Checked;
             j.Cfg = chkCfg.Checked;
             j.Swap = chkSwap.Checked;
