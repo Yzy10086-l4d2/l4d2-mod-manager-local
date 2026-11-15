@@ -22,7 +22,7 @@ jobs:
       - name: Self-test (offline, hard gate)
         shell: pwsh
         run: |
-          $flags = @('treeself','layoutself','addonself','dupself','safeself','workshopself','launchself','tweakself','gallerself','deskself')
+          $flags = @('treeself','layoutself','recogself','addonself','dupself','safeself','workshopself','launchself','tweakself','gallerself','deskself')
           $bad = 0
           foreach ($f in $flags) {
             Write-Output "=== --$f ==="
