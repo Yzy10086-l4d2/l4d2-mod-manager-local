@@ -822,8 +822,10 @@ namespace Installer
             int xSwitch = xOpen - Theme.S - bwSwitch;
             int xInstall = xSwitch - Theme.S - bwInstall;
 
-            btnInstall = new FlatButton(); btnInstall.Text = Lang.S("开始安装 →"); btnInstall.Primary = true;
-            btnInstall.AccessibleName = "开始安装所选组件和 MOD";
+            // 本地版这个按钮不「安装」任何文件：它把游戏里每个位置的开关换成当前勾选的那套。
+            // 叫「开始安装」会让人以为要复制文件，语义对不上。
+            btnInstall = new FlatButton(); btnInstall.Text = Lang.S("替换为当前设定 →"); btnInstall.Primary = true;
+            btnInstall.AccessibleName = "把游戏里的开关替换成当前勾选的这套";
             btnInstall.Font = new Font(Theme.UI, FontStyle.Bold);
             btnInstall.SetBounds(xInstall, CH - BottomBarH, bwInstall, Theme.HP);
             btnInstall.Click += delegate { DoInstall(); }; Controls.Add(btnInstall);
@@ -837,7 +839,7 @@ namespace Installer
             // 本地版没有「本次安装写进去的文件」可还原（装机只改 addonlist），
             // 这个按钮会让人以为能撤掉什么，直接藏掉；开关都能在「已装 MOD 开关」里单独翻。
             btnRestore.Visible = false;
-            tips.SetToolTip(btnRestore, Lang.S("危险操作：删掉装进游戏的文件。执行前会再次确认。\r\n故意放在最左下角，离「开始安装」最远的地方。"));
+            tips.SetToolTip(btnRestore, Lang.S("危险操作：删掉装进游戏的文件。执行前会再次确认。\r\n故意放在最左下角，离「替换为当前设定」最远的地方。"));
             btnOpen = new FlatButton(); btnOpen.Soft = true; btnOpen.Text = Lang.S("打开游戏目录");
             btnOpen.SetBounds(xOpen, CH - BottomBarH, bwOpen, Theme.HP);
             btnOpen.Click += delegate { try { System.Diagnostics.Process.Start("explorer.exe", txtGame.Text); } catch { } }; Controls.Add(btnOpen);
@@ -986,7 +988,7 @@ namespace Installer
             if (preOk)
             {
                 lblPre.ForeColor = Theme.Ok;
-                lblPre.Text = Lang.S("● 可以开始安装");
+                lblPre.Text = Lang.S("● 可以替换");
             }
             else
             {
@@ -5395,7 +5397,7 @@ namespace Installer
             // 以为文件被重新写了一遍 —— 勾过「覆盖重装」的人更会以为坏包已经修好。
             bool switchOnly = Core.IsLocal && j.Added.Count == 0 && j.Platform.Count == 0;
             string head = switchOnly
-                ? "开关已写好：这套里有 " + j.Sel.Count + " 个 MOD 会进游戏启用。\r\n\r\n"
+                ? "已替换为当前设定：这套里有 " + j.Sel.Count + " 个 MOD 会进游戏启用。\r\n\r\n"
                   + "这次没有复制、移动或删除任何文件 —— 本地模式下它们本来就在 addons 里，这里只改 addonlist。\r\n\r\n"
                 : "装好了。现在启动一次游戏吗？\r\n\r\n";
             if (j.Off.Count > 0)
