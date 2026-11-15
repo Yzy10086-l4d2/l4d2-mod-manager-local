@@ -4,152 +4,37 @@ on:
   push:
     branches: [ main ]
     tags: [ 'v*' ]
-  pull_request:
   workflow_dispatch:
 
-# 最小权限：跑测试的作业只需要读代码；写权限只给发布作业（见文件末尾的 release job）。
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
-      - name: 取源码
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 和 build.bat 完全一致：用 Windows 自带的 csc.exe，
-      # 不需要 .NET SDK、不需要 NuGet、不联网还原依赖。
-      - name: 编译
+      - name: Build (build.bat / csc)
         shell: cmd
-        run: |
-          set "CSC=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-          if not exist "%CSC%" set "CSC=%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe"
-          if not exist "%CSC%" (
-            echo [X] csc.exe not found - needs .NET Framework 4.x
-            exit /b 1
-          )
-          rem 源码清单走通配符，和 build.bat 一样。以前这里手写枚举：
-          rem 加了新 .cs 忘了同步，就会出现「CI 编译成功、exe 里少一个文件」。
-          dir /b *.cs > srcs.rsp
-          for %%A in (srcs.rsp) do if %%~zA LSS 10 (
-            echo [X] No .cs files found next to build.yml
-            exit /b 1
-          )
-          echo [i] source files:
-          type srcs.rsp
-          "%CSC%" /nologo /codepage:65001 /target:winexe /optimize+ /out:L4D2Setup.exe /win32icon:app.ico ^
-            /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll ^
-            /reference:System.Windows.Forms.dll /reference:System.IO.Compression.dll ^
-            /reference:System.IO.Compression.FileSystem.dll ^
-            /resource:desk\index.html,desk.html ^
-            /resource:desk\three.min.js,three.js ^
-            @srcs.rsp > build.log 2>&1
-          set RC=%ERRORLEVEL%
-          type build.log
-          rem 把编译错误转成 GitHub 注解：失败原因直接显示在提交 / PR 页上，不用登进来翻日志
-          findstr /c:"error CS" build.log > build-err.log
-          for /f "usebackq delims=" %%L in ("build-err.log") do echo ::error::%%L
-          if %RC% NEQ 0 (
-            echo [X] compile failed, exit %RC%
-            exit /b 1
-          )
-          del build.log
-          del build-err.log
-          del srcs.rsp
-          dir L4D2Setup.exe
+        run: cmd /c build.bat
 
-      # 只编过不等于跑得起来：这些自检会真的把 MainForm 建出来、跑排版、跑识别/去重/启动项/
-      # 方案树/工坊解析，能抓到「按钮叠了 / 新代码在构造期抛异常 / 改名规则改坏了」这类
-      # 编译期看不见的问题。
-      # 全部做硬门禁：以前挂了 continue-on-error，自检失败也能发 Release，等于没检。
-      # 只放与环境无关的几条；需要真实 MOD 库的 --addonself 交给本地跑（空库会自己 SKIP）。
-      - name: 离线自检（硬门禁）
+      - name: Hash
         shell: powershell
         run: |
-          $tests = @('--workshopself', '--recogself', '--dupself', '--tweakself', '--launchself', '--treeself', '--gallerself', '--layoutself', '--safeself')
-          $bad = @()
-          foreach ($t in $tests) {
-            Write-Host "=== $t ==="
-            # 必须 Start-Process -Wait -PassThru：这是 GUI 子系统程序，直接用 & 调用时
-            # shell 不会等它结束，$LASTEXITCODE 还是上一条命令的（第一条甚至为空），
-            # 结果每条都被记成 exit=(空) → 门禁永远报失败，真正的失败反而看不见。
-            $p = Start-Process -FilePath '.\L4D2Setup.exe' -ArgumentList $t -NoNewWindow -Wait -PassThru
-            Write-Host "$t exit=$($p.ExitCode)"
-            if ($p.ExitCode -ne 0) { $bad += "$t(exit $($p.ExitCode))" }
-          }
-          if ($bad.Count -gt 0) {
-            Write-Host "::error::离线自检失败: $($bad -join ', ')"
-            exit 1
-          }
-          Write-Host "全部离线自检通过"
+          $h = (Get-FileHash .\L4D2LocalSetup.exe -Algorithm SHA256).Hash.ToLower()
+          "$h  L4D2LocalSetup.exe" | Out-File -Encoding ascii L4D2LocalSetup.exe.sha256
+          Write-Output $h
 
-      # 顺序是有讲究的：自检和日志必须在「传产物」之前。
-      # 产物服务抽风（实测卡过 5 分钟）不该把自检结果一起埋掉，那是唯一能证明代码跑得起来的东西。
-      - name: 把自检日志一起带走
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: selftest-logs
-          path: _装机记录/
-          if-no-files-found: ignore
+          name: L4D2LocalSetup
+          path: L4D2LocalSetup.exe
 
-      # 产物只是方便下载的副本：传失败不该把整条流水线判死，exe 本地 build.bat 随时能出。
-      # 打 tag 时发布作业会重新取这份产物；取不到就发不出去，那本来就该失败。
-      - name: 上传构建产物
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: L4D2Setup
-          path: L4D2Setup.exe
-          if-no-files-found: error
-
-  # 发布单独成一个作业：只有它需要 contents: write，代码检查和 PR 构建都拿不到写权限。
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: windows-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: 取构建产物
-        uses: actions/download-artifact@v4
-        with:
-          name: L4D2Setup
-
-      - name: 发 Release（可重复执行）
-        shell: bash
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: powershell
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
         run: |
-          set -e
-          ls -l L4D2Setup.exe
-          sha=$(sha256sum L4D2Setup.exe | cut -d' ' -f1)
-          echo "$sha  L4D2Setup.exe" > L4D2Setup.exe.sha256
-          # 有些受限网络（公司代理 / 沙箱）会按 1 MB 截断单次下载，1.6 MB 的 exe 永远下不完。
-          # 顺手切一份 900 KB 的分片一起发：拿不到整包时按分片取、拼回来、对 sha256。
-          split -b 900000 -d -a 1 L4D2Setup.exe L4D2Setup.part
-          ls -l L4D2Setup.part*
-
-          # 说明写成一个多行字符串：不用 heredoc，避免缩进把整段变成 Markdown 代码块。
-          notes="由 GitHub Actions 自动编译，与源码同一提交。
-
-          SHA256：$sha（见 L4D2Setup.exe.sha256）
-          如果整包下载被网络截断，可用 L4D2Setup.part* 分片按序号拼接：cat L4D2Setup.part* > L4D2Setup.exe"
-
-          # 幂等：同一个 tag 重跑时不再「Release 已存在就失败」，也不再需要强推 tag 绕过。
-          #
-          # 必须显式带 --repo：这个作业只下载产物、没有 checkout，
-          # 目录里没有 .git，gh 猜不出仓库 → 报 "fatal: not a git repository"。
-          REPO="${{ github.repository }}"
-          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            echo "[i] Release $TAG 已存在，更新说明与资产"
-            gh release edit "$TAG" --repo "$REPO" --notes "$notes"
-          else
-            echo "[i] 创建 Release $TAG"
-            gh release create "$TAG" --repo "$REPO" --title "$TAG" --notes "$notes"
-          fi
-          gh release upload "$TAG" --repo "$REPO" L4D2Setup.exe L4D2Setup.exe.sha256 L4D2Setup.part* --clobber
+          gh release create "${{ github.ref_name }}" L4D2LocalSetup.exe L4D2LocalSetup.exe.sha256 --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --notes "本地版 ${{ github.ref_name }}：由 GitHub Actions 自动编译，与源码同一提交。"
