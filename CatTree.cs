@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -1192,7 +1192,7 @@ namespace Installer
 
             // 本地模式：游戏 addons 自己就是库，「已装 / 仅游戏内」这一维度恒为真、一点信息量都没有。
             // 那一列已经在 Cols 里收成 0 宽，剩下的唯一状态就是 addonlist 的开关 → 开启 / 关闭。
-            bool local = false;
+            bool local = Core.IsLocal;
 
             // 已装列（本地模式下宽度为 0，看不见，只留空串）
             string instText; Color instInk;
@@ -3544,7 +3544,7 @@ namespace Installer
 
             // 本地模式：没有「库」可比，「已装」恒为真 —— 这一列纯属噪音，收成 0 宽、把宽度并给开关列。
             // 于是本地模式下能看到的只剩「开启 / 关闭」两个状态（开关列同时也是点击入口）。
-            bool local = false;
+            bool local = Core.IsLocal && v.Columns.Count >= 5;
             if (local) { swW += instW; instW = 0; }
 
             int nameW = Math.Max(Dpi.S(90), w - kindW - sizeW - instW - swW);

@@ -11,6 +11,8 @@ namespace Installer
     public partial class MainForm : Form
     {
         private ComboBox txtGame;
+        private ComboBox cboMode;          // 工作模式：U 盘模式 / 本地模式
+        private bool modeSync;             // 回填下拉时别触发重扫
         private FlatButton btnBrowse, btnFind, btnSettings, btnInstall, btnRestore, btnOpen, btnSwitch, btnCancel, btnClearSearch;
         private FlatButton btnView, btnPanel;     // 顶部：台面/方案树 切换、左栏抽屉
         private FlatButton btnWorkshop;           // 顶部：从创意工坊导入
@@ -210,8 +212,8 @@ namespace Installer
 
         private void BeginInit()
         {
-            lblStatus.Text = "正在读取 U 盘…";
-            ShowLoading("正在读取 U 盘上的 MOD 库…",
+            lblStatus.Text = Core.IsLocal ? "正在扫描游戏目录…" : "正在读取 U 盘…";
+            ShowLoading(Core.IsLocal ? "正在扫描游戏目录…" : "正在读取 U 盘上的 MOD 库…",
                 "第一次启动或刚更新完可能要等几秒，别急着关", true);
             bool needFind = !Core.TestGame(txtGame.Text);
             System.Threading.Thread th = new System.Threading.Thread(delegate()
@@ -477,6 +479,12 @@ namespace Installer
             txtGame = new ComboBox(); txtGame.SetBounds(80, 18, modeX - 8 - 80, 24);
             txtGame.DropDownStyle = ComboBoxStyle.DropDown; Theme.Dress(txtGame); Controls.Add(txtGame);
             txtGame.TextChanged += delegate { QueuePrecheck(); };   // 手输路径时底栏那句提示跟着变
+            cboMode = new ComboBox(); cboMode.SetBounds(modeX, 18, modeW, 24);
+            cboMode.DropDownStyle = ComboBoxStyle.DropDownList; Theme.Dress(cboMode);
+            cboMode.Items.Add("U 盘模式"); cboMode.Items.Add("本地模式");
+            cboMode.SelectedIndexChanged += delegate { OnModeChanged(); };
+            tips.SetToolTip(cboMode, Lang.S("U 盘模式：所选主库是主，装 MOD = 从库里复制到游戏。\r\n游戏目录里和库里同名同大小的那份会合并显示（标「已装」），不再重复列。\r\n本地模式：只看游戏目录 addons，不扫主库和附加目录；删除 = 从游戏里卸掉（文件真删）。"));
+            Controls.Add(cboMode);
             btnBrowse = new FlatButton(); btnBrowse.Soft = true; btnBrowse.Text = Lang.S("浏览…"); btnBrowse.SetBounds(browseX, 16, browseW, Theme.H); btnBrowse.Click += delegate { BrowseGame(); }; Controls.Add(btnBrowse);
             btnFind = new FlatButton(); btnFind.Soft = true; btnFind.Text = Lang.S("自动找"); btnFind.SetBounds(findX, 16, findW, Theme.H); btnFind.Click += delegate { FindGame(); }; Controls.Add(btnFind);
             // 工坊导入：入口放顶栏而不是藏在设置里 —— 这是「往库里加东西」的主路径之一
@@ -595,6 +603,13 @@ namespace Installer
             tips.SetToolTip(rdOver, Lang.S("不管装没装过，全都重新写一遍。\r\n用来修「装了一半」「文件被删/被改」的机器，慢一些但最干净。"));
             // 本地模式没有「来源库」：选中的条目全都在游戏目录里，CopyMods 遇到 FromGame 直接跳过，
             // 连「覆盖重装」这个分支都走不到。留着能勾就是骗人 —— 勾了想修一个坏包，什么都不会发生。
+            if (Core.IsLocal)
+            {
+                rdOver.Enabled = false;
+                tips.SetToolTip(rdOver, Lang.S("本地模式下没有可覆盖的来源：这些 MOD 本来就在游戏目录里，这里只改启用开关。\r\n"
+                    + "要重写某个包，从库里重新装（U 盘模式），或者先把 addons 里那份删掉。"));
+            }
+
             // 参数配置：全套管理在对话框里，外面只留「选哪套 + 还原」
             Label l7 = new Label(); l7.Text = Lang.S("参数"); l7.SetBounds(12, 110, 56, 20); Theme.Dress(l7); gOpt.Controls.Add(l7);
             cboTweak = new ComboBox(); cboTweak.SetBounds(70, 108, 156, 24); cboTweak.DropDownStyle = ComboBoxStyle.DropDownList; Theme.Dress(cboTweak);
@@ -858,6 +873,7 @@ namespace Installer
             Rectangle wmin = Screen.PrimaryScreen.WorkingArea;
             MinimumSize = new Size(Math.Min(1120, wmin.Width - 20), Math.Min(740, wmin.Height - 20));
             txtGame.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            cboMode.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnBrowse.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnFind.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             gp.Anchor = AnchorStyles.Top | AnchorStyles.Left;
@@ -1036,11 +1052,81 @@ namespace Installer
             rdOver.Checked = Core.Cfg.Overwrite;
             // 本地模式没有来源库：配置里就算存着 Overwrite=true，界面也不能显示成「能覆盖」，
             // 否则用户勾着它装机、以为重写了一遍，实际 Work.CopyMods 早就按 FromGame 跳过了。
+            if (Core.IsLocal) { rdOver.Checked = false; rdOver.Enabled = false; rdSkip.Checked = true; }
+            modeSync = true;
+            try { cboMode.SelectedIndex = Core.IsLocal ? 1 : 0; }
+            finally { modeSync = false; }
             FillTweaks(Core.Cfg.TweakSet);
             foreach (string m in Core.Cfg.Mods) checkedKeys.Add(m);
             CheckRowsByKeys();
             UpdateSel();
             Log("已载入上次勾选（" + checkedKeys.Count + " 个 MOD）");
+        }
+
+        /// <summary>
+        /// 切工作模式：存进配置，再按新模式重扫。
+        /// U 盘模式 = U 盘库是主，游戏目录里同名同大小的那份合并显示；本地模式 = 只把游戏 addons 当库。
+        /// </summary>
+        private void OnModeChanged()
+        {
+            if (modeSync || cboMode == null || cboMode.SelectedIndex < 0) return;
+            string want = cboMode.SelectedIndex == 1 ? "local" : "usb";
+            if (string.Equals(want, Core.Cfg.Mode, StringComparison.OrdinalIgnoreCase)) return;
+            // 扫库没结束时切模式 = 两个扫库线程并发重建同一张表，
+            // 还会两路同时写识别缓存（实测能把 2.7MB 落盘拖到 42 秒，界面就一直「正在扫库」）。
+            // 这里直接把下拉弹回去，等扫完再切。
+            if (scanning)
+            {
+                modeSync = true;
+                cboMode.SelectedIndex = string.Equals(Core.Cfg.Mode, "local", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+                modeSync = false;
+                SetStatus("正在扫库，等扫完再切工作模式");
+                Core.Log("INFO", "扫库进行中切工作模式被拦下，先记着不动");
+                return;
+            }
+            string prev = Core.Cfg.Mode;
+            Core.Cfg.Mode = want;
+            Core.SaveConfig();
+            Core.Log("OK", "工作模式：" + (want == "local" ? "本地模式（游戏目录 addons 当库）" : "U 盘模式（U 盘库是主，游戏目录重复项合并）"));
+            lblStatus.Text = want == "local" ? "正在按「本地模式」重扫游戏目录…" : "正在按「U 盘模式」重扫库…";
+            btnInstall.Enabled = false;
+            scanning = true;
+            StartScanWatch();
+            ShowLoading(want == "local" ? "正在按「本地模式」重扫游戏目录…" : "正在按「U 盘模式」重扫库…",
+                "重扫期间不会改动任何文件", treeView == null || treeView.SlotCount == 0);
+            System.Threading.Thread th = new System.Threading.Thread(delegate()
+            {
+                bool ok = true;
+                try { Core.ScanMods(); }
+                catch (Exception ex) { ok = false; Core.Log("FAIL", "切换模式后重扫失败: " + ex.Message); }
+                SafeInvoke(delegate()
+                {
+                    scanning = false;
+                    HideLoading();
+                    if (!ok)
+                    {
+                        // 扫描失败时别把用户留在「配置已经切了、界面还是旧数据」的错位状态：
+                        // 模式回滚、下拉跟着回去，下次启动也不会拿着一个跑不通的模式。
+                        Core.Cfg.Mode = prev;
+                        Core.SaveConfig();
+                        modeSync = true;
+                        cboMode.SelectedIndex = string.Equals(prev, "local", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+                        modeSync = false;
+                        SetStatus("切换工作模式失败，已恢复原模式（详见日志）");
+                        Core.Log("WARN", "工作模式已回滚到 " + prev);
+                        return;
+                    }
+                    QueuePrecheck();            // 按钮亮不亮交给校验条算（模式变了勾选也可能变了）
+                    RefreshMods();
+                    RefreshConflicts();
+                    AutoSeedIfNeeded("切工作模式");   // 本地模式下勾选就该等于游戏现状
+                    if (treeView != null) RebuildViews();
+                    RunPendingRoot();
+                    lblStatus.Text = Lang.S("就绪");
+                });
+            });
+            th.IsBackground = true;
+            th.Start();
         }
 
         // ---------------------------------------------------------- 参数配置
@@ -1770,7 +1856,7 @@ namespace Installer
             foreach (ModItem it in files)
             {
                 if (it.IsArchive) blocked.Add("「" + it.Name + "」在压缩包里");
-                else if (it.FromGame) blocked.Add("「" + it.Name + "」在游戏目录里（U 盘模式不动）");
+                else if (it.FromGame && !Core.IsLocal) blocked.Add("「" + it.Name + "」在游戏目录里（U 盘模式不动）");
                 else if (!todo.Contains(it)) todo.Add(it);
             }
             if (blocked.Count > 0)
@@ -1778,7 +1864,7 @@ namespace Installer
                 // 一条都不删：半途删一半会导致「你以为删完了」，不如让人先看清楚
                 MessageBox.Show("这 " + blocked.Count + " 个删不了：\r\n\r\n  · "
                     + string.Join("\r\n  · ", blocked.ToArray())
-                    + "\r\n\r\n压缩包里的、游戏目录里的都请自己在资源管理器里处理。",
+                    + "\r\n\r\n压缩包里的请自己在资源管理器里处理；游戏目录里的把右上角切到「本地模式」再来。",
                     "有几个删不了", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
@@ -1881,7 +1967,7 @@ namespace Installer
             foreach (ModItem it in parts)
             {
                 if (it.IsArchive) { MessageBox.Show("「" + it.Name + "」在压缩包里（" + it.Container + "），\r\n本工具不会去改压缩包。想删请自己在资源管理器里处理。", "不能删除"); return; }
-                if (it.FromGame) { MessageBox.Show("「" + it.Name + "」在游戏目录 addons 里。\r\nU 盘模式不动游戏目录的文件；要删它请在资源管理器里直接处理。", "不能删除"); return; }
+                if (it.FromGame && !Core.IsLocal) { MessageBox.Show("「" + it.Name + "」在游戏目录 addons 里。\r\nU 盘模式不动游戏目录的文件；要删它，把右上角切到「本地模式」再来。", "不能删除"); return; }
             }
             string tail = parts.Count > 1 ? "（整套 " + parts.Count + " 个 vpk）" : "";
             bool fromGame = parts.Exists(delegate(ModItem m) { return m.FromGame; });
@@ -2823,6 +2909,14 @@ namespace Installer
             ink = Theme.Ink3; bg = Theme.Surface;
             // 本地模式只有两个状态：addonlist 里开着还是关着。
             // 「已装 / 未装 / 仅游戏内」全都建立在「库 vs 游戏目录」这个对比上，本地模式没有这个对比。
+            if (Core.IsLocal)
+            {
+                if (inst == 0) return "—";
+                if (on == inst) { ink = Theme.Ok; bg = Theme.RowOn; return "开启"; }
+                if (on == 0) { ink = Theme.Warn; bg = Theme.RowOff; return "关闭"; }
+                ink = Theme.Warn; bg = Theme.RowOff;
+                return "开启 " + on + "/" + inst;
+            }
             if (inst == 0) return "未装";
             if (game == total)                       // 全都在游戏目录里、库里没有
             {
@@ -2847,6 +2941,12 @@ namespace Installer
             if (p.FromGame)
             {
                 // 本地模式没有「库」的概念，游戏里这份开着就是开启、关着就是关闭
+                if (Core.IsLocal)
+                {
+                    ink = p.AddonOn ? Theme.Ok : Theme.Warn;
+                    bg = p.AddonOn ? Theme.RowOn : Theme.RowOff;
+                    return p.AddonOn ? "开启" : "关闭";
+                }
                 ink = Theme.Ink2; bg = Theme.RowGame;
                 return p.AddonOn ? "游戏内 · 开" : "游戏内 · 关";
             }
@@ -3501,6 +3601,12 @@ namespace Installer
         // 压缩包内容识别：第一次把每个 rar 里的 vpk 目录表读一遍，结果落缓存
         internal void ProbeArchivesUi()
         {
+            if (Core.IsLocal)
+            {
+                MessageBox.Show("本地模式只扫描游戏目录 addons，不读取主库里的压缩包。\r\n\r\n要识别 U 盘库里的压缩包，请先切回 U 盘模式。",
+                    "识别压缩包内容", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             if (MessageBox.Show("会在后台把库里每个压缩包打开看一眼（只读前几百 KB，不解压整包），用来按内容判类型。\r\n\r\n第一次可能要几十秒，之后走缓存不再重复。开始吗？",
                 "识别压缩包内容", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
             int done = 0;
@@ -3567,6 +3673,12 @@ namespace Installer
         /// <summary>库文件夹管理：把电脑上任意目录加进/移出扫描范围。工具不再只服务 U 盘布局。</summary>
         internal void ManageModDirs()
         {
+            if (Core.IsLocal)
+            {
+                MessageBox.Show("本地模式只扫描游戏目录 addons，附加库目录不参与。\r\n\r\n要管理附加目录，请先在设置里切回 U 盘模式。",
+                    "库文件夹管理", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             using (LibraryDirsForm f = new LibraryDirsForm())
             {
                 f.ShowDialog(this);
@@ -3607,7 +3719,7 @@ namespace Installer
                 top.Font = Theme.UISmall;
                 top.ForeColor = Theme.Ink2;
                 top.Text = "下面的文件夹只在 U 盘模式下扫描（vpk / rar / zip 全认）。游戏目录 addons 里的已装 MOD 自动识别，不用加。\r\n"
-                         + "在这里加目录只是「原地扫描」，不复制不移动任何文件。";
+                         + "在这里加目录只是「原地扫描」，不复制不移动任何文件；本地模式不会读取它们。";
                 Controls.Add(top);
 
                 lblMain.SetBounds(12, 66, 536, 20);
@@ -3859,6 +3971,9 @@ namespace Installer
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
             sb.AppendLine("窗口客户区: " + ClientSize.Width + " x " + ClientSize.Height);
             sb.AppendLine("游戏路径框: " + txtGame.Width + " x " + txtGame.Height);
+            sb.AppendLine("模式下拉  : " + cboMode.Left + "," + cboMode.Top + " " + cboMode.Width + "x" + cboMode.Height
+                          + "  文本=" + (cboMode.SelectedIndex >= 0 ? cboMode.SelectedItem.ToString() : "(未选)")
+                          + "  可见=" + cboMode.Visible);
             sb.AppendLine("MOD 库分组: " + gMod.Width + " x " + gMod.Height);
             sb.AppendLine("方案树    : 树可见=" + (treeView != null && treeView.Visible) + "，树尺寸="
                           + (treeView == null ? "-" : treeView.Width + "x" + treeView.Height)
@@ -4004,7 +4119,8 @@ namespace Installer
             btnClearSearch.Left = Dpi.S(rightW - 68);
             btnManage.Left = Dpi.S(rightW - 12 - 88);
 
-            // 顶部：游戏目录 / 浏览 / 自动找 / 设置
+            // 顶部：游戏目录 / 模式 / 浏览 / 自动找 / 设置
+            const int modeW = 104;
             const int findW = 76;
             const int browseW = 76;
             const int settingsW = 60;
@@ -4018,7 +4134,10 @@ namespace Installer
             int viewX = panelX - topGap - viewW;
             int findX = viewX - topGap - findW;
             int browseX = findX - topGap - browseW;
-            txtGame.Width = Dpi.S(browseX - topGap - 8 - 80);
+            int modeX = browseX - topGap - modeW;
+            txtGame.Width = Dpi.S(modeX - 8 - 76);
+            cboMode.Left = Dpi.S(modeX);
+            cboMode.Top = Dpi.S(18);
             btnBrowse.Left = Dpi.S(browseX);
             btnFind.Left = Dpi.S(findX);
             btnSettings.Left = Dpi.S(settingsX);
@@ -5357,13 +5476,20 @@ namespace Installer
         /// <summary>装完之后问一句要不要立刻起游戏，起了就顺带盯 2 分钟崩溃记录。</summary>
         private void OfferLaunchGame(InstallJob j)
         {
-            string head = "装好了。现在启动一次游戏吗？\r\n\r\n";
+            // 本地模式下选中的条目全在游戏目录里，CopyMods 直接跳过：一个字节都不复制，
+            // 真正落地的只有 addonlist.txt 的开关。这句必须说准，否则「装好了」会让人
+            // 以为文件被重新写了一遍 —— 勾过「覆盖重装」的人更会以为坏包已经修好。
+            bool switchOnly = Core.IsLocal && j.Added.Count == 0 && j.Platform.Count == 0;
+            string head = switchOnly
+                ? "开关已写好：这套里有 " + j.Sel.Count + " 个 MOD 会进游戏启用。\r\n\r\n"
+                  + "这次没有复制、移动或删除任何文件 —— 本地模式下它们本来就在 addons 里，这里只改 addonlist。\r\n\r\n"
+                : "装好了。现在启动一次游戏吗？\r\n\r\n";
             if (j.Off.Count > 0)
                 head += "同一位置的旧 MOD 已经关掉 " + j.Off.Count + " 个（文件留在 addons 里，想换回去把开关翻回来就行）。\r\n\r\n";
             bool go = MessageBox.Show(
                 head
                 + "启动会顺带盯 2 分钟崩溃记录，全程不改任何文件；崩了会弹提示，说明这次至少有一个坏包。",
-                "完成 · 启动游戏",
+                switchOnly ? "完成 · 启动游戏（只写了开关）" : "完成 · 启动游戏",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
             if (!go) return;
             Core.Log("STEP", "启动游戏（同时盯崩溃记录，不再二次启动）");

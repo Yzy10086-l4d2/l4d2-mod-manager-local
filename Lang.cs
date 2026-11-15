@@ -285,6 +285,7 @@ namespace Installer
             Add(d, "指定位置…", "Choose slot…");
                 Add(d, "一键还原", "Full restore");
             Add(d, "常规", "General");
+            Add(d, "U 盘模式扫所选主库，本地模式只看游戏目录", "USB mode scans the chosen library; local mode only the game folder");
             Add(d, "减少动态效果", "Reduce motion");
             Add(d, "关掉按钮与状态切换的过渡，低配机器更轻快", "Turn off button/state transitions; lighter on low-end PCs");
             Add(d, "跟随系统 = 跟 Windows 走；选了立即生效", "Follow system = match Windows; picked value applies at once");
@@ -293,6 +294,7 @@ namespace Installer
             Add(d, "MOD 主库", "MOD library");
             Add(d, "库所在盘", "Library drive");
             Add(d, "选择文件夹…", "Choose folder…");
+            Add(d, "本地模式不使用外部库，只读游戏目录里的 addons", "Local mode uses no external library; it reads addons in the game folder");
             Add(d, "附加库目录…", "Extra library folders…");
             Add(d, "主库和附加目录都会扫描；只读，不复制、不移动。", "Library and extra folders are scanned read-only; nothing is copied or moved.");
             Add(d, "位置与诊断", "Paths & diagnostics");
@@ -317,7 +319,8 @@ namespace Installer
             Add(d, "◀ 上一页", "◀ Prev");
             Add(d, "下一页 ▶", "Next ▶");
             Add(d, "页", "Page");
-            Add(d, "选里面有 left4dead2.exe 的那一层。", "Pick the folder that contains left4dead2.exe.");
+            Add(d, "选里面有 left4dead2.exe 的那一层；本地模式只扫这里的 left4dead2\\addons。",
+                "Pick the folder that contains left4dead2.exe; local mode only scans its left4dead2\\addons.");
 
             // ---------- 动态模板：用 Lang.F 调用，{0} 是参数 ----------
             Add(d, "已选 {0} 个文件 ｜ 列表显示 {1} 行", "Selected {0} files ｜ {1} rows shown");
@@ -399,6 +402,9 @@ namespace Installer
             Add(d, "中文", "中文 (Chinese)");
             Add(d, "English", "English");
             Add(d, "减少动效", "Reduce motion");
+            Add(d, "工作模式", "Mode");
+            Add(d, "本地模式", "Local mode");
+            Add(d, "U 盘模式", "USB drive mode");
             Add(d, "工坊下载位置", "Workshop download folder");
 
             // ---------- 左栏：游戏现状 ----------

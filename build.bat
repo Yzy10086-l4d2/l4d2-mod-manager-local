@@ -14,6 +14,8 @@ if not exist "%CSC%" (
 )
 
 set "OUT=%~dp0L4D2LocalSetup.exe"
+set "ICONARG="
+if exist "%~dp0app.ico" set "ICONARG=/win32icon:"%~dp0app.ico""
 set "SRCS="
 set /a N=0
 for %%F in ("%~dp0*.cs") do (
@@ -25,9 +27,6 @@ if %N%==0 (
   exit /b 1
 )
 echo [i] compiling %N% source files
-
-set "ICONARG="
-if exist "%~dp0app.ico" set "ICONARG=/win32icon:"%~dp0app.ico""
 
 "%CSC%" /nologo /codepage:65001 /target:winexe /optimize+ /out:"%OUT%" %ICONARG% ^
   /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll ^

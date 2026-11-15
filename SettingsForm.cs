@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -25,14 +25,15 @@ namespace Installer
         }
 
         private readonly MainForm owner;
-        private Segmented segAppearance, segLang;
+        private Segmented segMode, segAppearance, segLang;
         private Toggle tglMotion;
         private ComboBox cboGame, cboLibDrive, cboPkg;
         private FlatButton btnGameBrowse, btnGameFind, btnLibBrowse, btnLibManage, btnSave;
-        private Label lblGameState, lblLibMain, lblLibExtra, lblLibHint, lblCfg, lblLog, lblPkgState;
+        private Label lblGameState, lblLibMain, lblLibExtra, lblLibHint, lblCfg, lblLog, lblLocalOnly, lblPkgState;
         private string pendingRoot;
         private bool syncing = true;
 
+        internal bool WantLocal { get { return segMode != null && segMode.SelectedIndex == 1; } }
         internal bool WantReduceMotion { get { return tglMotion != null && tglMotion.Checked; } }
         internal ThemeMode WantAppearance { get { return segAppearance == null ? Theme.Mode : (ThemeMode)segAppearance.SelectedIndex; } }
         /// <summary>自测用：模拟在设置窗口里点「外观」分段（走的是真实的点击 + SelectedIndexChanged 路径）。</summary>
@@ -42,7 +43,7 @@ namespace Installer
             segAppearance.PickIndex((int)m);
         }
 
-        internal string WantLibraryRoot { get { return pendingRoot; } }
+        internal string WantLibraryRoot { get { return WantLocal ? Core.ModRoot : pendingRoot; } }
 
         /// <summary>输入框里的游戏根目录（已去空格和尾部反斜杠）。空串表示用户没填。</summary>
         internal string WantGameRoot
@@ -88,6 +89,7 @@ namespace Installer
             BuildFooter();
 
             syncing = false;
+            SyncModeState();
             UpdateGameState();
             UpdatePkgState();
 
@@ -155,6 +157,16 @@ namespace Installer
         private void BuildGeneral()
         {
             Card s = AddGroup(Lang.S("常规"), 56, 200);
+
+            RowTitle(s, Lang.S("工作模式"), 16, 7, 200);
+            RowNote(s, Lang.S("U 盘模式扫所选主库，本地模式只看游戏目录"), 16, 25, 300);
+
+            segMode = new Segmented();
+            segMode.Items = new string[] { "U 盘模式", "本地模式" };
+            segMode.SetBounds(332, 8, 232, 30);
+            segMode.SelectedIndex = Core.IsLocal ? 1 : 0;
+            segMode.SelectedIndexChanged += delegate { if (!syncing) SyncModeState(); };
+            s.Controls.Add(segMode);
 
             s.Separate(50);
 
@@ -299,7 +311,7 @@ namespace Installer
             lblGameState.AutoEllipsis = true;
             s.Controls.Add(lblGameState);
 
-            RowNote(s, Lang.S("选里面有 left4dead2.exe 的那一层。"), 16, 79, 548);
+            RowNote(s, Lang.S("选里面有 left4dead2.exe 的那一层；本地模式只扫这里的 left4dead2\\addons。"), 16, 79, 548);
         }
 
         private void BuildLibrary()
@@ -318,6 +330,17 @@ namespace Installer
 
             btnLibBrowse = SoftButton(s, Lang.S("选择文件夹…"), 264, 26, 110, 24);
             btnLibBrowse.Click += delegate { BrowseLibrary(); };
+
+            // 本地模式下把下拉框整个换掉：禁用的原生下拉框在深色主题里仍是一块白，
+            // 而且这时候它本来就不可选，留着只会让人以为能改
+            lblLocalOnly = new Label();
+            lblLocalOnly.SetBounds(16, 30, 420, 18);
+            lblLocalOnly.Font = Theme.UISmall;
+            lblLocalOnly.ForeColor = Theme.Ink3;
+            lblLocalOnly.BackColor = Color.Transparent;
+            lblLocalOnly.Text = Lang.S("本地模式不使用外部库，只读游戏目录里的 addons");
+            lblLocalOnly.Visible = false;
+            s.Controls.Add(lblLocalOnly);
 
             s.Separate(56);
 
@@ -455,9 +478,12 @@ namespace Installer
         /// <summary>保存前就地校验：返回 null = 可以存；否则是要弹给用户的提示。</summary>
         private string ValidateBeforeSave()
         {
-            string libRoot = WantLibraryRoot;
-            if (string.IsNullOrEmpty(libRoot) || !Directory.Exists(libRoot))
-                return "没有找到可用的 MOD 主库，请重新选盘或指定文件夹。";
+            if (!WantLocal)
+            {
+                string root = WantLibraryRoot;
+                if (string.IsNullOrEmpty(root) || !Directory.Exists(root))
+                    return "没有找到可用的 MOD 主库，请重新选盘或指定文件夹。";
+            }
             // 留空 = 不改：没填就保存不该把原来能用的游戏目录清掉
             string game = WantGameRoot;
             if (game.Length > 0 && !Core.TestGame(game))
@@ -635,8 +661,42 @@ namespace Installer
             syncing = false;
         }
 
+        private void SyncModeState()
+        {
+            bool local = WantLocal;
+            bool canPick = !local;
+
+            if (cboLibDrive != null) { cboLibDrive.Enabled = canPick; cboLibDrive.Visible = canPick; }
+            if (btnLibBrowse != null) { btnLibBrowse.Enabled = canPick; btnLibBrowse.Visible = canPick; }
+            if (btnLibManage != null) { btnLibManage.Enabled = canPick; btnLibManage.Visible = canPick; }
+            if (lblLocalOnly != null) lblLocalOnly.Visible = !canPick;
+            UpdateLibraryState();
+        }
+
         private void UpdateLibraryState()
         {
+            if (WantLocal)
+            {
+                string addons = null;
+                try
+                {
+                    string g = WantGameRoot;
+                    if (g.Length > 0 && Core.TestGame(g))
+                        addons = Path.Combine(Path.Combine(g, "left4dead2"), "addons");
+                }
+                catch { }
+
+                lblLibMain.ForeColor = Theme.Ink2;
+                lblLibMain.Text = addons != null
+                    ? "本地模式：只扫描 " + addons
+                    : "本地模式：只扫描游戏目录 addons（先在上方指定游戏目录）";
+                lblLibExtra.ForeColor = Theme.Ink3;
+                lblLibExtra.Text = Lang.S("主库和附加目录都不参与扫描");
+                lblLibHint.Text = Lang.S("游戏目录在上方改；切回 U 盘模式后原来的库仍保留。");
+                if (btnSave != null) btnSave.Enabled = true;
+                return;
+            }
+
             bool valid = !string.IsNullOrEmpty(pendingRoot) && Directory.Exists(pendingRoot);
             lblLibMain.ForeColor = valid ? Theme.Ink2 : Theme.Accent;
             lblLibMain.Text = valid ? Lang.F("主库：{0}", pendingRoot) : Lang.S("主库：未找到有效目录，请重新选盘或选择文件夹");
@@ -663,7 +723,7 @@ namespace Installer
 
         private void ManageLibrary()
         {
-            if (owner == null) return;
+            if (owner == null || WantLocal) return;
             owner.ManageModDirs();
             UpdateLibraryState();
         }
@@ -696,11 +756,12 @@ namespace Installer
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("设置窗口客户区: " + ClientSize.Width + " x " + ClientSize.Height);
+            sb.AppendLine("工作模式: " + (WantLocal ? "本地模式" : "U 盘模式"));
             sb.AppendLine("游戏目录: " + (WantGameRoot.Length == 0 ? "(未填)" : WantGameRoot));
             sb.AppendLine("游戏目录有效: " + Core.TestGame(WantGameRoot));
             sb.AppendLine("主库选择: " + (cboLibDrive.SelectedItem == null ? "(无)" : cboLibDrive.SelectedItem.ToString()));
             sb.AppendLine("主库路径: " + WantLibraryRoot);
-            sb.AppendLine("主库有效: " + (!string.IsNullOrEmpty(pendingRoot) && Directory.Exists(pendingRoot)));
+            sb.AppendLine("主库有效: " + (WantLocal || (!string.IsNullOrEmpty(pendingRoot) && Directory.Exists(pendingRoot))));
             sb.AppendLine("减少动效: " + (WantReduceMotion ? "开" : "关"));
             sb.AppendLine("外观: " + Theme.ModeLabel + "（当前渲染: " + (Theme.IsDark ? "深色" : "浅色") + "）");
             sb.AppendLine("附加库目录: " + (Core.Cfg.ModDirs == null ? 0 : Core.Cfg.ModDirs.Count) + " 个");
@@ -793,6 +854,7 @@ namespace Installer
 
         private void ShowSettings()
         {
+            bool oldLocal = Core.IsLocal;
             bool oldMotion = Core.Cfg.ReduceMotion;
             string oldRoot = Core.ModRoot;
             string oldGame = Core.Cfg.GameRoot ?? "";
@@ -801,11 +863,12 @@ namespace Installer
             {
                 if (f.ShowDialog(this) != DialogResult.OK) return;
 
+                bool newLocal = f.WantLocal;
                 bool newMotion = f.WantReduceMotion;
                 string newRoot = f.WantLibraryRoot;
                 string newGame = f.WantGameRoot;
 
-                if (string.IsNullOrEmpty(newRoot) || !Directory.Exists(newRoot))
+                if (!newLocal && (string.IsNullOrEmpty(newRoot) || !Directory.Exists(newRoot)))
                 {
                     MessageBox.Show("没有找到可用的 MOD 主库，请重新选盘或指定文件夹。", "设置",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -823,7 +886,8 @@ namespace Installer
                 bool gameChanged = newGame.Length > 0
                     && !string.Equals(newGame.TrimEnd('\\'), oldGame.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
 
-                bool rootChanged = !string.Equals(newRoot.TrimEnd('\\'), oldRoot.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+                bool rootChanged = !newLocal
+                    && !string.Equals(newRoot.TrimEnd('\\'), oldRoot.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
 
                 if (gameChanged)
                 {
@@ -871,7 +935,11 @@ namespace Installer
                     Core.Log("INFO", "设置：外观→" + Theme.ModeLabel);
                 }
 
-                if (gameChanged || rootChanged)
+                if (newLocal != oldLocal && cboMode != null)
+                {
+                    cboMode.SelectedIndex = newLocal ? 1 : 0;   // 复用原有切换逻辑：保存并后台重扫
+                }
+                else if (gameChanged || rootChanged)
                 {
                     ReloadLibrary(gameChanged && !rootChanged ? "正在按新的游戏目录重扫…" : null);
                 }

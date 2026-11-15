@@ -581,6 +581,12 @@ namespace Installer
                 List<string> arcs = new List<string>();
 
                 // 1) 主库：老结构 <库根>\游戏内容\求生之路2各项MOD\addons*（U 盘布局）
+                if (Core.IsLocal)
+                {
+                    // 本地模式只认游戏根目录：主库、附加目录都不参与，避免把 U 盘上的东西混进来
+                    Core.Log("INFO", "本地模式：只扫游戏目录 addons，不扫主库和附加目录");
+                }
+                else
                 {
                     if (Directory.Exists(Core.ModRoot))
                     {
@@ -754,13 +760,16 @@ namespace Installer
             // 判定口径和散装 vpk 完全一样。以前把它们排除在外，导致从包里装的 MOD 在游戏里是一条
             // 「仅游戏内」、在库里还是一条「未装」，同一个 MOD 分裂成两条互相矛盾记录。
             Dictionary<string, List<ModItem>> libByName = null;
-            libByName = new Dictionary<string, List<ModItem>>(StringComparer.OrdinalIgnoreCase);
-            foreach (ModItem m in Core.ModList)
+            if (!Core.IsLocal)
             {
-                if (m.FromGame) continue;   // 只跳过游戏目录自己那份，别把自己跟自己配对
-                List<ModItem> l;
-                if (!libByName.TryGetValue(m.Name, out l)) { l = new List<ModItem>(); libByName[m.Name] = l; }
-                l.Add(m);
+                libByName = new Dictionary<string, List<ModItem>>(StringComparer.OrdinalIgnoreCase);
+                foreach (ModItem m in Core.ModList)
+                {
+                    if (m.FromGame) continue;   // 只跳过游戏目录自己那份，别把自己跟自己配对
+                    List<ModItem> l;
+                    if (!libByName.TryGetValue(m.Name, out l)) { l = new List<ModItem>(); libByName[m.Name] = l; }
+                    l.Add(m);
+                }
             }
             int merged = 0;
 

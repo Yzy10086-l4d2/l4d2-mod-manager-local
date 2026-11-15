@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
@@ -496,7 +496,9 @@ namespace Installer
                     else last = run;
                 }
                 // 本地模式下根本没有「U 盘库」，那行写错名字会让人以为读的是别处
-                lblLibInfo.Text = Lang.F("U 盘库 · {0} 个 MOD · {1}", n, last);
+                lblLibInfo.Text = Core.IsLocal
+                    ? Lang.F("游戏目录 · {0} 个 MOD · {1}", n, last)
+                    : Lang.F("U 盘库 · {0} 个 MOD · {1}", n, last);
             }
         }
     }

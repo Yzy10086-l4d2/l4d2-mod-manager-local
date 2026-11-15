@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -185,7 +185,7 @@ namespace Installer
         {
             int mods = 0, sel = 0, miss = 0;
             StringBuilder sb = new StringBuilder(64 * 1024);
-            sb.Append("{\"mode\":\"").Append("usb").Append("\"");
+            sb.Append("{\"mode\":\"").Append(Core.IsLocal ? "local" : "usb").Append("\"");
             sb.Append(",\"version\":\"").Append(Esc(Ver())).Append("\"");
             sb.Append(",\"cards\":[");
 
@@ -207,7 +207,7 @@ namespace Installer
                     }
                     ModGroup g = GroupOf(r, tree);
                     bool on = g != null && mf != null && mf.CountChecked(g) > 0;
-                    string st = StatusText(g, false);
+                    string st = StatusText(g, Core.IsLocal);
                     total++;
                     if (on) picked++;
                     if (!string.IsNullOrEmpty(st) && !st.StartsWith("未装", StringComparison.Ordinal)

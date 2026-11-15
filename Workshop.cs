@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -692,6 +692,17 @@ namespace Installer
             }
 
             string root;
+            if (Core.IsLocal)
+            {
+                root = Core.GameAddonsDir();
+                if (string.IsNullOrEmpty(root))
+                    throw new InvalidOperationException("本地模式下没找到游戏 addons 目录，先在设置里指定游戏目录");
+                // 以前这里会再拼一层 _创意工坊 并建出来：工具扫游戏目录只认 addons 根
+                // （Catalog.ScanGameAddons 是 TopDirectoryOnly），下载完在界面里 0 个 MOD，
+                // 游戏本身也不读子目录的 vpk。addons 根就是唯一该放的地方，别建子目录。
+                return root;
+            }
+            else
             {
                 if (string.IsNullOrEmpty(Core.ModRoot))
                     throw new InvalidOperationException("还没选主库，先在顶部选一下 U 盘");
@@ -972,6 +983,43 @@ namespace Installer
             }
             catch (Exception ex) { bad++; Core.Log("FAIL", "WS 改名自检抛异常：" + ex.Message); }
             finally { try { Directory.Delete(rnDir, true); } catch { } }
+
+            // 本地模式的下载落点必须是 addons 根目录本身，不许在下面再建 _创意工坊。
+            // 以前拼了子目录，工具扫不到（ScanGameAddons 只 TopDirectoryOnly）、游戏也不读，
+            // 新人下完第一个 MOD 界面里还是 0 个。用临时假游戏根验，不碰用户真实配置。
+            {
+                string savedGame = Core.Cfg.GameRoot;
+                string savedMode = Core.Cfg.Mode;
+                string savedWs = Core.Cfg.WorkshopDir;
+                string fake = Path.Combine(Path.GetTempPath(), "ws-dest-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+                try
+                {
+                    string addons = Path.Combine(Path.Combine(fake, "left4dead2"), "addons");
+                    Directory.CreateDirectory(addons);
+                    File.WriteAllText(Path.Combine(fake, "left4dead2.exe"), "x");
+                    Core.Cfg.GameRoot = fake;
+                    Core.Cfg.Mode = "local";
+                    Core.Cfg.WorkshopDir = "";
+                    string got = DestDir();
+                    bool same = string.Equals(got, addons, StringComparison.OrdinalIgnoreCase);
+                    bool noSub = !Directory.Exists(Path.Combine(addons, "_创意工坊"));
+                    if (same && noSub) Core.Log("INFO", "WS 下载落点：本地模式 = addons 根，未建子目录");
+                    else
+                    {
+                        bad++;
+                        Core.Log("FAIL", "WS 下载落点不对：got=" + got + " want=" + addons
+                            + " 子目录存在=" + (!noSub));
+                    }
+                }
+                catch (Exception ex) { bad++; Core.Log("FAIL", "WS 下载落点自检抛异常：" + ex.Message); }
+                finally
+                {
+                    Core.Cfg.GameRoot = savedGame;
+                    Core.Cfg.Mode = savedMode;
+                    Core.Cfg.WorkshopDir = savedWs;
+                    try { Directory.Delete(fake, true); } catch { }
+                }
+            }
 
             return bad;
         }

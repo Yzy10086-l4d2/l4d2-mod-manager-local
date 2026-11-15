@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -63,7 +63,7 @@ namespace Installer
         public string TweakSet = "";        // 套用哪套参数存档（空 = 不套）
         public bool ReduceMotion = false;   // true = 关闭轻量过渡，直接显示最终状态
         public bool DpiAware = true;        // true = 自己按 DPI 缩放界面（高 DPI 下不再模糊）；false = 老样子交给系统拉伸
-        public string Mode = "usb";       // 工作模式：local = 游戏目录 addons 当库（默认，单 exe 下载的人只有这一种）；usb = 拿 U 盘去装机
+        public string Mode = "local";       // 工作模式：local = 游戏目录 addons 当库（默认，单 exe 下载的人只有这一种）；usb = 拿 U 盘去装机
         public string Appearance = "system";  // 外观：system = 跟随系统（默认）/ light / dark
         public string LibraryRoot = "";     // U 盘模式的主库根；空 = 跟随程序所在盘
         /// <summary>
@@ -658,6 +658,7 @@ namespace Installer
 
         // ---------------- 找游戏 ----------------
         // 本地模式：游戏目录 addons 直接当库用，删除放行、装机只翻开关
+        public static bool IsLocal { get { return Cfg.Mode == "local"; } }
 
 
         public static bool TestGame(string path)

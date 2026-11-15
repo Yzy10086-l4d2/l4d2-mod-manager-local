@@ -1014,9 +1014,12 @@ namespace Installer
             {
                 // U 盘模式下这一项直接灰掉并写清原因：以前它一直是亮的，
                 // 点下去就真删游戏 addons 里的 vpk，把主界面那道模式铁律绕过去了。
-                delItem.Text = "删除选中的（U 盘模式不动游戏目录的文件）";
-                delItem.Enabled = false;
-                return;
+                if (!Core.IsLocal)
+                {
+                    delItem.Text = "删除选中的（U 盘模式不动游戏目录的文件）";
+                    delItem.Enabled = false;
+                    return;
+                }
                 delItem.Text = lv.SelectedItems.Count > 0
                     ? "删除选中的 " + lv.SelectedItems.Count + " 个"
                     : "删除选中的（先在上面选行）";
@@ -1037,6 +1040,14 @@ namespace Installer
             park.Click += delegate { Park(); }; Controls.Add(park);
             // 这两个都是「往 U 盘库搬东西」：本地模式没有库，搬过去只会进一个不参与扫描的目录，
             // 同时把游戏 addons 里那份删掉 —— MOD 于是在本地模式列表里凭空消失。按模式锁死。
+            if (Core.IsLocal)
+            {
+                collect.Enabled = false;
+                park.Enabled = false;
+                ToolTip tipLocal = new ToolTip();
+                tipLocal.SetToolTip(collect, "本地模式没有 U 盘库，这个功能用不上");
+                tipLocal.SetToolTip(park, "本地模式没有 U 盘库，这个功能用不上");
+            }
             Button ok = new Button(); ok.Text = Lang.S("写入并关闭"); ok.SetBounds(410, 402, 138, 30);
             ok.Click += delegate { Apply(); }; Controls.Add(ok);
             lbl = new Label(); lbl.SetBounds(12, 436, 536, 20); lbl.Text = ""; Controls.Add(lbl);
@@ -1049,10 +1060,13 @@ namespace Installer
         {
             // 铁律：删游戏目录里的文件只许本地模式做，U 盘模式库里的那份才是母本。
             // 菜单项本身也会灰掉，这里再拦一次：键盘回车 / 将来的调用方都绕不过去。
-            MessageBox.Show("当前是 U 盘模式，不动游戏目录里的文件。\r\n\r\n"
-                + "库里的那份才是母本；真要卸载，请在资源管理器里直接删。",
-                Lang.S("删除已装 MOD"));
-            return;
+            if (!Core.IsLocal)
+            {
+                MessageBox.Show("当前是 U 盘模式，不动游戏目录里的文件。\r\n\r\n"
+                    + "库里的那份才是母本；真要卸载，把右上角切到「本地模式」再来。",
+                    Lang.S("删除已装 MOD"));
+                return;
+            }
             // 只认选中行。以前用 CheckedItems，可这个列表里勾选=启用：
             // 用户为了删除去「勾选」，反而先把 MOD 打开了；取消勾选再来删又选不中。
             List<string> names = new List<string>();
@@ -1159,6 +1173,7 @@ namespace Installer
 
         private void Collect()
         {
+            if (Core.IsLocal) return;    // 按钮已按模式禁用；这里再挡一次程序化调用
             if (MessageBox.Show(
                 "把游戏 addons 里「U 盘库没有」的 MOD 收进 U 盘 addons回收？\r\n\r\n"
                 + "· 先复制到 U 盘并核对大小\r\n"
@@ -1203,6 +1218,7 @@ namespace Installer
         /// <summary>把「关闭」的 MOD 挪回 U 盘，给游戏盘腾地方（开着的一概不碰）。</summary>
         private void Park()
         {
+            if (Core.IsLocal) return;    // 按钮已按模式禁用；这里再挡一次程序化调用
             if (MessageBox.Show(
                 "把「关闭」状态的 MOD 从游戏 addons 里挪回 U 盘？\r\n\r\n"
                 + "· 只动已经关掉的\r\n"
