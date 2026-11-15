@@ -14,7 +14,7 @@ namespace Installer
         {
             try
             {
-                foreach (System.Diagnostics.Process p in System.Diagnostics.Process.GetProcessesByName("L4D2Setup"))
+                foreach (System.Diagnostics.Process p in System.Diagnostics.Process.GetProcessesByName("L4D2LocalSetup"))
                 {
                     p.Refresh();
                     IntPtr h = p.MainWindowHandle;
@@ -207,7 +207,8 @@ namespace Installer
             // --workshopnet=… / --wssearch=…，GUI 开着时跑这些自检会激活旧窗口然后 return 0，
             // CI 拿到 exit 0 误以为自检通过。
             bool created;
-            Mutex only = new Mutex(true, "L4D2Setup_SingleInstance", out created);
+            // 单实例名要跟便携版分开：两个 exe 同时开着是正常用法（一个管库一个管本机）
+            Mutex only = new Mutex(true, "L4D2Local_SingleInstance", out created);
             if (!created && !Core.SelfTesting && vpkFile == null)
             {
                 ActivateExisting();

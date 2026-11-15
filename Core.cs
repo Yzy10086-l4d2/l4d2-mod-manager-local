@@ -156,8 +156,10 @@ namespace Installer
             UsbRoot = WalkUp(Here);
             ModRoot = Path.Combine(Path.Combine(UsbRoot, "游戏内容"), "求生之路2各项MOD");
             DefaultModRoot = ModRoot;
-            CfgPath = Path.Combine(PkgDir, "L4D2MOD管理工具.配置.ini");
-            LogDir = EnsureLogDir(Path.Combine(PkgDir, "_装机记录"));
+            // 本地版跟便携版可能躺在同一个 U 盘上：配置和日志都用自己的名字，
+            // 不然两个 exe 会互相覆盖设置（模式、勾选全乱）。
+            CfgPath = Path.Combine(PkgDir, "L4D2MOD管理工具.本地版.ini");
+            LogDir = EnsureLogDir(Path.Combine(PkgDir, "_本地版记录"));
             LogFile = Path.Combine(LogDir, "log-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".txt");
             // 日志改成攒批落了，正常退出时也要把最后几行写下去（以前只有致命异常那条路会关日志）
             try { AppDomain.CurrentDomain.ProcessExit += delegate { CloseLog(); }; } catch { }
@@ -192,11 +194,11 @@ namespace Installer
             catch
             {
                 string root = Path.Combine(Path.GetTempPath(), "L4D2MOD管理工具");
-                string fallback = Path.Combine(root, "_装机记录");
+                string fallback = Path.Combine(root, "_本地版记录");
                 try
                 {
                     Directory.CreateDirectory(fallback);
-                    CfgPath = Path.Combine(root, "L4D2MOD管理工具.配置.ini");
+                    CfgPath = Path.Combine(root, "L4D2MOD管理工具.本地版.ini");
                 }
                 catch { }
                 return fallback;
