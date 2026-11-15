@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -101,8 +101,7 @@ namespace Installer
             bool uiDup = false;
             bool dupSelf = false;
             bool launchSelf = false;
-            bool tweakSelf = false;
-            bool addonSelf = false;
+                bool addonSelf = false;
             bool safeSelf = false;
             bool dumpId = false;
             bool dumpTree = false;
@@ -176,8 +175,7 @@ namespace Installer
                 else if (string.Equals(a, "--dup", StringComparison.OrdinalIgnoreCase)) uiDup = true;
                 else if (string.Equals(a, "--dupself", StringComparison.OrdinalIgnoreCase)) dupSelf = true;
                 else if (string.Equals(a, "--launchself", StringComparison.OrdinalIgnoreCase)) launchSelf = true;
-                else if (string.Equals(a, "--tweakself", StringComparison.OrdinalIgnoreCase)) tweakSelf = true;
-                else if (string.Equals(a, "--addonself", StringComparison.OrdinalIgnoreCase)) addonSelf = true;
+                    else if (string.Equals(a, "--addonself", StringComparison.OrdinalIgnoreCase)) addonSelf = true;
                 else if (string.Equals(a, "--safeself", StringComparison.OrdinalIgnoreCase)) safeSelf = true;
                 else if (string.Equals(a, "--dumpid", StringComparison.OrdinalIgnoreCase)) dumpId = true;
                 else if (string.Equals(a, "--dumptree", StringComparison.OrdinalIgnoreCase)) dumpTree = true;
@@ -196,7 +194,7 @@ namespace Installer
             // 跑一次自检用户的工作模式就变了（库从 223 个 MOD 变成 49 个）。
             // 必须在下面这些分支 return **之前** 置位 —— 它们一样会跑扫描、开界面，一样会改到配置；
             // 以前这行写在所有自检分支后面，等于对它们全部无效。
-            Core.SelfTesting = selfTest || uiTest || copyTest || tweakSelf || launchSelf || dupSelf
+            Core.SelfTesting = selfTest || uiTest || copyTest || launchSelf || dupSelf
                             || addonSelf || safeSelf || dumpId || dumpTree || ovDump || recogSelf || plugSelf || plugTry != null
                             || mapShot || mapSelf || scanRace || layoutSelf || wsSelf || wsNet != null || wsSearch != null;
 
