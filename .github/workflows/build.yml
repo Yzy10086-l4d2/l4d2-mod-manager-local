@@ -1,0 +1,37 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (csc)
+        shell: cmd
+        run: cmd /c build.bat
+
+      - name: Hash
+        shell: powershell
+        run: |
+          $h = (Get-FileHash .\L4D2LocalSetup.exe -Algorithm SHA256).Hash.ToLower()
+          "$h  L4D2LocalSetup.exe" | Out-File -Encoding ascii L4D2LocalSetup.exe.sha256
+          Write-Output $h
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: L4D2LocalSetup
+          path: L4D2LocalSetup.exe
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" L4D2LocalSetup.exe L4D2LocalSetup.exe.sha256 --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --notes "本地版 ${{ github.ref_name }}：由 GitHub Actions 自动编译，与源码同一提交。"
