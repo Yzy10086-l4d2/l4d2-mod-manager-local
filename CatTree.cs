@@ -3077,14 +3077,39 @@ namespace Installer
                         ? "这一堆还没勾 · 共 " + s.Items.Count + " 个，能同时开好几个"
                         : "这一堆已勾 " + n + " 个 · 会一起装，冲不冲突自己确认";
                 }
-                else if (n == 0 && ne == 0) lblCur.Text = Lang.S("还没选 · 游戏里还是原版");
-                else if (n == 1)
+                else
                 {
-                    ModGroup c = ChosenOf(s);
-                    lblCur.Text = Lang.F("当前：{0}{1}", c == null ? "" : c.Name, ne > 0 ? Lang.F("　+ {0} 个扩展", ne) : "");
+                    // 「当前」= 游戏里真正开着的（addonlist=1 且文件已经在 addons 里），
+                    // 不是「勾选了哪个」。两者经常不一样：勾着的可能还没装，开着的可能是上次装的。
+                    // 以前这行显示勾选，结果出现「当前：X」但 X 那行写着「关闭」的自相矛盾。
+                    List<ModGroup> live = new List<ModGroup>();
+                    foreach (ModGroup g in s.Items)
+                        foreach (ModItem p in g.Parts)
+                            if ((p.Installed || p.FromGame) && p.AddonOn) { live.Add(g); break; }
+                    int liveEx = 0;
+                    foreach (ModGroup g in s.Extras)
+                        foreach (ModItem p in g.Parts)
+                            if ((p.Installed || p.FromGame) && p.AddonOn) { liveEx++; break; }
+
+                    if (live.Count == 0) lblCur.Text = Lang.S("游戏里还是原版（这个位置没有开着的 MOD）");
+                    else if (live.Count == 1)
+                    {
+                        string txt = Lang.F("当前：{0}", live[0].Name);
+                        if (liveEx > 0) txt += Lang.F("　+ {0} 个扩展", liveEx);
+                        ModGroup pick = ChosenOf(s);
+                        if (pick != null && pick != live[0]) txt += "　（已选：" + pick.Name + "，未启用）";
+                        lblCur.Text = txt;
+                    }
+                    else
+                    {
+                        System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                        sb.Append("同一位置开着 ").Append(live.Count).Append(" 个：");
+                        for (int i = 0; i < live.Count && i < 3; i++)
+                            sb.Append(i > 0 ? "、" : "").Append(live[i].Name);
+                        sb.Append("　（会互相覆盖，建议只留一个）");
+                        lblCur.Text = sb.ToString();
+                    }
                 }
-                else if (n > 1) lblCur.Text = "这个位置叠了 " + n + " 件（自己确认会不会打架）";
-                else lblCur.Text = "模型还是原版 · 只装了 " + ne + " 个扩展";
 
                 foreach (ModGroup g in s.Items)
                 {
