@@ -195,6 +195,10 @@ namespace Installer
                 if (nl <= 0) return null;
                 if (!s.StartsWith("v1|" + updated, StringComparison.Ordinal)) return null;
                 string body = s.Substring(nl + 1).Trim();
+                // 早期版本把 MyMemory 的报错文案当译文缓存下来了（「QUERY LENGTH LIMIT…」），
+                // 读到这种就当作没缓存，重新翻一次。
+                if (body.IndexOf("QUERY LENGTH LIMIT", StringComparison.OrdinalIgnoreCase) >= 0) return null;
+                if (body.IndexOf("MYMEMORY WARNING", StringComparison.OrdinalIgnoreCase) >= 0) return null;
                 return body.Length > 0 ? body : null;
             }
             catch { return null; }
@@ -202,6 +206,8 @@ namespace Installer
 
         static void WriteCache(string id, long updated, string zh)
         {
+            if (zh != null && (zh.IndexOf("QUERY LENGTH LIMIT", StringComparison.OrdinalIgnoreCase) >= 0
+                            || zh.IndexOf("MYMEMORY WARNING", StringComparison.OrdinalIgnoreCase) >= 0)) return;
             try
             {
                 Directory.CreateDirectory(CacheDir);
@@ -295,6 +301,8 @@ namespace Installer
                 req.UserAgent = Ua;
                 req.Timeout = 20000;
                 req.ReadWriteTimeout = 20000;
+                // 排查用：MyMemory 的上限按编码后长度算，打出来才好对分块大小
+                Core.Log("INFO", "MM q=" + text.Length + " enc=" + Uri.EscapeDataString(text).Length);
                 string json;
                 using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
                 using (StreamReader sr = new StreamReader(r.GetResponseStream(), Encoding.UTF8))
