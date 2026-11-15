@@ -834,6 +834,9 @@ namespace Installer
             btnRestore.SetBounds(Theme.M, CH - BottomBarH, bwRestore, Theme.HP);
             btnRestore.AccessibleName = "危险：移除本次安装写进去的文件";
             btnRestore.Click += delegate { DoRestore(); }; Controls.Add(btnRestore);
+            // 本地版没有「本次安装写进去的文件」可还原（装机只改 addonlist），
+            // 这个按钮会让人以为能撤掉什么，直接藏掉；开关都能在「已装 MOD 开关」里单独翻。
+            btnRestore.Visible = false;
             tips.SetToolTip(btnRestore, Lang.S("危险操作：删掉装进游戏的文件。执行前会再次确认。\r\n故意放在最左下角，离「开始安装」最远的地方。"));
             btnOpen = new FlatButton(); btnOpen.Soft = true; btnOpen.Text = Lang.S("打开游戏目录");
             btnOpen.SetBounds(xOpen, CH - BottomBarH, bwOpen, Theme.HP);
