@@ -109,7 +109,7 @@ namespace Installer
             Add(d, "目录不对：里面没有 left4dead2.exe", "Wrong folder: left4dead2.exe not found");
 
             // ---------- 主窗口：底栏 ----------
-            Add(d, "替换为当前设定 →", "Apply this set");
+            Add(d, "替换此方案", "Apply this profile");
             Add(d, "停止剩余", "Stop");
             Add(d, "管理已装 MOD", "Installed");
             Add(d, "打开游戏目录", "Game folder");
@@ -339,6 +339,7 @@ namespace Installer
 
             // ---------- 第三批：自检剩余项 ----------
             Add(d, "● 可以替换", "● Ready to apply");
+            Add(d, "先设定方案", "Set a profile first");
             Add(d, "已识别：left4dead2.exe 在里面，可以扫描和安装", "Found left4dead2.exe — ready to scan and install");
             Add(d, "附加目录：无", "Extra folders: none");
             Add(d, "Language / 语言", "Language");

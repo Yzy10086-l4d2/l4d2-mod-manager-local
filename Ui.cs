@@ -824,7 +824,8 @@ namespace Installer
 
             // 本地版这个按钮不「安装」任何文件：它把游戏里每个位置的开关换成当前勾选的那套。
             // 叫「开始安装」会让人以为要复制文件，语义对不上。
-            btnInstall = new FlatButton(); btnInstall.Text = Lang.S("替换为当前设定 →"); btnInstall.Primary = true;
+            // 按钮的动作是「把游戏换成某个方案」，不是「装文件」：没选方案就没得替换。
+            btnInstall = new FlatButton(); btnInstall.Text = Lang.S("替换此方案"); btnInstall.Primary = true;
             btnInstall.AccessibleName = "把游戏里的开关替换成当前勾选的这套";
             btnInstall.Font = new Font(Theme.UI, FontStyle.Bold);
             btnInstall.SetBounds(xInstall, CH - BottomBarH, bwInstall, Theme.HP);
@@ -5004,9 +5005,25 @@ namespace Installer
 
         private void DoInstall()
         {
+            // 本地版这个按钮 = 把游戏换成「当前选中的方案」。没选方案时不能继续：
+            // 否则它实际替换的是零散勾选，和按钮名对不上（用户实测就是被这个坑到的）。
+            string prof = schemeName;
+            if (string.IsNullOrEmpty(prof))
+            {
+                MessageBox.Show(
+                    "还没有选方案，没得替换。\r\n\r\n"
+                    + "两种做法：\r\n"
+                    + "· 只换某个位置：在右边候选里点一下，立刻生效，不用这个按钮\r\n"
+                    + "· 整套换：先在左上角「方案」下拉里选一个（或「存为方案」把当前这套存下来）",
+                    "先设定方案", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            // 勾选可能是零散的：先对齐成这个方案，按钮说的和做的才一致
+            try { ApplyProfileByName(prof); } catch { }
+
             // 装机期间会 DoEvents 泵消息：菜单、快捷键、桌面卡片都可能再点进来一次。
             // 第二次进来什么都不做 —— 否则两条线程同时往 addons 里写。
-            if (!EnterLongOp("装机")) return;
+            if (!EnterLongOp("替换方案")) return;
             bool handed = false;
             try
             {
