@@ -67,12 +67,23 @@ namespace Installer
                     nm = (m.Subject ?? "").Trim();
                     if (IsCountName(nm)) continue;                 // 「4 件」是「一个包里改了好几样」的上报格式，不是东西
                     nm = SplitKind(nm, out hint);                  // 「霰弹枪/木喷」→ 木喷（枪种当小分类）
-                    // 一个包同时改了两件（UZI + MAC-10 共用一套动画，作者常一起换），位置只能占一个：
+                    // 一个包同时改了两件（冲锋枪 + MAC-10 共用一套动画，作者常一起换），位置只能占一个：
                     // 用户把它放在哪个目录，就归哪个 —— 目录名比「A/B」这种并列表述有用。
                     if (nm.IndexOf('/') >= 0)
                     {
                         string c0 = Concrete("", g, m);
                         if (c0.Length > 0 && HasHalf(nm, c0)) { nm = c0; key = "c:" + c0; }
+                        else
+                        {
+                            // 本地版扫的是游戏 addons，没有「用户把它放在哪个目录」这条依据，
+                            // 那就取斜杠里第一个能在标准位置表里找到的名字：MAC-10/冲锋枪 → MAC-10。
+                            // 不这么做它会因为名字带斜杠谁都对不上，凭空消失（用户实测找不到）。
+                            foreach (string half in nm.Split('/'))
+                            {
+                                string h = half.Trim();
+                                if (h.Length > 0 && StandardName(h)) { nm = h; key = "c:" + h; break; }
+                            }
+                        }
                     }
                     // 只靠材质认出来的名字不能定死：铁喷的贴图就放在 materials/.../shotgun/ 下，
                     // 会被认成木喷。这种时候听目录名。
@@ -116,8 +127,11 @@ namespace Installer
                 // 但它跟燃烧 / 爆破 / 激光那几个升级箱是一路货 —— 都是给枪补弹药的东西，
                 // 用户 2026-11-09 定：归「弹药升级」，别在杂项里单独蹲一行。
                 if (hand.Length == 0 && cat == "杂项" && IsAmmoPile(nm.Length > 0 ? nm : key)) cat = "弹药升级";
+                // 别为「本游戏没有的枪」凭空造位置：P90 / M4A1 这种名字（常来自文件名或别的游戏）
+                // 一律不进树，落进「未归类」让人自己定。
+                if (hand.Length == 0 && cat == "枪械" && !StandardName(nm.Length > 0 ? nm : key)) continue;
                 Slot s;
-                // 位置键永远带上大类：枪械的「消音冲锋枪」模型和杂项的「UZI 改视角」用的是同一个模型名，
+                // 位置键永远带上大类：枪械的「MAC-10」模型和杂项的「冲锋枪 改视角」用的是同一个模型名，
                 // 但它们不是「二选一」的关系（改视角是叠加的），混进一个槽就错了。
                 string mapKey = cat + "\u0001" + key;
                 if (!map.TryGetValue(mapKey, out s))
@@ -222,7 +236,7 @@ namespace Installer
 
         private static bool KindWord(string s)
         {
-            // 「消音冲锋枪」这种带前缀的也算枪种词，否则「UZI/消音冲锋枪」拆不开
+            // 「MAC-10」这种带前缀的也算枪种词，否则「冲锋枪/MAC-10」拆不开
             foreach (string k in KindWords) if (s.IndexOf(k, StringComparison.Ordinal) >= 0) return true;
             return false;
         }
@@ -391,22 +405,31 @@ namespace Installer
             {"弹药升级","燃烧弹药包"},{"弹药升级","爆破弹药包"},{"弹药升级","激光瞄准"},{"弹药升级","弹药"},
             {"治疗与复活","医疗包"},{"治疗与复活","电击器"},
             {"暂时增益","肾上腺素"},{"暂时增益","止痛药"},
-            // 只认得出「是药」、说不清哪种的包，识别表给的显示名就是「药丸」
-            {"其他药品","药丸"},
+            // 「其他药品 / 药丸」这一行去掉了：永远空着，看着像坏掉。
+            // 真出现说不清种类的药，CatOfSub 仍把它归到「药品」，会临时长出一个小分类，不用预先占位。
             {"一代","比尔"},{"一代","佐伊"},{"一代","路易斯"},{"一代","弗朗西斯"},
             {"二代","教练"},{"二代","埃利斯"},{"二代","尼克"},{"二代","罗谢尔"},
             // 不指定是谁、四套一起换的「通用幸存者包」—— 识别表里就叫「幸存者」
             {"其他人物","幸存者"},
-            {"特感","Boomer"},{"特感","Charger"},{"特感","Hunter"},{"特感","Jockey"},
+            {"特感","通用"},{"特感","Boomer"},{"特感","Charger"},{"特感","Hunter"},{"特感","Jockey"},
             {"特感","Smoker"},{"特感","Spitter"},{"特感","Tank"},{"特感","Witch"},
             // 尸潮里的普通小僵尸：换皮肤最常见，和特感分开一层（它不占「特感」那 8 个位置）
             {"普通感染者","普通感染者"},
             // 能搬能扔的场景道具：油桶 / 煤气罐这些也是常见改模对象
             {"可搬道具","氧气瓶"},{"可搬道具","煤气罐"},{"可搬道具","油桶"},
             {"可搬道具","燃料桶"},{"可搬道具","烟花盒"},{"可搬道具","地精"},{"可搬道具","可乐"},
-            // 天空盒换的是整张天，同一时间只能有一个
-            {"其他杂项","天空盒"},
+            // 场景：天空盒、地面细节、场景贴图（用户 2026-11-16 要求单独立一类）
+            {"场景","天空盒"},{"场景","地面细节"},{"场景","场景贴图"},
         };
+
+        /// <summary>这个名字在标准位置表里吗（给小分类归属用）。</summary>
+        internal static bool StandardName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            for (int i = 0; i < PosOrder.GetLength(0); i++)
+                if (PosOrder[i, 1] == name) return true;
+            return false;
+        }
 
         public static int NameRank(string sub, string name)
         {
@@ -528,7 +551,7 @@ namespace Installer
 
             string miss = UncoveredNames();
             if (miss.Length > 0)
-                Core.Log("WARN", "TREE 识别表里这些名字没有位置，真出现会掉进未归类：" + miss);
+                Core.Log("INFO", "TREE 这些名字没有标准位置（出现时会落在「未归类」，可手动指定）：" + miss);
         }
 
         /// <summary>这个大类下是不是已经有叫这个名字的位置（Disambiguate 加过「· AK47」尾巴的也算）。</summary>
@@ -718,9 +741,9 @@ namespace Installer
             {"sg552","sg552"},
             {"AK-47","AK-47"},{"AK47","AK-47"},
             {"SCAR","SCAR-L"},{"三连发","SCAR-L"},
-            {"AR15","AR15"},{"M4A1","M4"},{"M249","M249"},
+            
             {"M16","M16"},{"AWP","AWP"},{"MP5","MP5"},{"M60","M60"},
-            {"UZI","UZI"},{"MAC-10","MAC-10"},{"MAC10","MAC-10"},{"P90","P90"},
+            {"冲锋枪","UZI"},{"MAC-10","MAC-10"},{"MAC10","MAC-10"},
             {"铁喷","铁喷"},{"铁盆","铁喷"},{"木喷","木喷"},
             {"鸟狙","鸟狙"},{"猎枪","15发木狙"},{"连狙","30发军用狙"},
             {"榴弹","榴弹发射器"},
@@ -759,7 +782,7 @@ namespace Installer
             {"比尔","比尔"},{"Bill","比尔"},
         };
 
-        /// <summary>「UZI/MAC-10」里是不是正好有 MAC-10 这一半。</summary>
+        /// <summary>「冲锋枪/MAC-10」里是不是正好有 MAC-10 这一半。</summary>
         private static bool HasHalf(string nm, string one)
         {
             if (string.IsNullOrEmpty(nm) || string.IsNullOrEmpty(one)) return false;
@@ -782,8 +805,8 @@ namespace Installer
 
             bool charFirst = vague == "幸存者" || vague == "人物";
             // 注释说「先看目录再看名字」，实现也得真的这样：以前是把目录名、组名、条目名
-            // 拼成一整串再去 Find，命中哪条全看 GunPairs 的表序 —— 「UZI/MAC-10」放在 MAC-10
-            // 目录里，照样会被表里靠前的 UZI 抢走。
+            // 拼成一整串再去 Find，命中哪条全看 GunPairs 的表序 —— 「冲锋枪/MAC-10」放在 MAC-10
+            // 目录里，照样会被表里靠前的 冲锋枪 抢走。
             string hit = charFirst ? Find(CharPairs, dir) : Find(GunPairs, dir);
             // vague 为空 = 调用方不知道这是枪还是人（A/B 拆不开、名字认不出来）：
             // 目录名里两种词表都得试一遍，否则「埃利斯」这种纯人名的目录会被跳过，
@@ -918,8 +941,10 @@ namespace Installer
         private readonly Label lblTitle, lblCur, lblFoot;
         private readonly Label lblExtraTitle;
         private readonly FlatButton btnPick;
-        private readonly FlatButton btnCat;                // 未归类页的手动入口：指定「算哪类 + 替换什么」
         private readonly ToolTip tipExtra;                 // 「可叠加的扩展」小标题的悬停说明
+        private readonly ToolTip tipRow = new ToolTip();    // 列表行悬停：用 ItemMouseHover 触发，比 MouseMove 可靠
+        private CheckBox chkMulti;                         // 「允许多选」：这个位置可以同时开好几个 MOD
+        private bool applyingMulti;                        // 程序自己改勾选时别触发联动
 
         private List<Slot> slots = new List<Slot>();
         private int unmatched;                       // 一个位置都归不上的 MOD 数
@@ -1000,6 +1025,7 @@ namespace Installer
                 if (selKey == "#search") { RevealGroup(g); return; }        // 搜索结果：跳回它在树里的位置
                 Slot cur = Current;
                 if (cur != null && cur.Pile) { TogglePile(g); return; }     // 地图 / 我的分支：开 / 关，不替换
+                if (IsMulti(cur)) { ToggleMulti(cur, g); return; }          // 允许多选：点一下开、再点一下关
                 Choose(g);
             };
             lv.MouseDown += delegate(object s, MouseEventArgs e)
@@ -1093,6 +1119,39 @@ namespace Installer
             lblCur.AutoEllipsis = true;
             Controls.Add(lblCur);
 
+            chkMulti = new CheckBox();
+            chkMulti.Text = Lang.S("允许多选");
+            chkMulti.Font = Theme.UISmall;
+            chkMulti.ForeColor = Theme.Ink2;
+            chkMulti.BackColor = Color.Transparent;
+            chkMulti.Visible = false;
+            chkMulti.CheckedChanged += delegate
+            {
+                Slot s = Current;
+                if (s == null || applyingMulti) return;
+                bool on = chkMulti.Checked;
+                if (on)
+                {
+                    if (!Core.Cfg.MultiSlots.Contains(s.Key)) Core.Cfg.MultiSlots.Add(s.Key);
+                    if (lblFoot != null) lblFoot.Text = "「" + s.Name + "」已允许同时开多个：点一个开一个，再点一次关掉";
+                }
+                else
+                {
+                    Core.Cfg.MultiSlots.Remove(s.Key);
+                    // 关掉多选 = 这个位置退回单选：先把这里所有 MOD 关掉（用户要的就是这个语义）
+                    Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                    foreach (ModGroup g in s.Items)
+                    {
+                        mf.UncheckGroup(g);
+                        foreach (ModItem p in g.Parts)
+                            if (p.FromGame || p.Installed) st[p.Name] = false;
+                    }
+                    if (st.Count > 0) mf.ApplySwitches(st);
+                    if (lblFoot != null) lblFoot.Text = "「" + s.Name + "」已退回单选：这里所有 MOD 都关掉了";
+                }
+                Core.SaveConfig();
+            };
+            Controls.Add(chkMulti);
             lblFoot = new Label();
             lblFoot.Font = Theme.UISmall;
             lblFoot.ForeColor = Theme.Ink3;
@@ -1117,14 +1176,10 @@ namespace Installer
 
             // 未归类页的手动入口：选中一行点它（或双击那行），告诉程序这个 MOD 算哪一类、替换什么。
             // 用的是和「设置 MOD 分类…」同一个窗口，保存后立刻重新归组，认出位置就排进树里。
-            btnCat = new FlatButton();
-            btnCat.Text = Lang.S("指定位置…");
-            btnCat.SetBounds(0, 0, 96, Theme.H);
-            btnCat.Click += delegate { mf.SetModCatIn(lv); };
-            btnCat.Visible = false;
-            Controls.Add(btnCat);
 
             tipExtra = new ToolTip();
+        tipRow.InitialDelay = 100;
+        tipRow.ReshowDelay = 50;
             // 小标题在窄窗口放不下整句话，完整的解释挂在这里
             tipExtra.SetToolTip(lblExtraTitle,
                 "可叠加的扩展 = 不换本体模型、能和模型同时生效的东西：开火音效、第一人称手部模型、HUD 图标。\r\n"
@@ -1149,6 +1204,14 @@ namespace Installer
             v.Font = Theme.UI;
             v.HeaderStyle = ColumnHeaderStyle.None;   // 原生表头在深色下永远是一块白，改由 ColHead 自绘
             v.ShowItemToolTips = true;
+            // 系统的行提示在这台机器上不稳（延迟长、换行不刷新），改用 ItemMouseHover 自己弹：
+            // 这个事件是控件专门为「鼠标停在一行上」发的，不依赖 MouseMove 是否被上层吃掉。
+            v.ItemMouseHover += delegate(object s, ListViewItemMouseHoverEventArgs e2)
+            {
+                if (e2.Item == null || string.IsNullOrEmpty(e2.Item.ToolTipText)) return;
+                tipRow.Show(e2.Item.ToolTipText, v, Cursor.Position.X - v.PointToScreen(Point.Empty).X + 18,
+                            Cursor.Position.Y - v.PointToScreen(Point.Empty).Y + 20, 20000);
+            };
             v.HideSelection = false;
             ImageList pad = new ImageList();
             // 这一行决定 ListView 的行高。字体是按 point 放大的，行高还写死 28 的话，
@@ -1419,8 +1482,13 @@ namespace Installer
 
                 TreeRow h = new TreeRow();
                 h.IsCat = true; h.Cat = cat;
+                // 一大类底下只有一个「堆」（目前就是地图：所有三方图都能同时开）时，
+                // 把堆挂到类标题行上，标题行本身可点 —— 少一层「地图 → 三方图」的空壳。
+                bool solePile = inCat.Count == 1 && inCat[0].Pile;
+                if (solePile) h.Slot = inCat[0];
                 rows.Add(h);
                 if (folded.Contains(cat)) continue;
+                if (solePile) continue;
 
                 // 小分类（枪械 → 步枪 → AK-47）。slots 已按小分类排好，这里顺着切段。
                 // 一大类底下只有一个分组时不画那行标题 ——「特感 → 特感 → Tank」这种重复层没意义。
@@ -1444,18 +1512,8 @@ namespace Installer
                     rows.Add(r);
                 }
             }
-            if (unmatched > 0)
-            {
-                TreeRow h = new TreeRow();
-                h.IsCat = true; h.Cat = "未归类";
-                rows.Add(h);
-                if (!folded.Contains("未归类"))
-                {
-                    TreeRow n = new TreeRow();
-                    n.IsNote = true; n.Cat = "未归类";
-                    rows.Add(n);
-                }
-            }
+            // 未归类的包不再在树里占一行（用户 2026-11-16 要求）：
+            // 改成右上角一个按钮「未识别 N 个」打开专门的手动分类页。
             body.SetRows(rows);
         }
 
@@ -1521,6 +1579,31 @@ namespace Installer
         }
 
         /// <summary>这个位置当前用了哪个 MOD（多件时取第一件）。</summary>
+        /// <summary>
+        /// 多选模式下点一行：开着的关掉、关着的打开，同位置别的**不动**。
+        /// 只写这一个 MOD 的开关，不复制文件。
+        /// </summary>
+        private void ToggleMulti(Slot s, ModGroup g)
+        {
+            if (s == null || g == null) return;
+            bool on = mf.CountChecked(g) > 0;
+            Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (ModItem p in g.Parts)
+                if (p.FromGame || p.Installed) st[p.Name] = !on;
+            if (on) mf.UncheckGroup(g); else mf.CheckGroupDefault(g);
+            if (st.Count > 0) mf.ApplySwitches(st);
+            mf.AfterTreePick();
+            if (lblFoot != null)
+                lblFoot.Text = "「" + s.Name + "」：" + g.Name + (on ? " 已关" : " 已开") + "（多选模式，同位置别的没动）";
+            FillDetail();
+        }
+
+        /// <summary>这个位置是不是「允许多选」：状态存配置里，按位置 key 记。</summary>
+        private static bool IsMulti(Slot s)
+        {
+            return s != null && Core.Cfg.MultiSlots.Contains(s.Key);
+        }
+
         internal ModGroup ChosenOf(Slot s)
         {
             foreach (ModGroup g in s.Items) if (mf.CountChecked(g) > 0) return g;
@@ -1802,6 +1885,15 @@ namespace Installer
         /// 未归类 MOD 拖到树上松手。落点三种：位置行 = 归到这个位置；
         /// 大类 / 小分类标题 = 只归大类；分支行 = 放进我的分支。归完跳过去，让人立刻看到结果。
         /// </summary>
+        /// <summary>包自带的全名（addoninfo 标题）；没有就用文件名。</summary>
+        internal static string FullNameOf(ModGroup g)
+        {
+            if (g == null) return "";
+            ModItem main = g.Main;
+            string title = main == null ? "" : (main.AddonTitle ?? "").Trim();
+            return title.Length > 0 ? title : g.Name;
+        }
+
         internal void DropModOn(ModGroup g, TreeRow r)
         {
             if (g == null || r == null) return;
@@ -1822,8 +1914,10 @@ namespace Installer
                 if (s.Pile) { lblFoot.Text = Lang.S("「一堆」收的是叠装（地图 / 喷漆），拖不进去"); return; }
                 mf.ApplyCatAssign(g, s.Cat, s.Name);
                 Rebuild();
-                GoSlot(s.Key);
-                lblFoot.Text = "「" + g.Name + "」已归到「" + s.Cat + " · " + s.Name + "」";
+                // 还有没归类的就留在这一页继续分，别跳到目标位置 —— 以前一跳，列表看起来就"空了"
+                if (Unmatched > 0) SelectUnmatched(); else GoSlot(s.Key);
+                lblFoot.Text = "「" + g.Name + "」已归到「" + s.Cat + " · " + s.Name + "」" +
+                    (Unmatched > 0 ? "；还剩 " + Unmatched + " 个没归类" : "");
                 return;
             }
 
@@ -1948,7 +2042,6 @@ namespace Installer
             }
         }
         /// <summary>自测用：「指定位置…」手动入口是否可见。</summary>
-        internal bool UnmatchedButtonVisible { get { return btnCat != null && btnCat.Visible; } }
 
         internal List<ModGroup> UnmatchedGroups { get { return unmatchedGroups; } }
 
@@ -2065,6 +2158,9 @@ namespace Installer
             selKey = "#unmatched";
             body.Invalidate();
             FillDetail();
+            // 这一页的固定说明（不随光标变，也不占别的行）
+            if (lblFoot != null)
+                lblFoot.Text = "这些是程序没认出位置的包：按住一行拖到左边的树上归类，。";
         }
 
         public void SelectSlot(string key)
@@ -2272,7 +2368,7 @@ namespace Installer
             //    名字里碰巧带「冲锋」「步枪」的包，不能在这几个大类底下冒出别的枪种小分类
             //    （SubRank 还会把那个小分类排到该类第一位，看着像分类错乱）。
             int subBad = 0;
-            string[] traps = { "消音冲锋枪", "AK-47", "步枪", "冲锋枪/消音冲锋枪", "rifle" };
+            string[] traps = { "MAC-10", "AK-47", "步枪", "冲锋枪/MAC-10", "rifle" };
             foreach (string t in traps)
             {
                 string sb = SlotIndex.SubOf("近战", t, "", "", "");
@@ -2990,9 +3086,12 @@ namespace Installer
             foreach (ModItem p in g.Parts) if (p.FromGame || p.Installed) ins.Add(p);
             if (ins.Count == 0)
             {
-                MessageBox.Show("这个 MOD 还没进游戏目录，「开关」列是 —，没得开关。\r\n\r\n"
-                    + "先把它装进游戏（勾上它再点「装机」），之后这一列才会显示 开 / 关。",
-                    "还没装进游戏", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("这个 MOD 只在只读库里，没有进游戏的 addons 目录，所以没有开关。\r\n\r\n"
+                    + "要让它在游戏里生效，得先把它的 vpk 放进：\r\n"
+                    + "  <游戏目录>\\left4dead2\\addons\r\n\r\n"
+                    + "放好后点左栏「刷新游戏现状」，这里就会显示 开 / 关。\r\n"
+                    + "（本地版只改开关，不会替你复制文件）",
+                    "还没进游戏目录", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             bool allOn = true;
@@ -3047,7 +3146,6 @@ namespace Installer
             Slot s = Current;
             // 分支页也给「指定位置…」：放进分支的包多半是认不出位置的，
             // 在这里选中它就能直接告诉程序「它替换的是什么」，不用再绕回未归类页。
-            if (btnCat != null) btnCat.Visible = IsBranchSlot(s);
             lv.BeginUpdate();
             lvExtra.BeginUpdate();
             try
@@ -3064,6 +3162,14 @@ namespace Installer
                 }
                 int n = CheckedGroups(s);
                 int ne = CheckedExtras(s);
+                // 「允许多选」只对单选的常规位置出现（地图/喷漆那种「一堆」天然就是多选）
+                if (chkMulti != null)
+                {
+                    applyingMulti = true;
+                    chkMulti.Visible = !s.Pile && !s.Empty;
+                    chkMulti.Checked = IsMulti(s);
+                    applyingMulti = false;
+                }
                 lblTitle.Text = s.Name;
                 if (s.Empty)
                 {
@@ -3106,7 +3212,8 @@ namespace Installer
                         sb.Append("同一位置开着 ").Append(live.Count).Append(" 个：");
                         for (int i = 0; i < live.Count && i < 3; i++)
                             sb.Append(i > 0 ? "、" : "").Append(live[i].Name);
-                        sb.Append("　（会互相覆盖，建议只留一个）");
+                        // 开了「允许多选」的位置是有意叠着的，别报警；没开的才提醒会互相覆盖
+                        sb.Append(IsMulti(s) ? "　（多选模式：这是你要的，注意模型叠放顺序）" : "　（会互相覆盖，建议只留一个）");
                         lblCur.Text = sb.ToString();
                     }
                 }
@@ -3128,20 +3235,9 @@ namespace Installer
                         li.SubItems[1].Text = KindsOf(g) + "·组合装" + g.Parts.Count + "件";
                         li.SubItems[1].ForeColor = Theme.Info;
                         li.SubItems[1].Font = Theme.UIBold;
-                        li.ToolTipText = PartsTip(g);
+                        li.ToolTipText = FullNameOf(g) + "\r\n\r\n" + PartsTip(g);
                     }
                     lv.Items.Add(li);
-                }
-
-                if (!s.Pile)
-                {
-                    ListViewItem none = new ListViewItem("留原版（不换模型）");
-                    none.SubItems.Add("");
-                    none.SubItems.Add("—");
-                    none.ForeColor = Theme.Ink3;
-                    none.StateImageIndex = n == 0 ? 1 : 0;
-                    none.Tag = null;
-                    lv.Items.Add(none);
                 }
 
                 if (s.Pile)
@@ -3214,7 +3310,7 @@ namespace Installer
                             li.SubItems[1].Text = KindsOf(g) + "·组合装" + g.Parts.Count + "件";
                             li.SubItems[1].ForeColor = Theme.Info;
                             li.SubItems[1].Font = Theme.UIBold;
-                            li.ToolTipText = PartsTip(g);
+                            li.ToolTipText = FullNameOf(g) + "\r\n\r\n" + PartsTip(g);
                         }
                         else li.ToolTipText = "和上面的模型同时生效，互不影响";
                         lvExtra.Items.Add(li);
@@ -3234,7 +3330,6 @@ namespace Installer
         {
             lblExtraTitle.Visible = false;
             lvExtra.Visible = false;
-            if (btnCat != null) btnCat.Visible = false;
             lv.Visible = true;
             lblTitle.Text = "搜索：" + kw;
             lv.BeginUpdate();
@@ -3318,7 +3413,6 @@ namespace Installer
             }
             finally { lv.EndUpdate(); }
             lblFoot.Text = Lang.S("不影响装机，照常能勾。按住一行拖到左边的树上松手 = 归到那；或双击打开「设置 MOD 分类」细调。");
-            if (btnCat != null) btnCat.Visible = true;
             LayoutSelf();
             LayoutCols();
         }
@@ -3334,13 +3428,14 @@ namespace Installer
             li.StateImageIndex = on ? 1 : 0;
             if (on) li.Font = Theme.UIBold;
             li.Tag = g;
+            li.ToolTipText = FullNameOf(g) + "\r\n\r\n" + PartsTip(g);
             if (g.IsSet)
             {
                 li.UseItemStyleForSubItems = false;
                 li.SubItems[1].Text = KindsOf(g) + "·组合装" + g.Parts.Count + "件";
                 li.SubItems[1].ForeColor = Theme.Info;
                 li.SubItems[1].Font = Theme.UIBold;
-                li.ToolTipText = PartsTip(g);
+                li.ToolTipText = FullNameOf(g) + "\r\n\r\n" + PartsTip(g);
             }
             else li.ToolTipText = "按住这行拖到左边的树上松手 = 归到那；双击可打开「设置 MOD 分类」细调";
             lv.Items.Add(li);
@@ -3375,6 +3470,20 @@ namespace Installer
         {
             Slot s = Current;
             if (s == null) return;
+            // 再点一次已经选中的那一套 = 把它关掉，这个位置回到「没选」。
+            // 以前必须点「留原版」那一行才能清空，用户嫌多一个选项。
+            if (g != null && g == ChosenOf(s))
+            {
+                foreach (ModGroup o in s.Items) mf.UncheckGroup(o);
+                Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                foreach (ModGroup o in s.Items)
+                    foreach (ModItem p in o.Parts)
+                        if (p.FromGame || p.Installed) st[p.Name] = false;
+                if (st.Count > 0) mf.ApplySwitches(st);
+                if (lblFoot != null) lblFoot.Text = "「" + s.Name + "」已清空：这里没有开着的 MOD，游戏里就是原版";
+                FillDetail();
+                return;
+            }
             ChooseInSlot(s, g);
             FillDetail();
         }
@@ -3387,6 +3496,7 @@ namespace Installer
         internal void ChooseInSlot(Slot s, ModGroup g)
         {
             if (s == null) return;
+            if (IsMulti(s)) { ToggleMulti(s, g); return; }   // 多选位置：只翻这一套，不清别的
             foreach (ModGroup o in s.Items) mf.UncheckGroup(o);
             if (g != null) mf.CheckGroupDefault(g);
             mf.AfterTreePick();
@@ -3397,11 +3507,21 @@ namespace Installer
             Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (ModGroup o in s.Items)
             {
-                bool on = o == g;
                 foreach (ModItem p in o.Parts)
-                    if (p.FromGame || p.Installed) st[p.Name] = on;
+                {
+                    if (!(p.FromGame || p.Installed)) continue;
+                    // 选中的那套：只开「勾着的部件」；套装里没勾的部件要写 0，
+                    // 否则在「挑部件」里关掉一个，游戏里那个还是开着（实测踩到）。
+                    st[p.Name] = (o == g) && mf.IsChecked(p.Key);
+                }
             }
-            if (st.Count == 0) return;
+            if (st.Count == 0)
+            {
+                // 一条都没算出来：说明这个位置的 vpk 既没被标成「已在游戏里」也没标成「库里来的」，
+                // 写开关无从下手。记一笔，排查时不用猜（用户看到的就是「点了没反应」）。
+                Core.Log("WARN", "点选未写入：位置「" + s.Name + "」的候选没有已装标记（FromGame/Installed 全 false）");
+                return;
+            }
             if (!mf.ApplySwitches(st)) return;
             bool running = false;
             try { running = System.Diagnostics.Process.GetProcessesByName("left4dead2").Length > 0; } catch { }
@@ -3495,7 +3615,8 @@ namespace Installer
             }
 
             if (lblTitle != null) lblTitle.SetBounds(mainX + pad, 12, Math.Max(60, mainW - 2 * pad - 100), 22);
-            if (lblCur != null) lblCur.SetBounds(mainX + pad, 34, Math.Max(60, mainW - 2 * pad), 18);
+            if (lblCur != null) lblCur.SetBounds(mainX + pad, 34, Math.Max(60, mainW - 2 * pad - 130), 18);
+            if (chkMulti != null) chkMulti.SetBounds(mainX + mainW - 126, 33, 110, 22);
 
             if (headMain != null)
             {
@@ -3548,10 +3669,8 @@ namespace Installer
 
             if (btnPick != null) btnPick.SetBounds(x + pad, by, 76, actH);
             // 右下角从右往左排：「指定位置…」只在未归类页。脚注按实际占用让位。
-            bool catBtn = btnCat != null && btnCat.Visible;
             int edge = x + rightW - 8;
             int used = 0;
-            if (catBtn) { btnCat.SetBounds(edge - 100, by, 100, actH); edge -= 108; used += 108; }
             if (lblFoot != null)
                 lblFoot.SetBounds(x + pad, by + (actH - 18) / 2, Math.Max(60, rightW - 2 * pad - used), 18);
             LayoutCols();
@@ -4016,7 +4135,11 @@ namespace Installer
                     if (r.IsCat)
                     {
                         bool open = !owner.IsFolded(r.Cat);
-                        if (i == hov) g.FillRectangle(hovBg, 0, y, W, RowH);
+                        // 「地图」这类：类标题行本身就是容器，选中时给和位置行一样的高亮，
+                        // 否则点完看不出到底选没选中。
+                        bool catSel = r.Slot != null && string.Equals(r.Slot.Key, owner.SelectedKey, StringComparison.Ordinal);
+                        if (catSel) g.FillRectangle(selBg, 0, y, W, RowH);
+                        else if (i == hov) g.FillRectangle(hovBg, 0, y, W, RowH);
                         DrawTri(g, 10, y + RowH / 2, open);
                         Glyph.Draw(g, Glyph.ForCat(r.Cat), new Rectangle(18, y + (RowH - 18) / 2, 18, 18), Theme.Ink2);
                         TextRenderer.DrawText(g, Lang.S(r.Cat), Theme.UIBold, new Rectangle(42, y, W - 106, RowH), Theme.Ink,
@@ -4096,8 +4219,10 @@ namespace Installer
                     // 「一堆」（地图 / 我的分支）里勾好几个是正常事，别用橙色报警
                     int cnt = owner.CheckedGroups(s);
                     int ecnt = owner.CheckedExtras(s);
+                    // 「允许多选」的位置叠着是正常的：用蓝色（信息色）而不是黄色，免得看着像警告
+                    bool multiSlot = Core.Cfg.MultiSlots.Contains(s.Key);
                     Color dot = s.Pile ? (cnt > 0 ? Theme.Ok : Theme.TreeBranch)
-                              : cnt > 1 ? Theme.Warn
+                              : cnt > 1 ? (multiSlot ? Theme.Info : Theme.Warn)
                               : cnt == 1 ? Theme.Ok
                               : ecnt > 0 ? Theme.Info
                               : Theme.TreeBranch;
@@ -4863,6 +4988,15 @@ namespace Installer
             }
             if (e.Button == MouseButtons.Left)
             {
+                // 「地图」这类可选的类标题行：点左边三角 = 折叠；点文字 = 直接选中容器。
+                // 这里不能走「按下记起点、松手再激活」那套：类标题行本来就能拖（换大类顺序），
+                // 一动阈值就被判成拖动，结果点了没反应 —— 用户实测「点不开」。
+                if (r.IsCat && r.Slot != null)
+                {
+                    if (e.X < 26) owner.SetFolded(r.Cat, !owner.IsFolded(r.Cat));
+                    else owner.SelectSlot(r.Slot.Key);
+                    return;
+                }
                 // 记下起点：大类 / 小分类 / 分支 / 位置行都能接着拖，别的行（「未归类」说明行）照旧只当点击
                 pressArm = CanDragRow(r);
                 pressRow = pressArm ? i : -1;
@@ -5367,7 +5501,11 @@ namespace Installer
         {
             if (i < 0 || i >= rows.Count) return;
             TreeRow r = rows[i];
-            if (r.IsCat) owner.SetFolded(r.Cat, !owner.IsFolded(r.Cat));
+            if (r.IsCat)
+            {
+                if (r.Slot != null) owner.SelectSlot(r.Slot.Key);     // 「地图」这类：类标题行就是容器
+                else owner.SetFolded(r.Cat, !owner.IsFolded(r.Cat));
+            }
             else if (r.IsSub) owner.SetSubFolded(r.Cat, r.Sub, !owner.IsSubFolded(r.Cat, r.Sub));
             else if (r.IsNote) owner.SelectUnmatched();
             else if (r.Slot != null) owner.SelectSlot(r.Slot.Key);
@@ -5833,11 +5971,9 @@ namespace Installer
             // 未归类入口：剩下的 MOD 全部列出来，且提供「指定位置…」手动入口
             treeView.SelectUnmatched();
             Application.DoEvents();
-            Core.Log("INFO", "TREE 未归类 " + treeView.Unmatched + " 个，列表 " + treeView.UnmatchedRows
-                            + " 行，「指定位置…」可见=" + treeView.UnmatchedButtonVisible);
+            Core.Log("INFO", "TREE 未归类 " + treeView.Unmatched + " 个，列表 " + treeView.UnmatchedRows + " 行");
             if (treeView.UnmatchedRows != treeView.Unmatched)
                 Core.Log("FAIL", "TREE 未归类列表行数 " + treeView.UnmatchedRows + " 和计数 " + treeView.Unmatched + " 对不上");
-            if (!treeView.UnmatchedButtonVisible)
                 Core.Log("FAIL", "TREE 未归类页没有「指定位置…」手动入口");
             // 名单跟着日志走：未归类数一波动，直接看日志就知道是哪几组
             {

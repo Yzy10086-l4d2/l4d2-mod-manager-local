@@ -228,6 +228,7 @@ namespace Installer
         /// <summary>只读提示：留空时把「自动会用到哪个目录」写出来，填了就报里面有没有组件包。</summary>
         private void UpdatePkgState()
         {
+            if (cboPkg == null) return;   // 本地版没有这一栏
             if (lblPkgState == null) return;
             string want = WantPkgRoot;
             string dir = want;
@@ -254,6 +255,7 @@ namespace Installer
 
         private void BrowsePkgRoot()
         {
+            if (cboPkg == null) return;   // 本地版没有这一栏
             using (FolderBrowserDialog d = new FolderBrowserDialog())
             {
                 d.Description = "选择组件包目录（里面有 L4N平台 / Skeeto / MQCam / 防闪退 的那一层）";
@@ -302,7 +304,7 @@ namespace Installer
 
         private void BuildDiagnostics()
         {
-            Card s = AddGroup(Lang.S("位置与诊断"), 458, 160);
+            Card s = AddGroup(Lang.S("位置与诊断"), 458, 118);
 
             lblCfg = new Label();
             lblCfg.SetBounds(16, 8, 548, 16);
@@ -320,41 +322,14 @@ namespace Installer
             lblLog.Text = Lang.F("日志：{0}", Core.LogDir);
             s.Controls.Add(lblLog);
 
-            // 组件包目录：L4N / Skeeto / MQCam / dxvk 这些不在 exe 里，得指到它们所在的那一层。
-            // 以前只认「exe 就在包里」这一种摆法 —— exe 放桌面/下载目录时，包明明在 D 盘也判「缺」。
-            RowTitle(s, Lang.S("组件包目录"), 16, 44, 220);
+            // 组件包目录（L4N / Skeeto / MQCam / dxvk）属于便携版：本地版不往游戏里复制任何东西，
+            // 这一栏在本地版里没有意义，整块去掉。
+            s.Separate(44);
 
-            cboPkg = new ComboBox();
-            cboPkg.SetBounds(16, 64, 300, 24);
-            cboPkg.DropDownStyle = ComboBoxStyle.DropDown;
-            Theme.Dress(cboPkg);
-            // 输入框只放配置里手填的值：留空 = 自动找。把自动结果直接填进框看着直观，
-            // 但用户什么都不改点一次「保存设置」，就会把「自动」固化成一个写死的路径 ——
-            // 以后组件包挪了位置，反而再也找不到。
-            cboPkg.Text = Core.Cfg.PkgRoot ?? "";
-            cboPkg.TextChanged += delegate { if (!syncing) UpdatePkgState(); };
-            s.Controls.Add(cboPkg);
-
-            FlatButton brows = SoftButton(s, "浏览…", 322, 64, 64, 24);
-            brows.Click += delegate { BrowsePkgRoot(); UpdatePkgState(); };
-
-            // 「自动找」= 清空输入框回到自动，下面那行会立刻显示这回实际找到哪
-            FlatButton auto = SoftButton(s, Lang.S("自动找"), 390, 64, 64, 24);
-            auto.Click += delegate { cboPkg.Text = ""; UpdatePkgState(); };
-
-            lblPkgState = new Label();
-            lblPkgState.SetBounds(16, 90, 548, 16);
-            lblPkgState.Font = Theme.UISmall;
-            lblPkgState.ForeColor = Theme.Ink3;
-            lblPkgState.AutoEllipsis = true;
-            s.Controls.Add(lblPkgState);
-
-            s.Separate(112);
-
-            FlatButton openCfg = SoftButton(s, Lang.S("打开配置文件夹"), 16, 118, 124, 24);
+            FlatButton openCfg = SoftButton(s, Lang.S("打开配置文件夹"), 16, 50, 124, 24);
             openCfg.Click += delegate { OpenConfigFolder(); };
 
-            FlatButton openLog = SoftButton(s, Lang.S("打开日志"), 148, 118, 84, 24);
+            FlatButton openLog = SoftButton(s, Lang.S("打开日志"), 148, 50, 84, 24);
             openLog.Click += delegate { OpenFolder(Core.LogDir); };
 
             FlatButton env = SoftButton(s, Lang.S("环境自检"), 240, 118, 88, 24);
@@ -483,6 +458,10 @@ namespace Installer
 
         private void FillDrives()
         {
+            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
+            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
+            if (lblLibMain == null) return;
+
             cboLibDrive.Items.Clear();
             cboLibDrive.Items.Add(new DriveChoice("", "跟随程序所在盘（推荐）"));
 
@@ -540,6 +519,10 @@ namespace Installer
 
         private void OnDriveChanged()
         {
+            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
+            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
+            if (lblLibMain == null) return;
+
             DriveChoice c = cboLibDrive.SelectedItem as DriveChoice;
             if (c == null) return;
             pendingRoot = string.IsNullOrEmpty(c.Root) ? Core.DefaultModRoot : FindKnownRoot(c.Root);
@@ -562,6 +545,10 @@ namespace Installer
 
         private void BrowseLibrary()
         {
+            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
+            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
+            if (lblLibMain == null) return;
+
             using (FolderBrowserDialog d = new FolderBrowserDialog())
             {
                 d.Description = "选择 MOD 主库根目录（里面按分类放 vpk / zip / rar）";
@@ -575,6 +562,10 @@ namespace Installer
 
         private void SelectDriveFor(string path)
         {
+            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
+            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
+            if (lblLibMain == null) return;
+
             string drive = "";
             try { drive = Path.GetPathRoot(path).TrimEnd('\\'); }
             catch { }
@@ -591,6 +582,10 @@ namespace Installer
 
         private void UpdateLibraryState()
         {
+            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
+            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
+            if (lblLibMain == null) return;
+
             if (WantLocal)
             {
                 string addons = null;
@@ -639,6 +634,10 @@ namespace Installer
 
         private void ManageLibrary()
         {
+            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
+            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
+            if (lblLibMain == null) return;
+
             if (owner == null || WantLocal) return;
             owner.ManageModDirs();
             UpdateLibraryState();
@@ -672,12 +671,11 @@ namespace Installer
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("设置窗口客户区: " + ClientSize.Width + " x " + ClientSize.Height);
-            sb.AppendLine("工作模式: " + (WantLocal ? "本地模式" : "U 盘模式"));
+            sb.AppendLine("本地版：只看游戏目录 addons，没有主库");
             sb.AppendLine("游戏目录: " + (WantGameRoot.Length == 0 ? "(未填)" : WantGameRoot));
             sb.AppendLine("游戏目录有效: " + Core.TestGame(WantGameRoot));
-            sb.AppendLine("主库选择: " + (cboLibDrive.SelectedItem == null ? "(无)" : cboLibDrive.SelectedItem.ToString()));
-            sb.AppendLine("主库路径: " + WantLibraryRoot);
-            sb.AppendLine("主库有效: " + (WantLocal || (!string.IsNullOrEmpty(pendingRoot) && Directory.Exists(pendingRoot))));
+            if (cboLibDrive != null)
+                sb.AppendLine("主库选择: " + (cboLibDrive.SelectedItem == null ? "(无)" : cboLibDrive.SelectedItem.ToString()));
             sb.AppendLine("减少动效: " + (WantReduceMotion ? "开" : "关"));
             sb.AppendLine("外观: " + Theme.ModeLabel + "（当前渲染: " + (Theme.IsDark ? "深色" : "浅色") + "）");
             sb.AppendLine("附加库目录: " + (Core.Cfg.ModDirs == null ? 0 : Core.Cfg.ModDirs.Count) + " 个");

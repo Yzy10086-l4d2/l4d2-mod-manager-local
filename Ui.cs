@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -21,15 +21,13 @@ namespace Installer
         // 同时承担「按游戏现状回填勾选」和「刷新」两个入口 —— 换机器第一件事就是看这里。
         private Section gNow;
         private Label lblNowNum, lblNowUnit, lblNowSub, lblNowState, lblNowFoot, lblNowCats;
-        private FlatButton btnNowSync, btnNowRefresh;
+        private FlatButton btnNowRefresh;
         private CheckBox chkAutoSync;
         private string nowStamp = "";             // 上一次读到游戏现状的时刻
         private int nowCatRows = 6;               // 「分类分布」这一块能放几行（按卡片高度算，放不下就截断）
         private bool logOpen;                     // 日志卡片展开（默认收起：排错才看，不该常驻）
-        private CheckBox chkL4N, chkSkeeto, chkAsset, chkMqcam, chkDxvk, chkLaunch, chkCfg, chkSwap, chkStrict;
+        private CheckBox chkLaunch, chkSwap, chkStrict;
         private RadioButton rdSkip, rdOver;
-        private ComboBox cboTweak;
-        private FlatButton btnTweak;
         private FlatButton btnLaunchEdit, btnLaunchCopy;
         private TextBox txtLaunch;
         private readonly System.Windows.Forms.Timer copyTimer = new System.Windows.Forms.Timer();
@@ -38,10 +36,12 @@ namespace Installer
         private string appliedProfile = "";
         private Section gMod, gLog, gPlat, gOpt;
         private Button btnManage;
+        private Button btnUnmatched;          // 「未识别 N 个」：打开手动分类页
         private TextBox txtSearch;
         private Button btnSaveProfile, btnApplyProfile;
         private Panel viewHost;                  // 右栏：方案树就嵌在这里
         private bool langRestart;                // 设置里切了语言：关掉自己，让 Program 重建
+        private readonly bool uiWasEn = Lang.IsEn;    // 这个窗口是用哪种语言建的：回来一比就知道要不要重建
         internal bool LangRestartRequested { get { return langRestart; } }
         internal void RequestLangRestart() { langRestart = true; }
 
@@ -206,6 +206,13 @@ namespace Installer
         }
 
         /// <summary>初始化（扫库、找游戏）跑完了没有。自测截图要等它。</summary>
+        /// <summary>光标停在列表某一行时的完整名字（显示在窗口底部状态栏）。</summary>
+        internal void HoverName(string name)
+        {
+            if (lblStatus == null) return;
+            lblStatus.Text = string.IsNullOrEmpty(name) ? "" : "▸ " + name;
+        }
+
         internal bool Ready { get { return !initializing; } }
 
         private void BeginInit()
@@ -254,7 +261,9 @@ namespace Installer
                         FillProfiles(null);
                         // 换机器第一屏：配置里一条勾选都对不上（U 盘带来的配置在别的电脑上没有同样的库），
                         // 就按游戏 addons + addonlist.txt 回填 —— 不能让 63 个已装的 MOD 显示成一排没勾。
-                        AutoSeedIfNeeded("启动");
+                        // 启动就该对齐一次：刚扫完库，把勾选按游戏里实际开着的来。
+                        // 以前只在「一条勾选都没有」时才回填，改完没保存的情况会显示旧状态。
+                        if (Core.Cfg.AutoSync) SeedChecksFromGame(true);
                         Core.Log("INFO", "启动计时: 填充列表 " + __sw2.ElapsedMilliseconds + " ms");
                         __sw2.Restart();
                         RefreshConflicts(false);          // 启动只做内存里的同名/同大小判断
@@ -411,11 +420,6 @@ namespace Installer
         private CheckBox ComponentBox(string name)
         {
             if (name == null) return null;
-            if (name.StartsWith("L4N", StringComparison.OrdinalIgnoreCase)) return chkL4N;
-            if (name.StartsWith("Skeeto", StringComparison.OrdinalIgnoreCase)) return chkSkeeto;
-            if (name.StartsWith("素材包", StringComparison.Ordinal)) return chkAsset;
-            if (name.StartsWith("MQCam", StringComparison.OrdinalIgnoreCase)) return chkMqcam;
-            if (name.StartsWith("dxvk", StringComparison.OrdinalIgnoreCase)) return chkDxvk;
             return null;
         }
 
@@ -492,8 +496,24 @@ namespace Installer
             btnSettings.Click += delegate
             {
                 ShowSettings();
-                // 语言在设置里当场落配置，但界面要重建才会变 —— 关掉自己，交给 Program 的循环
-                if (langRestart) { langRestart = false; Close(); }
+                // 语言在设置里当场落配置，但界面要重建才会变。
+                // 两条判据一起看：设置里主动打了标记，或设置回来后语言已经和建窗时不一样 ——
+                // 后者兜住「改完点取消 / 标记没打上」的情况，用户不用自己重开。
+                if (langRestart || Lang.IsEn != uiWasEn)
+                {
+                    // 以前这里是 Close()，指望 Program 的循环重建主窗口 —— 实测那条路没走通，
+                    // 用户看到的是「关掉设置，整个程序也关了」。改成自己重启一个新进程：
+                    // 配置已经落盘，新进程起来就是新语言，比原地重建稳。
+                    langRestart = false;
+                    try
+                    {
+                        Core.Cfg.Lang = Lang.IsEn ? Lang.EN : Lang.ZH;
+                        Core.SaveConfig();
+                        System.Diagnostics.Process.Start(Application.ExecutablePath);
+                    }
+                    catch (Exception ex) { Core.Log("WARN", "语言切换重启失败: " + ex.Message); }
+                    Application.Exit();
+                }
             };
             tips.SetToolTip(btnSettings, Lang.S("工作模式、动效、MOD 库目录，以及配置和日志位置。"));
             Controls.Add(btnSettings);
@@ -522,32 +542,8 @@ namespace Installer
             // 本地版不装「环境组件」（那是便携版从 U 盘组件包里复制进游戏的东西）。
             // 先把这几项藏起来，下一步连带装机逻辑一起删。
             gp.Caption = Lang.S("启动项");
-            chkL4N = AddChk(gp, Lang.S("L4N 平台（只有 MQCam 相机要用它）"), 12, 28, true, true);
-            tips.SetToolTip(chkL4N, Lang.S("L4N 不是强依赖：不装它照样能装 Skeeto / dxvk / MOD。\r\n只有 MQCam 相机要跑在它的 neko 框架里 —— 勾 MQCam 时会自动把 L4N 带上，取消 L4N 会把 MQCam 一起取消。\r\n装过一次之后再装会自动跳过（除非在下面选「覆盖重装」）。"));
-            chkSkeeto = AddChk(gp, Lang.S("Skeeto 增强框架（命中反馈 / 准星 / HUD）"), 12, 52, true, true);
-            chkAsset = AddChk(gp, Lang.S("Skeeto 素材包 177 MB"), 12, 76, true, true);
-            chkMqcam = AddChk(gp, Lang.S("MQCam 相机（F2 / F3 / F4 视角）"), 12, 100, true, true);
-            tips.SetToolTip(chkMqcam, Lang.S("相机模组要跑在 L4N 的 neko 框架里：勾它会自动把上面的 L4N 一起勾上。"));
             // L4N 和 MQCam 的依赖只在这两格之间：勾相机 → 带上平台；去掉平台 → 相机也跟着去掉
-            chkMqcam.CheckedChanged += delegate
-            {
-                if (applying || !chkMqcam.Checked || chkL4N.Checked) return;
-                chkL4N.Checked = true;
-                Log("MQCam 相机要用 L4N 的 neko 框架，已自动勾上 L4N");
-            };
-            chkL4N.CheckedChanged += delegate
-            {
-                if (applying || chkL4N.Checked || !chkMqcam.Checked) return;
-                chkMqcam.Checked = false;
-                Log("不装 L4N 的话 MQCam 也跑不起来，已把 MQCam 一起取消（要相机就两个都勾）");
-            };
-            chkDxvk = AddChk(gp, Lang.S("dxvk 防闪退（d3d9.dll）"), 12, 124, true, true);
             chkLaunch = AddChk(gp, Lang.S("写 Steam 启动项"), 12, 148, true, true);
-            chkCfg = AddChk(gp, Lang.S("写参数配置（L4N 按键 + Skeeto 设置）"), 12, 172, true, true);
-            tips.SetToolTip(chkCfg, Lang.S("从 U 盘的参数存档里取出你调好的 autoexec.cfg 和 skeeto_setting.ini，\r\n直接写进这台机器。换机器装机就不用再手调了。\r\n下面那行选套用哪一套；没有存档就退回旧做法（搬 U 盘根目录的 autoexec.cfg）。"));
-            // 本地版没有「组件包」可复制：这六项全部藏起来（下一步连装机逻辑一起删）
-            chkL4N.Visible = false; chkSkeeto.Visible = false; chkAsset.Visible = false;
-            chkMqcam.Visible = false; chkDxvk.Visible = false; chkCfg.Visible = false;
             chkLaunch.SetBounds(12, 56, leftW - 24, 22);
             Label l4 = new Label(); l4.Text = Lang.S("启动项"); l4.SetBounds(12, 30, 44, 20); Theme.Dress(l4); gp.Controls.Add(l4);
             txtLaunch = new TextBox(); txtLaunch.SetBounds(60, 28, 246, 24); Theme.Dress(txtLaunch); gp.Controls.Add(txtLaunch);
@@ -609,12 +605,6 @@ namespace Installer
 
             // 参数配置：全套管理在对话框里，外面只留「选哪套 + 还原」
             Label l7 = new Label(); l7.Text = Lang.S("参数"); l7.SetBounds(12, 110, 56, 20); Theme.Dress(l7); gOpt.Controls.Add(l7);
-            cboTweak = new ComboBox(); cboTweak.SetBounds(70, 108, 156, 24); cboTweak.DropDownStyle = ComboBoxStyle.DropDownList; Theme.Dress(cboTweak);
-            cboTweak.SelectedIndexChanged += delegate { UpdateTweakTip(); };
-            gOpt.Controls.Add(cboTweak);
-            tips.SetToolTip(cboTweak, Lang.S("装机时勾着「写参数配置」，就会把这套 autoexec.cfg + skeeto_setting.ini 推过去。"));
-            btnTweak = new FlatButton(); btnTweak.Text = Lang.S("参数配置…"); btnTweak.SetBounds(230, 106, 90, Theme.H); btnTweak.Click += delegate { ManageTweaks(); }; gOpt.Controls.Add(btnTweak);
-            tips.SetToolTip(btnTweak, Lang.S("保存这台机器调好的参数 / 套用存档 / 删除存档。"));
 
             // ---- 左栏下：日志（默认收起）----
             // 日志是排错才看的东西：常驻的话左栏一半高度都被它占着，把「装什么 / 安装选项」
@@ -681,23 +671,15 @@ namespace Installer
             lblNowState.BackColor = Color.Transparent;
             gNow.Controls.Add(lblNowState);
 
-            // 主入口：把游戏里正在用的这批填进勾选。换机器后不用一条条点。
-            btnNowSync = new FlatButton(); btnNowSync.Text = Lang.S("按游戏现状回填");
-            btnNowSync.SetBounds(12, 106, 128, 28);
-            btnNowSync.Font = Theme.UISmall;
-            btnNowSync.Click += delegate { DoSyncFromGame(); };
-            tips.SetToolTip(btnNowSync, Lang.S("读游戏 addons 目录和 left4dead2\\addonlist.txt：\r\n"
-                + "文件在 addons 里、开关是 1 的那些直接勾上，关着的保持不勾。\r\n"
-                + "只改界面上的勾选，不动游戏里的任何文件。"));
-            gNow.Controls.Add(btnNowSync);
-
-            // 游戏外面被改过（工坊订阅、手动丢 vpk、开关在游戏里调过）→ 点这里重读
-            btnNowRefresh = new FlatButton(); btnNowRefresh.Soft = true; btnNowRefresh.Text = Lang.S("刷新");
-            btnNowRefresh.SetBounds(148, 106, 68, 28);
+            // 「刷新」一个入口干两件事：重扫游戏目录 + 把勾选对齐成游戏现状。
+            // 以前拆成「按游戏现状回填」和「刷新」两个按钮，功能重叠，用户问该点哪个。
+            btnNowRefresh = new FlatButton(); btnNowRefresh.Soft = true; btnNowRefresh.Text = Lang.S("刷新游戏现状");
+            btnNowRefresh.SetBounds(12, 106, 132, 28);
             btnNowRefresh.Font = Theme.UISmall;
             btnNowRefresh.Click += delegate { DoRefreshGame(); };
-            tips.SetToolTip(btnNowRefresh, Lang.S("重新读一遍游戏 addons 和 addonlist.txt，\r\n"
-                + "工坊里新订阅的、手动拷进去的、在游戏里调过开关的，这里一刷就对上。"));
+            tips.SetToolTip(btnNowRefresh, Lang.S("重读游戏 addons 和 left4dead2\\addonlist.txt：\r\n"
+                + "新订阅 / 新拷进去的 vpk 会出现在列表里，勾选也对齐成游戏里实际开着的那些。\r\n"
+                + "只读，不动游戏里的任何文件。"));
             gNow.Controls.Add(btnNowRefresh);
 
             chkAutoSync = new CheckBox();
@@ -758,6 +740,12 @@ namespace Installer
             btnSaveProfile = new FlatButton(); btnSaveProfile.Text = Lang.S("存为方案"); btnSaveProfile.SetBounds(262, 28, 84, Theme.H); btnSaveProfile.Click += delegate { SaveProfile(); }; gm.Controls.Add(btnSaveProfile);
             btnApplyProfile = new FlatButton(); btnApplyProfile.Text = Lang.S("套用"); btnApplyProfile.SetBounds(354, 28, 58, Theme.H); btnApplyProfile.Click += delegate { ApplyProfile(); }; gm.Controls.Add(btnApplyProfile);
             tips.SetToolTip(btnApplyProfile, Lang.S("把选中的方案套用到当前勾选；如果会覆盖现有选择，会先确认。"));
+            btnUnmatched = new FlatButton();
+            btnUnmatched.Text = Lang.S("未识别 0 个");
+            btnUnmatched.SetBounds(420, 28, 120, Theme.H);
+            btnUnmatched.Click += delegate { if (treeView != null) treeView.SelectUnmatched(); };
+            tips.SetToolTip(btnUnmatched, Lang.S("程序没认出位置的 MOD 都收在这里，点开可以手动指定分类。\r\n这些不再出现在左边的树里。"));
+            gm.Controls.Add(btnUnmatched);
             btnManage = new FlatButton(); btnManage.Text = Lang.S("方案管理…"); btnManage.SetBounds(rightW - 12 - 88, 28, 88, Theme.H); btnManage.Click += delegate { ManageProfiles(); }; gm.Controls.Add(btnManage);
 
             Label l9 = new Label(); l9.Text = Lang.S("搜索"); l9.SetBounds(12, 66, 34, 20); Theme.Dress(l9); gm.Controls.Add(l9);
@@ -897,7 +885,7 @@ namespace Installer
             searchTimer.Interval = 250;
             searchTimer.Tick += delegate(object s2, EventArgs e2) { searchTimer.Stop(); RefreshMods(); };
             // 任一组件勾选变化都刷新底栏校验条（只挂一次，原来的「勾相机自动勾平台」联动不受影响）
-            foreach (CheckBox cb in new CheckBox[] { chkL4N, chkDxvk, chkSkeeto, chkAsset, chkMqcam, chkCfg, chkLaunch })
+            foreach (CheckBox cb in new CheckBox[] { chkLaunch })
                 if (cb != null) cb.CheckedChanged += delegate { QueuePrecheck(); };
             // 校验条防抖：勾选会连着变，进程枚举和路径判断不用每敲一下就做一遍
             preTimer.Interval = 220;
@@ -946,12 +934,6 @@ namespace Installer
         private int CheckedComponents()
         {
             int n = 0;
-            if (chkL4N != null && chkL4N.Checked) n++;
-            if (chkDxvk != null && chkDxvk.Checked) n++;
-            if (chkSkeeto != null && chkSkeeto.Checked) n++;
-            if (chkAsset != null && chkAsset.Checked) n++;
-            if (chkMqcam != null && chkMqcam.Checked) n++;
-            if (chkCfg != null && chkCfg.Checked) n++;
             if (chkLaunch != null && chkLaunch.Checked) n++;
             return n;
         }
@@ -1035,11 +1017,6 @@ namespace Installer
             applying = true;
             try
             {
-                chkL4N.Checked = Core.Cfg.L4N;
-                chkDxvk.Checked = Core.Cfg.Dxvk;
-                chkSkeeto.Checked = Core.Cfg.Skeeto;
-                chkAsset.Checked = Core.Cfg.AssetPack;
-                chkMqcam.Checked = Core.Cfg.Mqcam;
                 chkLaunch.Checked = Core.Cfg.Launch;
             }
             finally { applying = false; }
@@ -1048,14 +1025,11 @@ namespace Installer
             // 但全新安装的人连一个 MOD 都还没下，不该有任何默认勾选项 —— 否则 0 个 MOD
             // 点「开始装」也会顺手写 cfg。用「配置文件是否存在」区分，不靠猜。
             bool fresh = !File.Exists(Core.CfgPath);
-            bool firstTimeTweak = Core.Cfg.TweakSet.Length == 0 && Tweaks.List().Count > 0;
-            chkCfg.Checked = !fresh && (Core.Cfg.CfgFile || firstTimeTweak);
             rdSkip.Checked = !Core.Cfg.Overwrite;
             rdOver.Checked = Core.Cfg.Overwrite;
             // 本地模式没有来源库：配置里就算存着 Overwrite=true，界面也不能显示成「能覆盖」，
             // 否则用户勾着它装机、以为重写了一遍，实际 Work.CopyMods 早就按 FromGame 跳过了。
             if (Core.IsLocal) { rdOver.Checked = false; rdOver.Enabled = false; rdSkip.Checked = true; }
-            FillTweaks(Core.Cfg.TweakSet);
             foreach (string m in Core.Cfg.Mods) checkedKeys.Add(m);
             CheckRowsByKeys();
             UpdateSel();
@@ -1063,49 +1037,6 @@ namespace Installer
         }
 
         // ---------------------------------------------------------- 参数配置
-
-        /// <summary>填「参数」下拉：第一项是不套用，其余是 U 盘上的存档。</summary>
-        private void FillTweaks(string keep)
-        {
-            if (keep == null) keep = TweakName();
-            Tweaks.ImportLegacy(txtGame == null ? null : txtGame.Text.Trim());
-            cboTweak.Items.Clear();
-            cboTweak.Items.Add("不套用");
-            foreach (string n in Tweaks.List()) cboTweak.Items.Add(n);
-            int idx = 0;
-            for (int i = 1; i < cboTweak.Items.Count; i++)
-                if (string.Equals(cboTweak.Items[i].ToString(), keep, StringComparison.OrdinalIgnoreCase)) idx = i;
-            // 从没选过但有存档：默认停在第一套上，让人一眼看到"这台会写哪套参数"
-            if (idx == 0 && (keep == null || keep.Length == 0) && cboTweak.Items.Count > 1) idx = 1;
-            cboTweak.SelectedIndex = idx;
-            UpdateTweakTip();
-        }
-
-        /// <summary>当前选的存档名；空串表示不套用。</summary>
-        private string TweakName()
-        {
-            string s2 = cboTweak == null ? null : (cboTweak.SelectedItem as string);
-            if (s2 == null) return "";
-            s2 = s2.Trim();
-            // 下拉第一项的字面量就是「不套用」。之前拿它跟「(不套用)」比，永远不相等，
-            // 选「不套用」时会把字面量当成存档名，装机时反而去搬 autoexec.cfg。
-            if (s2.Length == 0 || s2 == "不套用" || s2 == "(不套用)") return "";
-            return s2;
-        }
-
-        private void SelectTweak(string name)
-        {
-            for (int i = 0; i < cboTweak.Items.Count; i++)
-                if (string.Equals(cboTweak.Items[i].ToString(), name, StringComparison.OrdinalIgnoreCase)) { cboTweak.SelectedIndex = i; return; }
-        }
-
-        private void UpdateTweakTip()
-        {
-            string n = TweakName();
-            tips.SetToolTip(cboTweak, n.Length == 0
-                ? "不套用存档。勾着「写参数配置」时会退回旧做法：搬 U 盘根目录的 autoexec.cfg。"
-                : ("装机时写入：" + Tweaks.DirOf(n)));
-        }
 
         /// <summary>启动项一行：输入框 + 复制 + 放大编辑。位置只在这里算，构建和重排共用。</summary>
         private void LayoutLaunchRow(int leftW)
@@ -1173,17 +1104,6 @@ namespace Installer
                 if (f.ShowDialog(this) != DialogResult.OK) return;
                 txtLaunch.Text = f.Result;
                 UpdateLaunchTip();
-            }
-        }
-
-        private void ManageTweaks()
-        {
-            string root = txtGame.Text.Trim();
-            using (TweakForm f = new TweakForm(root, TweakName()))
-            {
-                f.ShowDialog(this);
-                FillTweaks(f.Chosen);
-                if (f.Applied) { chkCfg.Checked = true; Log("参数配置动过了，装机时会写进这台机器"); }
             }
         }
 
@@ -1445,29 +1365,6 @@ namespace Installer
             }
         }
 
-        /// <summary>自测用：打开「参数配置」对话框并截图。</summary>
-        internal void UiTestTweaks()
-        {
-            using (TweakForm tf = new TweakForm(txtGame.Text.Trim(), TweakName()))
-            {
-                tf.StartPosition = FormStartPosition.Manual;
-                tf.Location = new System.Drawing.Point(0, 0);
-                tf.Show();
-                Application.DoEvents();
-                System.Threading.Thread.Sleep(300);
-                Application.DoEvents();
-                using (System.Drawing.Bitmap bmp = new System.Drawing.Bitmap(tf.Width, tf.Height))
-                {
-                    tf.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, tf.Width, tf.Height));
-                    bmp.Save(Path.Combine(Core.LogDir, "tweaks.png"), System.Drawing.Imaging.ImageFormat.Png);
-                }
-                string root = txtGame.Text.Trim();
-                Core.Log("INFO", "TWEAKTEST 存档 " + Tweaks.List().Count + " 套，当前选 " + TweakName()
-                    + "，存档根 " + Tweaks.Root);
-                tf.Close();
-            }
-        }
-
         /// <summary>自测用：按名字找一个套装，打开「选择部件」并截图，验证对话框排版。</summary>
         internal void UiTestParts(string name)
         {
@@ -1524,19 +1421,6 @@ namespace Installer
             }
         }
 
-        /// <summary>自测用：L4N 与 MQCam 的勾选联动（只有相机依赖平台，其他都不依赖）。</summary>
-        internal void UiTestDeps()
-        {
-            chkMqcam.Checked = false; chkL4N.Checked = false;
-            Core.Log("INFO", "DEPS 起点：L4N=" + chkL4N.Checked + " MQCam=" + chkMqcam.Checked);
-            chkMqcam.Checked = true;
-            Core.Log("INFO", "DEPS 勾 MQCam 后：L4N=" + chkL4N.Checked + "（应为 True）MQCam=" + chkMqcam.Checked);
-            chkL4N.Checked = false;
-            Core.Log("INFO", "DEPS 取消 L4N 后：MQCam=" + chkMqcam.Checked + "（应为 False）");
-            chkL4N.Checked = false; chkMqcam.Checked = false;
-            chkSkeeto.Checked = true; chkDxvk.Checked = true;
-            Core.Log("INFO", "DEPS 只装 Skeeto/dxvk、不装 L4N：L4N=" + chkL4N.Checked + " MQCam=" + chkMqcam.Checked + "（应为 False/False，L4N 不该被逼着勾上）");
-        }
 
         /// <summary>自测用：全选当前可见项并跑深度冲突检查，结果写日志。</summary>
         internal void UiTestDeep()
@@ -2074,6 +1958,11 @@ namespace Installer
             lblNowUnit.Text = Lang.S("个 MOD 正在游戏里启用");
 
             int unk = treeView == null ? 0 : treeView.Unmatched;
+            if (btnUnmatched != null)
+            {
+                btnUnmatched.Text = Lang.F("未识别 {0} 个", unk);
+                btnUnmatched.Enabled = unk > 0;
+            }
             if (g.Installed == 0)
                 lblNowSub.Text = Lang.S("游戏 addons 里还没读到 MOD");
             else
@@ -2240,18 +2129,18 @@ namespace Installer
         {
             if (scanning) { SetStatus("正在扫库，稍等一下"); return; }
             btnNowRefresh.Enabled = false;
-            btnNowSync.Enabled = false;
             try
             {
                 Core.Log("INFO", "刷新游戏现状：重读 addons 和 addonlist.txt");
                 RescanMods();                        // 整库重扫（新订阅的 vpk 这时候才进得来）
                 RefreshConflicts(true);
-                AutoSeedIfNeeded("刷新");             // 勾选是空的才回填，别把人家挑好的覆盖掉
+                RereadAddonList();
+                SeedChecksFromGame(true);             // 勾选直接对齐游戏现状（合并后的「刷新」就该这样）
+                Core.Log("OK", "刷新：重扫完成，勾选已按游戏现状对齐");
             }
             finally
             {
                 btnNowRefresh.Enabled = true;
-                btnNowSync.Enabled = true;
             }
             RefreshGameNow();
         }
@@ -3750,12 +3639,10 @@ namespace Installer
             }
             Profile p = new Profile();
             p.Name = name;
-            p.Dxvk = chkDxvk.Checked;
             p.Plat = PlatFlags();
             p.HasOpt = true;
             p.Swap = chkSwap.Checked;
             p.Overwrite = rdOver != null && rdOver.Checked;
-            p.Tweak = TweakName();
             p.Launch = txtLaunch == null ? "" : LaunchArgs.ForWrite(txtLaunch.Text);
             foreach (ModItem it in sel) p.Mods.Add(it.Key);
             ProfileStore.Save(p);                     // 同名就是覆盖，不留副本
@@ -3778,14 +3665,12 @@ namespace Installer
             }
             checkedKeys.Clear();
             foreach (string r in ok) checkedKeys.Add(r);
-            chkDxvk.Checked = p.Dxvk;
             ApplyPlatFlags(p.Plat);
             if (withOptions && p.HasOpt)
             {
                 chkSwap.Checked = p.Swap;
                 if (rdOver != null) rdOver.Checked = p.Overwrite;
                 if (rdSkip != null) rdSkip.Checked = !p.Overwrite;
-                if (cboTweak != null) SelectTweak(p.Tweak);
                 if (txtLaunch != null && !string.IsNullOrEmpty(p.Launch)) txtLaunch.Text = p.Launch;
             }
             CheckRowsByKeys();
@@ -3847,19 +3732,10 @@ namespace Installer
             if (!stored.SetEquals(checkedKeys)) return true;
             if (p.HasOpt)
             {
-                if (chkDxvk.Checked != p.Dxvk) return true;
                 if (chkSwap.Checked != p.Swap) return true;
                 if ((rdOver != null && rdOver.Checked) != p.Overwrite) return true;
-                if (!TweakMatches(p.Tweak)) return true;
             }
             return false;
-        }
-
-        private bool TweakMatches(string tweak)
-        {
-            string now = TweakName();
-            if (string.IsNullOrEmpty(tweak)) return string.IsNullOrEmpty(now);
-            return string.Equals(now, tweak, StringComparison.OrdinalIgnoreCase);
         }
 
 
@@ -3871,12 +3747,7 @@ namespace Installer
 
         private string PlatFlags()
         {
-            return "Skeeto=" + (chkSkeeto.Checked ? "1" : "0") +
-                   ";Asset=" + (chkAsset.Checked ? "1" : "0") +
-                   ";Mqcam=" + (chkMqcam.Checked ? "1" : "0") +
-                   ";Dxvk=" + (chkDxvk.Checked ? "1" : "0") +
-                   ";Launch=" + (chkLaunch.Checked ? "1" : "0") +
-                   ";Cfg=" + (chkCfg.Checked ? "1" : "0");
+            return ";Launch=" + (chkLaunch.Checked ? "1" : "0");
         }
 
         private void ApplyPlatFlags(string plat)
@@ -3889,12 +3760,7 @@ namespace Installer
                 bool on = kv[1] == "1";
                 switch (kv[0])
                 {
-                    case "Skeeto": chkSkeeto.Checked = on; break;
-                    case "Asset": chkAsset.Checked = on; break;
-                    case "Mqcam": chkMqcam.Checked = on; break;
-                    case "Dxvk": chkDxvk.Checked = on; break;
                     case "Launch": chkLaunch.Checked = on; break;
-                    case "Cfg": chkCfg.Checked = on; break;
                 }
             }
         }
@@ -3944,9 +3810,6 @@ namespace Installer
             LayoutLaunchRow(leftW);
             chkSwap.Width = Dpi.S(leftW - 24);
             chkStrict.Width = Dpi.S(leftW - 24);
-            int tweakComboW = Math.Max(120, leftW - 24 - 70 - 90 - 8);   // 70 = cboTweak 的设计左边距
-            cboTweak.Width = Dpi.S(tweakComboW);
-            btnTweak.Left = Dpi.S(70 + tweakComboW + 4);
 
             gMod.Left = Dpi.S(rightX);
             gMod.Width = Dpi.S(rightW);
@@ -4010,8 +3873,7 @@ namespace Installer
                         // 两个按钮和「刷新于 …」钉在卡片底部 —— 无论窗口多高，中间都不会留一大块白。
                         int btnTop = Math.Max(106, nowH - 62);
                         int footTop = nowH - 26;
-                        btnNowSync.Top = Dpi.S(btnTop);
-                        btnNowRefresh.Top = Dpi.S(btnTop);
+                                    btnNowRefresh.Top = Dpi.S(btnTop);
                         chkAutoSync.Top = Dpi.S(btnTop + 2);
                         lblNowFoot.Top = Dpi.S(footTop);
                         lblNowFoot.Width = Dpi.S(leftW - 24);
@@ -4048,6 +3910,7 @@ namespace Installer
             txtSearch.Width = Dpi.S(rightW - 126);
             btnClearSearch.Left = Dpi.S(rightW - 68);
             btnManage.Left = Dpi.S(rightW - 12 - 88);
+            if (btnUnmatched != null) btnUnmatched.Left = Dpi.S(rightW - 12 - 88 - 8 - 120);
 
             // 顶部：游戏目录 / 浏览 / 自动找 / 设置
             const int findW = 76;
@@ -4155,7 +4018,6 @@ namespace Installer
                 }
                 if (viewHost.Width <= 0) { bad++; Core.Log("FAIL", tag + "台面宽度算成 0"); }
                 if (txtLog.Width <= 0) { bad++; Core.Log("FAIL", tag + "日志框宽度算成 0"); }
-                if (cboTweak.Width <= 0 || btnTweak.Left + Dpi.S(90) > Dpi.S(396)) { bad++; Core.Log("FAIL", tag + "参数配置那一行排歪了"); }
 
                 // 左栏日志：默认收起（高度 0），展开后必须排在底栏之上，且不压到「安装选项」。
                 // 这条挡的是「日志又变回常驻、把左栏一半吃掉」的回归。
@@ -4769,10 +4631,25 @@ namespace Installer
 
             try
             {
+                Core.Log("INFO", "写开关：" + st.Count + " 条 → " + AddonList.FileOf(root));
                 AddonList.Write(root, st);
-                Core.Log("OK", "应用开关改动 " + st.Count + " 处（开 " + on + "、关 " + (st.Count - on)
-                    + "）：改值 " + hit + " 条、新增 " + (st.Count - hit) + " 条；"
-                    + "addonlist 原有 " + total + " 条，其余 " + untouched + " 条原样没动。");
+                // 写完立刻回读一次：文件到底有没有落成我们想要的值，别只信「写成功」。
+                // 以前出过「工具说改好了、重进又是旧状态」，没有回读就只能靠猜。
+                int bad = 0;
+                try
+                {
+                    Dictionary<string, bool> after = AddonList.Read(root);
+                    foreach (KeyValuePair<string, bool> kv in st)
+                    {
+                        bool v;
+                        if (!after.TryGetValue(kv.Key, out v) || v != kv.Value) bad++;
+                    }
+                }
+                catch (Exception exr) { Core.Log("WARN", "回读 addonlist 失败: " + exr.Message); }
+                Core.Log(bad == 0 ? "OK" : "WARN",
+                    "应用开关 " + st.Count + " 处（开 " + on + "、关 " + (st.Count - on) + "）"
+                    + "；改值 " + hit + "、新增 " + (st.Count - hit) + "；原有 " + total + " 条"
+                    + "；回读不符 " + bad + " 条；文件=" + AddonList.FileOf(root));
 
                 // 只改了开关，文件没动：直接对齐内存里的值，省一次全库重扫
                 foreach (ModGroup g in Catalog.Groups)
@@ -4832,6 +4709,8 @@ namespace Installer
                 foreach (ModGroup g in s.Items)
                     foreach (ModItem part in g.Parts)
                     {
+                        // 同一个套装里「这次没勾的部件」也要关：勾选只挑了部分部件时，
+                        // 剩下的那些以前没人管，游戏里继续开着（用户实测踩到）。
                         if (selKey.Contains(part.Key) || selName.Contains(part.Name)) continue;
                         if (!part.Installed && !part.FromGame) continue;   // 还没进游戏的，谈不上关
                         if (seen.Add(part.Name)) off.Add(part);
@@ -4851,7 +4730,7 @@ namespace Installer
             public List<ModItem> Sel = new List<ModItem>();
             /// <summary>同一位置里以前装过、这次没勾的（只翻开关写成 0，文件不动）。</summary>
             public List<ModItem> Off = new List<ModItem>();
-            public bool L4N, Dxvk, Skeeto, Asset, Mqcam, Launch, Cfg, Swap;
+            public bool Launch, Swap;
             public string LaunchVal = "";
             public string Tweak = "";
             public string AssetName;
@@ -4902,13 +4781,11 @@ namespace Installer
             // 本地版不装「环境组件」：L4N / Skeeto / 素材包 / MQCam / dxvk 全是从 U 盘组件包复制进来的东西，
             // 这个版本没有库可复制，所以这五项恒为 false（方案文件里的字段照旧读写，不破坏老方案）。
             j.Launch = chkLaunch.Checked;
-            j.Cfg = chkCfg.Checked;
             j.Swap = chkSwap.Checked;
             j.LaunchVal = LaunchArgs.ForWrite(txtLaunch.Text);
-            j.Tweak = TweakName();
             Core.StrictVerify = chkStrict.Checked;
 
-            if (!j.L4N && !j.Dxvk && !j.Skeeto && !j.Mqcam && j.Sel.Count == 0 && !j.Launch && !j.Asset && !j.Cfg)
+            if (j.Sel.Count == 0 && !j.Launch)
             {
                 QueuePrecheck();
                 SetStatus("还没选任何 MOD 或组件 · 左上「装什么」勾一项，或树上选个位置");
@@ -4947,7 +4824,7 @@ namespace Installer
                 if (it.GroupKey == null || !Catalog.GroupByKey.TryGetValue(it.GroupKey, out g)) continue;
                 if (g != null && g.Plugin != null && !pluginPacks.Contains(g.Plugin)) pluginPacks.Add(g.Plugin);
             }
-            if (pluginPacks.Count > 0 && !j.L4N)
+            if (pluginPacks.Count > 0)
             {
                 bool hasLoader = false;
                 try { hasLoader = File.Exists(Path.Combine(root, "bin\\left4neko.dll")); } catch { }
@@ -4984,15 +4861,8 @@ namespace Installer
 
             Work.Overwrite = !rdSkip.Checked;          // 所有 Install* 都读这个开关
             Core.Cfg.GameRoot = root;
-            Core.Cfg.L4N = j.L4N;
-            Core.Cfg.Dxvk = j.Dxvk;
-            Core.Cfg.Skeeto = j.Skeeto;
-            Core.Cfg.AssetPack = j.Asset;
-            Core.Cfg.Mqcam = j.Mqcam;
             Core.Cfg.Launch = j.Launch;
-            Core.Cfg.CfgFile = j.Cfg;
             Core.Cfg.Overwrite = !rdSkip.Checked;
-            Core.Cfg.TweakSet = j.Tweak;
             Core.Cfg.LaunchOptions = j.LaunchVal;
             Core.Cfg.Recent.RemoveAll(delegate(string s) { return string.Equals(s, root, StringComparison.OrdinalIgnoreCase); });
             Core.Cfg.Recent.Insert(0, root);
@@ -5010,16 +4880,28 @@ namespace Installer
             string prof = schemeName;
             if (string.IsNullOrEmpty(prof))
             {
-                MessageBox.Show(
-                    "还没有选方案，没得替换。\r\n\r\n"
-                    + "两种做法：\r\n"
-                    + "· 只换某个位置：在右边候选里点一下，立刻生效，不用这个按钮\r\n"
-                    + "· 整套换：先在左上角「方案」下拉里选一个（或「存为方案」把当前这套存下来）",
-                    "先设定方案", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
+                // 没有方案时不再一味拦死：按当前勾选这套替换，先把话说明白。
+                int n = checkedKeys.Count;
+                if (n == 0)
+                {
+                    MessageBox.Show("还没选任何 MOD。\r\n\r\n· 整套换：在树上勾好各位置，或先「存为方案」再用「替换此方案」\r\n· 只换一处：右边点一下候选，立刻生效",
+                        "没有可替换的", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                if (MessageBox.Show("还没有选方案。\r\n\r\n按当前勾选的 " + n + " 个 MOD 替换游戏里的开关吗？（同位置没勾的会被关掉）",
+                        "按当前勾选替换", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
             }
-            // 勾选可能是零散的：先对齐成这个方案，按钮说的和做的才一致
-            try { ApplyProfileByName(prof); } catch { }
+            else
+            {
+                // 勾选可能是零散的：先对齐成这个方案，按钮说的和做的才一致
+                try { ApplyProfileByName(prof); } catch { }
+            }
+
+            bool gameOn = false;
+            try { gameOn = System.Diagnostics.Process.GetProcessesByName("left4dead2").Length > 0; } catch { }
+            if (gameOn && MessageBox.Show(
+                    "游戏正在运行。\r\n\r\n开关会写进 addonlist.txt，但游戏是启动时读的：现在改，要重进游戏才生效；而且游戏退出时可能把这个文件覆盖回去。\r\n\r\n建议先退出游戏再替换。仍然继续吗？",
+                    "游戏正在运行", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
 
             // 装机期间会 DoEvents 泵消息：菜单、快捷键、桌面卡片都可能再点进来一次。
             // 第二次进来什么都不做 —— 否则两条线程同时往 addons 里写。
@@ -5041,9 +4923,7 @@ namespace Installer
 
         private void StartInstall(InstallJob j)
         {
-            j.StepTotal = (j.L4N ? 1 : 0) + (j.Dxvk ? 1 : 0) + (j.Skeeto ? 1 : 0)
-                        + (j.Asset ? 1 : 0) + (j.Cfg ? 1 : 0) + (j.Mqcam ? 1 : 0)
-                        + (j.Sel.Count > 0 ? 1 : 0) + (j.Launch ? 1 : 0);
+            j.StepTotal = (j.Sel.Count > 0 ? 1 : 0) + (j.Launch ? 1 : 0);
             j.StepDone = 0;
             Work.CancelRequested = false;
             btnCancel.Enabled = true;
@@ -5066,51 +4946,7 @@ namespace Installer
                 Core.Log("STEP", "开始写入");
                 Core.Log("INFO", Work.Overwrite ? "模式：覆盖重装（已装的也全部重写一遍）" : "模式：跳过已装（只写缺的和不一样的）");
 
-                if (j.L4N)
-                {
-                    Core.Log("STEP", "装 L4N");
-                    BeginStep(j, "正在装 L4N…");
-                    bool l4nOk = Work.InstallL4N(j.Root, delegate(int done, int total) { SetBar(total > 0 ? done * 1000 / total : 0); });
-                    if (!l4nOk) j.Failed.Add("L4N 平台");
-                    // 中途停止时 L4N 可能已经写了一部分，也记进去，让「一键还原」能清理（删前有备份）
-                    if (l4nOk || Work.CancelRequested) j.Platform.Add("L4N");
-                    if (Work.CancelRequested) j.Canceled = true;
-                }
-                if (!j.Canceled && j.Dxvk)
-                {
-                    Core.Log("STEP", "装 dxvk");
-                    BeginStep(j, "正在装 dxvk…");
-                    if (Work.InstallDxvk(j.Root)) j.Platform.Add("Dxvk");
-                    else j.Failed.Add("dxvk 防闪退");
-                    if (Work.CancelRequested) j.Canceled = true;
-                }
-                if (!j.Canceled && j.Skeeto)
-                {
-                    Core.Log("STEP", "装 Skeeto");
-                    BeginStep(j, "正在装 Skeeto…");
-                    if (Work.InstallSkeeto(j.Root)) j.Platform.Add("Skeeto");
-                    else j.Failed.Add("Skeeto 增强框架");
-                    if (Work.CancelRequested) j.Canceled = true;
-                }
-                if (!j.Canceled && j.Asset)
-                {
-                    Core.Log("STEP", "装素材包");
-                    BeginStep(j, "正在复制素材包…");
-                    j.AssetName = Work.InstallAssetPack(j.Root);
-                    if (j.AssetName == null) j.Failed.Add("Skeeto 素材包");
-                    else j.Platform.Add("Asset");
-                    if (Work.CancelRequested) j.Canceled = true;
-                }
-                if (!j.Canceled && j.Cfg) InstallCfgStep(j);
-                if (!j.Canceled && j.Mqcam)
-                {
-                    Core.Log("STEP", "装 MQCam");
-                    BeginStep(j, "正在装 MQCam…");
-                    if (Work.InstallMqcam(j.Root)) j.Platform.Add("Mqcam");
-                    else j.Failed.Add("MQCam 相机");
-                    if (Work.CancelRequested) j.Canceled = true;
-                }
-                if (!j.Canceled && (j.Sel.Count > 0 || j.Swap || j.AssetName != null))
+                if (!j.Canceled && (j.Sel.Count > 0 || j.Swap))
                     InstallModsStep(j);
                 if (!j.Canceled && j.Launch)
                 {
@@ -5148,30 +4984,6 @@ namespace Installer
                 // 不再无条件改回“就绪”：失败、部分完成、完成都应留在状态栏上，
                 // 这是用户离开安装按钮后唯一能确认结果的常驻反馈。
             }
-        }
-
-        /// <summary>参数配置：有选中的参数存档就按存档写，没有就退回搬 autoexec.cfg。</summary>
-        private void InstallCfgStep(InstallJob j)
-        {
-            if (j.Tweak.Length > 0 && Tweaks.Exists(j.Tweak))
-            {
-                Core.Log("STEP", "写参数配置「" + j.Tweak + "」");
-                BeginStep(j, "正在写参数配置…");
-                List<string> twLines;
-                string twErr = Tweaks.Apply(j.Root, j.Tweak, out twLines);
-                if (twErr != null)
-                {
-                    Core.Log("FAIL", "参数配置没写进去: " + twErr);
-                    j.Failed.Add("参数配置");
-                }
-            }
-            else
-            {
-                Core.Log("STEP", "搬 autoexec.cfg（没选参数存档，走旧做法）");
-                BeginStep(j, "正在搬 autoexec.cfg…");
-                if (!Work.InstallCfg(j.Root)) j.Failed.Add("参数配置（autoexec.cfg）");
-            }
-            if (Work.CancelRequested) j.Canceled = true;
         }
 
         /// <summary>铺 MOD：复制（失败可重试）→ 写 addonlist 开关。</summary>
@@ -5253,7 +5065,7 @@ namespace Installer
                 Core.Log("STEP", "换整套：把不在这套里的 MOD 关掉");
                 SetStatus("正在切换 MOD 开关…");
                 int onN, offN, keepN;
-                Work.SwitchAddons(j.Root, j.Sel, j.AssetName, out onN, out offN, out keepN);
+                Work.SwitchAddons(j.Root, j.Sel, null, out onN, out offN, out keepN);
                 if (j.Off.Count > 0)
                 {
                     Dictionary<string, bool> offOnly = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
@@ -5267,7 +5079,6 @@ namespace Installer
             Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (ModItem it in j.Off) st[it.Name] = false;      // 先关同位置的旧 MOD
             foreach (ModItem it in j.Sel) st[it.Name] = true;       // 选中的最后写，永远赢
-            if (j.AssetName != null) st[j.AssetName] = true;
             if (st.Count == 0) return;
             AddonList.Write(j.Root, st);
             j.SwitchesWritten = true;
@@ -5384,7 +5195,6 @@ namespace Installer
             }
             SafeBeginInvoke(delegate
             {
-                UpdateTweakTip();
                 // 装完必须重扫：状态列（已装·开 / 已装·关）是现读 addons 和 addonlist 得出的，
                 // 不重扫的话回到列表看到的还是装机前的旧状态
                 try { Core.ScanMods(); }

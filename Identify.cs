@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -94,17 +94,18 @@ namespace Installer
             {"silenced_smg",     "MAC-10"},
             {"mac-10",           "MAC-10"},
             {"mac10",            "MAC-10"},
-            {"smg",              "UZI"},         // 裸 smg = v_smg = UZI
+            {"smg_a",            "MAC-10"},        // w_smg_a / v_smg_a 是 MAC-10 的模型，必须先于泛称 smg
+            {"smg",              "UZI"},           // 裸 smg = v_smg = UZI
             {"uzi",              "UZI"},
-            {"sniper_military",  "30发军用狙"},
-            {"huntingrifle",     "15发木狙"},
-            {"hunting_rifle",    "15发木狙"},
+            {"sniper_military",  "30发连狙"},
+            {"huntingrifle",     "15发连狙"},
+            {"hunting_rifle",    "15发连狙"},
             {"sniper_scout",     "鸟狙"},
             {"sniper_awp",       "AWP"},
             {"snip_awp",         "AWP"},
             {"awp",              "AWP"},
-            {"shotgun_chrome",   "铁喷"},
-            {"shotgun_spas",     "二代连喷"},
+            {"shotgun_chrome",   "铁喷"},{"chrome",           "铁喷"},
+            {"shotgun_spas",     "二代连喷"},{"spas",             "二代连喷"},{"scattergun",       "二代连喷"},
             {"pumpshotgun",      "木喷"},
             {"autoshotgun",      "一代连喷"},
             {"shotgun",          "木喷"},        // 裸 shotgun = v_shotgun = 一代木喷的模型
@@ -393,11 +394,44 @@ namespace Installer
                     }
                 }
 
-                // 一个包里塞了好几样东西时，别只报第一个 —— 「彩色血液」被报成 Smoker 会误导
+                // 一个包里塞了好几样东西时：归「主件」，其余记成附带影响（用户 2026-11-16 定 A 方案）。
+                // 主件 = 模型出现次数最多的；次数相同保留最先命中的（表里具体型号排在泛称前）。
                 if (found.Count == 0) r.Subject = "";
-                else if (found.Count <= 2) r.Subject = string.Join("/", found.ToArray());
-                else if (r.Level == "材质") r.Subject = "";          // 材质推断本来就不准，多对象干脆不说
-                else r.Subject = found.Count + " 件";
+                else
+                {
+                    string main = found[0];
+                    if (found.Count > 1)
+                    {
+                        int best = -1;
+                        foreach (string cand in found)
+                        {
+                            int c = 0;
+                            foreach (string m in Mdls) if (Lookup(m) == cand) c++;
+                            if (c > best) { best = c; main = cand; }
+                        }
+                        List<string> extra = new List<string>();
+                        foreach (string cand in found) if (cand != main) extra.Add(cand);
+                        if (extra.Count > 0)
+                            r.Kinds = (r.Kinds.Length > 0 ? r.Kinds + "," : "") + "附带:" + string.Join("/", extra.ToArray());
+                    }
+                    r.Subject = main;
+                }
+                // 覆盖 ≥2 种特感的包（高亮、彩色、红头巾这类通用效果）：对象就叫「通用」，
+                // 否则槽位按第一个特感（Smoker）建，位置会显得很奇怪。
+                try
+                {
+                    HashSet<string> tset = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (string a in Assets)
+                    {
+                        if (a.IndexOf("models/infected/", StringComparison.OrdinalIgnoreCase) < 0
+                            && a.IndexOf("materials/models/infected/", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        for (int i = 0; i < InfectKeys.GetLength(0); i++)
+                            if (a.IndexOf(InfectKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
+                                tset.Add(InfectKeys[i, 1]);
+                    }
+                    if (tset.Count > 1) { r.Subject = "通用"; r.Key = "c:通用"; }
+                }
+                catch { }
                 return r;
             }
         }
@@ -426,8 +460,31 @@ namespace Installer
                 if (m == null) return;
                 r.Title = m.Title ?? "";
                 r.Author = m.Author ?? "";
+                GuessFromText(r, (m.Title ?? "") + " " + (m.Text ?? ""));
             }
             catch { }
+        }
+
+        /// <summary>
+        /// 最后一道兜底：包里 addoninfo 的标题/描述/标签。
+        /// 文件名经常是作者乱写的，但标题和描述里常写着「铁喷」「30连狙」这种玩家叫法。
+        /// 只在模型和路径都没判出来时用，且不覆盖已有结论。
+        /// </summary>
+        private static void GuessFromText(Result r, string text)
+        {
+            if (r == null || string.IsNullOrEmpty(text) || r.Subject.Length > 0) return;
+            string low = text.ToLowerInvariant();
+            for (int i = 0; i < AliasKeys.GetLength(0); i++)
+            {
+                string k = AliasKeys[i, 0];
+                bool hit = k.Length <= 3 && k[0] < 128
+                    ? System.Text.RegularExpressions.Regex.IsMatch(low, "(^|[^a-z0-9])" + System.Text.RegularExpressions.Regex.Escape(k) + "([^a-z0-9]|$)")
+                    : low.IndexOf(k, StringComparison.Ordinal) >= 0;
+                if (!hit) continue;
+                r.Subject = AliasKeys[i, 1];
+                if (r.Level.Length == 0) r.Level = "标题";
+                return;
+            }
         }
 
         /// <summary>压缩包里的 vpk：目录表已经在手上，标题从里面再取一次，不额外解包。</summary>
@@ -439,6 +496,7 @@ namespace Installer
                 if (m == null) return;
                 r.Title = m.Title ?? "";
                 r.Author = m.Author ?? "";
+                GuessFromText(r, (m.Title ?? "") + " " + (m.Text ?? ""));
             }
             catch { }
         }
@@ -671,7 +729,7 @@ namespace Installer
             // 文件名带版本号：改了识别规则就把版本 +1，旧缓存自动作废，不会读到过时的结论
             // 7z 补上目录表识别（v2.45）时刻意没有升版本：升一次要让整个库的 rar 重新解一遍
             // （几百个包、每个条目一次 Rar.exe），代价太大。改成在 LoadCache 里只丢掉 7z 的旧结论。
-            get { return Path.Combine(Core.LogDir, "identify-cache-v18.tsv"); }
+            get { return Path.Combine(Core.LogDir, "identify-cache-v21.tsv"); }
         }
 
         private static string PackAssets(string assets)
@@ -747,6 +805,25 @@ namespace Installer
         // ============ 内容分类：只读目录表，判"大类型" ============
         // 原则：有把握才返回 true；没把握交回目录规则（不猜）
         // 这里只问「是不是枪」，细分名字统一由 ModIdentify.Dict 那套给（Sub 不再各写一份）
+        // 标题/描述里常见的玩家叫法 → 位置。只在包内容判不出时兜底。
+        private static readonly string[,] AliasKeys = new string[,]
+        {
+            {"铁喷","铁喷","枪械","霰弹枪"},{"铬制","铁喷","枪械","霰弹枪"},
+            {"木喷","木喷","枪械","霰弹枪"},{"泵动","木喷","枪械","霰弹枪"},
+            {"连喷","一代连喷","枪械","霰弹枪"},{"spas","二代连喷","枪械","霰弹枪"},
+            {"连狙","30发连狙","枪械","狙击枪"},{"军用狙","30发连狙","枪械","狙击枪"},
+            {"猎鹿","15发连狙","枪械","狙击枪"},{"鸟狙","鸟狙","枪械","狙击枪"},{"侦察步","鸟狙","枪械","狙击枪"},
+            {"马格南","马格南","枪械","手枪"},{"沙鹰","马格南","枪械","手枪"},
+            {"ak","AK-47","枪械","步枪"},{"m16","M16","枪械","步枪"},{"sg552","sg552","枪械","步枪"},
+            {"scar","SCAR-L","枪械","步枪"},{"awp","AWP","枪械","狙击枪"},{"mp5","MP5","枪械","冲锋枪"},
+            {"m60","M60","枪械","特殊武器"},{"uzi","冲锋枪","枪械","冲锋枪"},{"乌兹","冲锋枪","枪械","冲锋枪"},
+            {"mac","MAC-10","枪械","冲锋枪"},{"消音","MAC-10","枪械","冲锋枪"},
+            {"武士刀","武士刀","近战","近战"},{"砍刀","砍刀","近战","近战"},{"撬棍","撬棍","近战","近战"},
+            {"医疗包","医疗包","药品","治疗与复活"},{"止痛药","止痛药","药品","暂时增益"},
+            {"肾上腺素","肾上腺素","药品","暂时增益"},{"电击器","电击器","药品","治疗与复活"},
+            {"燃烧瓶","燃烧瓶","投掷物","投掷物"},{"土制炸弹","土制炸弹","投掷物","投掷物"}
+        };
+
         private static readonly string[,] GunKeys = new string[,]
         {
             {"rifle_ak47","AK-47"},{"ak47","AK-47"},
@@ -759,8 +836,8 @@ namespace Installer
             {"m60","M60"},{"machinegun","M60"},
             {"sniper_awp","AWP"},{"awp","AWP"},
             {"sniper_scout","鸟狙"},{"scout","鸟狙"},
-            {"sniper_military","30发军用狙"},{"military","30发军用狙"},
-            {"huntingrifle","15发木狙"},
+            {"sniper_military","30发连狙"},{"military","30发连狙"},
+            {"huntingrifle","15发连狙"},
             {"pumpshotgun","木喷"},{"shotgun_pump","木喷"},
             {"shotgun_chrome","铁喷"},
             {"autoshotgun","一代连喷"},{"shotgun_spas","二代连喷"},{"shotgun","木喷"},
@@ -795,6 +872,15 @@ namespace Installer
             cat = ""; sub = "";
             if (ps.Count == 0) return false;
 
+            // 0) 场景：天空盒 / 地面细节贴图（不是地图本身）
+            foreach (string p in ps)
+            {
+                if (p.IndexOf("materials/skybox/", StringComparison.OrdinalIgnoreCase) >= 0)
+                { cat = "场景"; sub = "天空盒"; return true; }
+                if (p.IndexOf("materials/detail/", StringComparison.OrdinalIgnoreCase) >= 0)
+                { cat = "场景"; sub = "地面细节"; return true; }
+            }
+
             // 1) 地图：有 maps/*.bsp
             foreach (string p in ps)
                 if (p.EndsWith(".bsp", StringComparison.OrdinalIgnoreCase) && (p.StartsWith("maps/") || p.IndexOf("/maps/") >= 0))
@@ -808,6 +894,25 @@ namespace Installer
                     if (p.IndexOf(CharKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
                     { cat = "人物"; sub = CharKeys[i, 1]; return true; }
                 cat = "人物"; sub = "其他"; return true;
+            }
+
+            // 2.5) 作用于多个特感（或只改材质、没有模型）的包 → 「特感 / 通用」。
+            //      「特感高亮」「彩色高亮特感」「红头巾好爆头」这类是给所有特感用的效果，
+            //      不是替换某一个特感本体，塞进 Smoker/Witch 会让那些位置显示得很怪。
+            {
+                HashSet<string> infTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                bool infAny = false;
+                foreach (string p in ps)
+                {
+                    if (p.IndexOf("models/infected/", StringComparison.OrdinalIgnoreCase) < 0
+                        && p.IndexOf("materials/models/infected/", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    infAny = true;
+                    for (int i = 0; i < InfectKeys.GetLength(0); i++)
+                        if (p.IndexOf(InfectKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
+                            infTypes.Add(InfectKeys[i, 1]);
+                }
+                if (infAny && infTypes.Count > 1)
+                { cat = "特感"; sub = "通用"; return true; }
             }
 
             // 3) 特感：必须有 infected 的模型文件。「特感高亮」那种只改贴图的包不算 ——

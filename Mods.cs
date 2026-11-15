@@ -102,7 +102,12 @@ namespace Installer
             foreach (string raw in File.ReadAllLines(p, Encoding.Default))
             {
                 Match m = LineRe.Match(raw);
-                if (m.Success) d[m.Groups[1].Value] = (m.Groups[2].Value == "1");
+                if (!m.Success) continue;
+                string nm = m.Groups[1].Value;
+                // Steam 创意工坊订阅的条目（workshop\123.vpk）暂不归程序管：
+                // 订阅/取消订阅由 Steam 决定，混进来会显示成一堆点不动的开关。
+                if (nm.IndexOf("workshop", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                d[nm] = (m.Groups[2].Value == "1");
             }
             return d;
         }
@@ -169,7 +174,6 @@ namespace Installer
         public string Name = "";
         public DateTime Saved = DateTime.MinValue;
         public List<string> Mods = new List<string>();
-        public bool Dxvk = true;
         public string Plat = "";
         public bool HasOpt = false;      // 有 Opt= 行：才知道 换整套/覆盖/参数存档 这些选项
         public bool Swap = false;
@@ -249,8 +253,7 @@ namespace Installer
             foreach (string raw in lines)
             {
                 string s = raw.Trim();
-                if (s.StartsWith("Dxvk=")) p.Dxvk = (s.Substring(5) == "1");
-                else if (s.StartsWith("Plat=")) p.Plat = s.Substring(5);
+                if (s.StartsWith("Plat=")) p.Plat = s.Substring(5);
                 else if (s.StartsWith("Mod=")) p.Mods.Add(s.Substring(4));
                 else if (s.StartsWith("Launch=")) p.Launch = s.Substring(7);
                 else if (s.StartsWith("SelfTest=")) p.SelfTest = s.Substring(9);
@@ -279,7 +282,6 @@ namespace Installer
             string f = Path.Combine(d, p.Name + ".txt");
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("# 方案 " + p.Name + "  " + DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
-            sb.AppendLine("Dxvk=" + (p.Dxvk ? "1" : "0"));
             if (!string.IsNullOrEmpty(p.Plat)) sb.AppendLine("Plat=" + p.Plat);
             if (p.HasOpt)
             {
@@ -672,6 +674,8 @@ namespace Installer
             public bool Readable;           // 内容读出来了（在分卷里 / 坏包时为 false）
             public string Title = "";
             public string Author = "";
+            /// <summary>addoninfo.txt 全文（标题、描述、标签都在里面）。识别兜底用：作者常把枪名写进描述。</summary>
+            public string Text = "";
         }
 
         /// <summary>
@@ -759,6 +763,7 @@ namespace Installer
             string text = DecodeText(raw);
             meta.Title = CleanField(InfoField(text, "addontitle"));
             meta.Author = CleanField(InfoField(text, "addonauthor"));
+            meta.Text = text != null && text.Length > 4000 ? text.Substring(0, 4000) : (text ?? "");
         }
 
         /// <summary>

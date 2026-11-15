@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -51,16 +51,10 @@ namespace Installer
         public string LastRun = "";
         // 组件默认全不勾：单 exe 下载的新人只想装一个 MOD，不该一点「开始装」就顺带
         // 铺进去约 580MB 平台组件。要用的人自己勾；老配置里写过 True 的仍按配置回填。
-        public bool L4N = false;
-        public bool Skeeto = false;
-        public bool AssetPack = false;
-        public bool Mqcam = false;
-        public bool Dxvk = false;
         public bool Launch = false;         // 默认不写 Steam 启动项：单 exe 下载的新手根本不知道这项在改他的 localconfig.vdf
         public string LaunchOptions = LaunchArgs.Default;   // 默认值只在 Launch.cs 里写一次
         public bool CfgFile = false;        // 新人首装不默认写 cfg；老配置里写过 True 的照旧
         public bool Overwrite = false;      // false = 已装的跳过；true = 全部重装一遍
-        public string TweakSet = "";        // 套用哪套参数存档（空 = 不套）
         public bool ReduceMotion = false;   // true = 关闭轻量过渡，直接显示最终状态
         public bool DpiAware = true;        // true = 自己按 DPI 缩放界面（高 DPI 下不再模糊）；false = 老样子交给系统拉伸
         public string Mode = "local";       // 工作模式：local = 游戏目录 addons 当库（默认，单 exe 下载的人只有这一种）；usb = 拿 U 盘去装机
@@ -80,6 +74,7 @@ namespace Installer
         public List<string> ModDirs = new List<string>();   // 额外的 MOD 库文件夹（任意电脑上的任意目录）
         public List<string> Recent = new List<string>();
         public List<string> Mods = new List<string>();
+        public List<string> MultiSlots = new List<string>();   // 允许同时开多个 MOD 的位置 key
     }
 
     public static class Core
@@ -534,11 +529,6 @@ namespace Installer
                     string v = s.Substring(eq + 1).Trim();
                     if (k == "GameRoot") Cfg.GameRoot = v;
                     else if (k == "LastRun") Cfg.LastRun = v;
-                    else if (k == "L4N") Cfg.L4N = (v == "1");
-                    else if (k == "Skeeto") Cfg.Skeeto = (v == "1");
-                    else if (k == "AssetPack") Cfg.AssetPack = (v == "1");
-                    else if (k == "Mqcam") Cfg.Mqcam = (v == "1");
-                    else if (k == "Dxvk") Cfg.Dxvk = (v == "1");
                     else if (k == "Launch") Cfg.Launch = (v == "1");
                     else if (k == "LaunchOptions")
                     {
@@ -553,7 +543,6 @@ namespace Installer
                     }
                     else if (k == "CfgFile") Cfg.CfgFile = (v == "1");
                     else if (k == "Overwrite") Cfg.Overwrite = (v == "1");
-                    else if (k == "TweakSet") Cfg.TweakSet = v;
                     else if (k == "ReduceMotion") Cfg.ReduceMotion = (v == "1");
                     else if (k == "DpiAware") Cfg.DpiAware = (v != "0");
                     else if (k == "Mode") Cfg.Mode = v;
@@ -567,6 +556,7 @@ namespace Installer
                     else if (k == "ModDir") Cfg.ModDirs.Add(v);
                     else if (k == "Recent") Cfg.Recent.Add(v);
                     else if (k.StartsWith("Mod:")) Cfg.Mods.Add(k.Substring(4));
+            else if (k.StartsWith("Multi:")) Cfg.MultiSlots.Add(k.Substring(6));
                 }
             }
             catch { }
@@ -583,16 +573,10 @@ namespace Installer
                 sb.AppendLine("GameRoot=" + Cfg.GameRoot);
                 sb.AppendLine("LastRun=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                 sb.AppendLine("[platform]");
-                sb.AppendLine("L4N=" + (Cfg.L4N ? "1" : "0"));
-                sb.AppendLine("Skeeto=" + (Cfg.Skeeto ? "1" : "0"));
-                sb.AppendLine("AssetPack=" + (Cfg.AssetPack ? "1" : "0"));
-                sb.AppendLine("Mqcam=" + (Cfg.Mqcam ? "1" : "0"));
-                sb.AppendLine("Dxvk=" + (Cfg.Dxvk ? "1" : "0"));
                 sb.AppendLine("Launch=" + (Cfg.Launch ? "1" : "0"));
                 sb.AppendLine("LaunchOptions=" + Cfg.LaunchOptions);
                 sb.AppendLine("CfgFile=" + (Cfg.CfgFile ? "1" : "0"));
                 sb.AppendLine("Overwrite=" + (Cfg.Overwrite ? "1" : "0"));
-                sb.AppendLine("TweakSet=" + Cfg.TweakSet);
                 sb.AppendLine("ReduceMotion=" + (Cfg.ReduceMotion ? "1" : "0"));
                 sb.AppendLine("DpiAware=" + (Cfg.DpiAware ? "1" : "0"));
                 sb.AppendLine("Mode=" + (ModeLock ?? Cfg.Mode));
@@ -607,6 +591,7 @@ namespace Installer
                 foreach (string rp in Cfg.Recent) sb.AppendLine("Recent=" + rp);
                 sb.AppendLine("[mods]");
                 foreach (string m in Cfg.Mods) sb.AppendLine("Mod:" + m + "=1");
+                foreach (string m in Cfg.MultiSlots) sb.AppendLine("Multi:" + m + "=1");
                 WriteAllTextAtomic(CfgPath, sb.ToString(), new UTF8Encoding(true));
             }
             catch (Exception ex) { Log("WARN", "配置写不进去: " + ex.Message); }

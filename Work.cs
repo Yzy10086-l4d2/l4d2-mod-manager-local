@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -127,42 +127,6 @@ namespace Installer
             public bool Cancelled;
         }
 
-        public static bool InstallL4N(string gameRoot, Action<int, int> progress)
-        {
-            string zip = Core.FirstFile(Core.PkgRoot, "L4N_v*.zip");
-            string dir = Path.Combine(Core.PkgRoot, "L4N平台\\L4N");
-            try
-            {
-                CopyStat st;
-                if (zip != null)
-                {
-                    string tmp = Path.Combine(Path.GetTempPath(), "l4n_" + DateTime.Now.Ticks);
-                    Core.Log("INFO", "解压 " + Path.GetFileName(zip) + " …");
-                    Unzip(zip, tmp);
-                    string payload = ResolvePayloadRoot(tmp);
-                    Core.Log("INFO", "解压到: " + tmp + "  实际内容根: " + payload);
-                    st = CopyPayloadWithProgress(payload, gameRoot, progress);
-                    try { Directory.Delete(tmp, true); } catch { }
-                }
-                else
-                {
-                    Core.Log("INFO", "用解压好的 L4N平台\\L4N 覆盖");
-                    st = CopyPayloadWithProgress(dir, gameRoot, progress);
-                }
-                string dll = Path.Combine(gameRoot, "bin\\left4neko.dll");
-                bool has = File.Exists(dll);
-                // 光看「文件在不在」等于没判：覆盖重装时它本来就在，写失败了也照样算成功。
-                // 现在要求：核心文件在 + 这一次没有一个文件复制失败 + 没被用户中途停掉。
-                bool ok = has && st.Failed == 0 && !st.Cancelled;
-                if (ok) Core.Log("OK", "L4N 核心 bin\\left4neko.dll 到位（写入 " + st.Written + " 个，跳过 " + st.Skipped + " 个）");
-                else if (!has) Core.Log("FAIL", "没看到 bin\\left4neko.dll");
-                else if (st.Cancelled) Core.Log("FAIL", "已停止：L4N 只写了一部分，算没装完");
-                else Core.Log("FAIL", "L4N 有 " + st.Failed + " 个文件没写进去（游戏多半还开着），算没装好");
-                return ok;
-            }
-            catch (Exception ex) { Core.Log("FAIL", "L4N 装失败: " + ex.Message); return false; }
-        }
-
         private static CopyStat CopyPayloadWithProgress(string payload, string gameRoot, Action<int, int> progress)
         {
             CopyStat st = new CopyStat();
@@ -191,99 +155,7 @@ namespace Installer
         }
 
         // ---------- dxvk ----------
-        public static bool InstallDxvk(string gameRoot)
-        {
-            try
-            {
-                string srcDir = Path.Combine(Core.PkgRoot, "防闪退");
-                foreach (string n in new string[] { "d3d9.dll", "dxvk.conf" })
-                {
-                    string s = Path.Combine(srcDir, n);
-                    string d = Path.Combine(gameRoot, n);
-                    if (!File.Exists(s)) { Core.Log("FAIL", "缺 " + s); return false; }
-                    File.Copy(s, d, true);
-                    if (new FileInfo(d).Length != new FileInfo(s).Length) { Core.Log("FAIL", n + " 大小不对"); return false; }
-                    Core.Log("OK", n + " 到位");
-                }
-                return true;
-            }
-            catch (Exception ex) { Core.Log("FAIL", "dxvk 失败: " + ex.Message); return false; }
-        }
-
         // ---------- Skeeto ----------
-        public static bool InstallSkeeto(string gameRoot)
-        {
-            string ps1 = Path.Combine(Core.PkgRoot, "Skeeto\\Skeeto\\Skeeto\\Maintain.ps1");
-            string dir = Path.Combine(Core.PkgRoot, "Skeeto\\Skeeto");
-            string dll = Path.Combine(gameRoot, "skeeto.dll");
-            bool already = File.Exists(dll);
-            if (already && !Overwrite)
-            {
-                Core.Log("OK", "Skeeto 已经装过（skeeto.dll 在），跳过。想重装就在「安装选项」里选「覆盖重装」。");
-                if (!File.Exists(Path.Combine(gameRoot, "bin\\wininet.dll")))
-                    Core.Log("WARN", "bin\\wininet.dll 不见了 —— 勾「覆盖重装」能把平台文件补回来");
-                return true;
-            }
-
-            // 覆盖模式下 skeeto.dll 本来就在，光看「文件在不在」永远算成功：
-            // 安装器一次都没写成，也会被记成「又完整装了一遍」。装之前先记一份基线。
-            long baseLen = 0;
-            DateTime baseTime = DateTime.MinValue;
-            if (already)
-            {
-                try { FileInfo bf = new FileInfo(dll); baseLen = bf.Length; baseTime = bf.LastWriteTimeUtc; }
-                catch { }
-            }
-
-            bool wrote = false;
-            if (File.Exists(ps1))
-            {
-                foreach (string mode in new string[] { "Migrate", "Apply" })
-                {
-                    if (wrote) break;
-                    Core.Log("INFO", "调用 Skeeto 官方安装器（" + mode + "）…");
-                    string output = RunCapture("powershell.exe",
-                        "-NoLogo -NoProfile -ExecutionPolicy Bypass -File \"" + ps1 + "\" -Mode " + mode +
-                        " -GameRoot \"" + gameRoot + "\" -PayloadRoot \"" + dir + "\" -NonInteractive",
-                        dir, 240000);
-                    foreach (string line in output.Split('\n'))
-                    {
-                        string s2 = line.Trim();
-                        if (s2.Length > 0) Core.Log("INFO", "  | " + s2);
-                    }
-                    wrote = SkeetoWritten(dll, already, baseLen, baseTime);
-                    if (wrote)
-                        Core.Log("OK", mode + " 跑完，skeeto.dll "
-                            + (already ? "已重写（" + Core.Human(baseLen) + " → " + Core.Human(new FileInfo(dll).Length) + "）" : "到位"));
-                    else
-                        Core.Log("WARN", mode + " 跑完但 skeeto.dll "
-                            + (File.Exists(dll) ? "和装之前一模一样，也和包里那份对不上" : "还是没有"));
-                }
-            }
-            if (!wrote)
-            {
-                Core.Log("WARN", "改用整包复制 Skeeto");
-                try { CopyTree(dir, gameRoot, null); } catch (Exception ex) { Core.Log("FAIL", "Skeeto 复制失败: " + ex.Message); }
-                wrote = SkeetoWritten(dll, already, baseLen, baseTime);
-            }
-
-            if (!File.Exists(dll))
-            {
-                Core.Log("FAIL", "没看到 skeeto.dll");
-                return false;
-            }
-            if (already && !wrote)
-            {
-                // 装之前就在、装完还是那份 —— 这次覆盖重装等于没做，不能报成功
-                Core.Log("FAIL", "Skeeto 没装成功：skeeto.dll 还是装之前那份（" + Core.Human(baseLen) + "）");
-                return false;
-            }
-            Core.Log("OK", already ? "skeeto.dll 与包里那份一致（这次没有重写）" : "skeeto.dll 到位");
-            if (File.Exists(Path.Combine(gameRoot, "bin\\wininet.dll"))) Core.Log("OK", "bin\\wininet.dll（代理）到位");
-            else Core.Log("WARN", "没看到 bin\\wininet.dll，Skeeto 可能不会加载");
-            return true;
-        }
-
         /// <summary>
         /// skeeto.dll 这次是不是真的到位：本来没有 → 在就行；
         /// 本来就有（覆盖重装）→ 要么大小/时间变了，要么内容已经和包里那份一致。
@@ -315,22 +187,6 @@ namespace Installer
         }
 
         // ---------- 素材包 ----------
-        public static string InstallAssetPack(string gameRoot)
-        {
-            string vpk = Core.FirstFile(Path.Combine(Core.PkgRoot, "Skeeto\\素材包"), "*.vpk");
-            if (vpk == null) { Core.Log("FAIL", "找不到素材包 vpk"); return null; }
-            string addons = Path.Combine(Path.Combine(gameRoot, "left4dead2"), "addons");
-            if (!Directory.Exists(addons)) Directory.CreateDirectory(addons);
-            string dst = Path.Combine(addons, Path.GetFileName(vpk));
-            long len = new FileInfo(vpk).Length;
-            if (!Overwrite && Core.SameFile(vpk, dst)) { Core.Log("OK", "素材包已存在且大小一致，跳过"); return Path.GetFileName(vpk); }
-            Core.Log("INFO", "复制素材包 " + Core.Human(len) + " …");
-            Core.CopyOne(vpk, dst);
-            if (new FileInfo(dst).Length != len) { Core.Log("FAIL", "素材包大小不对"); return null; }
-            Core.Log("OK", "素材包到位（" + Core.Human(len) + "）");
-            return Path.GetFileName(vpk);
-        }
-
         // ---------- autoexec.cfg ----------
         public static bool InstallCfg(string gameRoot)
         {

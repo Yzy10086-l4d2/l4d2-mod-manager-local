@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -94,7 +94,6 @@ namespace Installer
             bool deskLaunch = false;
             string uiFix = null;
             string uiParts = null;
-            string uiTweaks = null;
             bool uiLaunch = false;
             bool uiCopy = false;
             bool uiPaint = false;
@@ -170,7 +169,6 @@ namespace Installer
                 else if (string.Equals(a, "--desklaunch", StringComparison.OrdinalIgnoreCase)) { deskLaunch = true; uiTest = true; }
                 else if (a.StartsWith("--uifix=", StringComparison.OrdinalIgnoreCase)) uiFix = a.Substring(8).Trim('"');
                 else if (a.StartsWith("--parts=", StringComparison.OrdinalIgnoreCase)) uiParts = a.Substring(8);
-                else if (string.Equals(a, "--tweaks", StringComparison.OrdinalIgnoreCase)) uiTweaks = "1";
                 else if (string.Equals(a, "--launch", StringComparison.OrdinalIgnoreCase)) uiLaunch = true;
                 else if (string.Equals(a, "--copy", StringComparison.OrdinalIgnoreCase)) { uiCopy = true; uiTest = true; }
                 else if (string.Equals(a, "--uipaint", StringComparison.OrdinalIgnoreCase)) { uiPaint = true; uiTest = true; }
@@ -337,12 +335,6 @@ namespace Installer
             {
                 // 真实库 → 假游戏目录：完整走一遍装插件 / 写记录 / 一键还原
                 int bad = Work.PluginRoundTrip(plugTry);
-                return bad == 0 ? 0 : 1;
-            }
-            if (tweakSelf)
-            {
-                int bad = Tweaks.SelfTest();
-                Console.WriteLine("tweakself failures = " + bad);
                 return bad == 0 ? 0 : 1;
             }
             if (addonSelf)
@@ -525,7 +517,6 @@ namespace Installer
                         return bad == 0 ? 0 : 1;
                     }
                     if (uiParts != null) { f.UiTestParts(uiParts); System.Windows.Forms.Application.DoEvents(); }
-                    if (uiTweaks != null) { f.UiTestTweaks(); System.Windows.Forms.Application.DoEvents(); }
                     if (uiCopy)
                     {
                         // 一键复制回归：只碰剪贴板，不动配置和游戏目录。失败条数当退出码。
@@ -536,7 +527,6 @@ namespace Installer
                     }
                     if (uiLaunch) { f.UiTestLaunch(); System.Windows.Forms.Application.DoEvents(); }
                     if (uiDup) { f.UiTestDup(); System.Windows.Forms.Application.DoEvents(); }
-                    if (uiDeps) { f.UiTestDeps(); System.Windows.Forms.Application.DoEvents(); }
                     // --logopen 单独就能生效：截图要看「日志展开时左栏怎么排」，不该非得先进抽屉自检
                     if (uiLogOpen && !uiDrawer) { f.SetLogOpen(true); System.Windows.Forms.Application.DoEvents(); }
                     if (mapShot) { f.OverviewShot(); System.Windows.Forms.Application.DoEvents(); return 0; }

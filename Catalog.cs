@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -611,9 +611,12 @@ namespace Installer
                     }
                     else Core.Log("WARN", "MOD 主库不存在: " + Core.ModRoot + "（可在设置里换盘，或用「库文件夹管理…」添加目录）");
 
-                    // 2) 自设的库文件夹：只在 U 盘模式生效，整棵树都扫
-                    foreach (string d in Core.Cfg.ModDirs) CollectDir(d, vpkFiles, arcs);
                 }
+
+                // 2) 自设的库文件夹：只在便携版扫。本地版的设计是「只看游戏 addons」，
+                //    不读 U 盘库（要归类库里的包，用独立的归类采集工具）。
+                if (!Core.IsLocal)
+                    foreach (string d in Core.Cfg.ModDirs) CollectDir(d, vpkFiles, arcs);
 
                 // 附加库目录允许和主库重叠（只挡了完全相同的路径），同一个文件会被收两遍、
                 // 列表里多出一条同名项。这里按完整路径去重，收两遍也只算一次。
@@ -799,6 +802,15 @@ namespace Installer
                         if (dup) { merged++; continue; }   // 同一份，省掉识别、也不再重复显示
                     }
                 }
+                // 本地版：游戏 addons 里已有同一份（同名同大小），库里的那条就不再单独列，
+                // 否则列表里会成对出现「一样的包，一个能开关、一个显示 —」，看着像没去重。
+                if (Core.IsLocal)
+                    Core.ModList.RemoveAll(delegate(ModItem m)
+                    {
+                        return !m.FromGame && m.Size == it.Size
+                            && string.Equals(m.Name, it.Name, StringComparison.OrdinalIgnoreCase);
+                    });
+
                 Classify(it);
                 ModIdentify.Result ir = ModIdentify.AnalyzeCached(it.RelPath, f);
                 it.Subject = ir.Subject;
@@ -1123,6 +1135,7 @@ namespace Installer
             contentFacts.Clear();
             Groups.Clear();
             GroupByKey.Clear();
+            _usedTitles.Clear();
             Dictionary<string, List<ModItem>> buckets = new Dictionary<string, List<ModItem>>(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, string> names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (ModItem it in Core.ModList)
@@ -1138,7 +1151,8 @@ namespace Installer
             {
                 System.Diagnostics.Stopwatch bsw = System.Diagnostics.Stopwatch.StartNew();
                 foreach (List<ModItem> c in Cluster(kv.Value, names[kv.Key]))
-                    MakeGroup(c);
+                    foreach (List<ModItem> part in SplitByGun(c))
+                        MakeGroup(part);
                 // 单桶超过 300ms 要点名：两两比对是 O(n²)，一个坏桶能拖住整次启动
                 if (bsw.ElapsedMilliseconds > 300)
                     Core.Log("INFO", "归组慢桶: 「" + kv.Key + "」" + kv.Value.Count + " 项，" + bsw.ElapsedMilliseconds + " ms");
@@ -1239,6 +1253,50 @@ namespace Installer
             });
         }
 
+        /// <summary>
+        /// 一个组里混进了两把不同的枪就拆开：实测 RAM7(MAC-10) 和 USS9(UZI) 被名字相似规则
+        /// 顺着中间的音频件串成了一套，结果 MAC-10 那栏里找不到它。空型号的附件跟着名字最像的那组走。
+        /// </summary>
+        static List<List<ModItem>> SplitByGun(List<ModItem> c)
+        {
+            List<List<ModItem>> one = new List<List<ModItem>>();
+            if (c == null || c.Count < 2) { if (c != null) one.Add(c); return one; }
+            HashSet<string> guns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (ModItem it in c)
+            {
+                string g = (it.SubjectKey ?? "").Trim();
+                if (g.Length > 0) guns.Add(g);
+            }
+            if (guns.Count <= 1) { one.Add(c); return one; }
+
+            Dictionary<string, List<ModItem>> byGun = new Dictionary<string, List<ModItem>>(StringComparer.OrdinalIgnoreCase);
+            List<ModItem> loose = new List<ModItem>();
+            foreach (ModItem it in c)
+            {
+                string g = (it.SubjectKey ?? "").Trim();
+                if (g.Length == 0) { loose.Add(it); continue; }
+                if (!byGun.ContainsKey(g)) byGun[g] = new List<ModItem>();
+                byGun[g].Add(it);
+            }
+            foreach (ModItem it in loose)
+            {
+                string nm = Norm(Path.GetFileNameWithoutExtension(it.Name));
+                string best = null; int bestScore = -1;
+                foreach (KeyValuePair<string, List<ModItem>> kv in byGun)
+                {
+                    string pn = Norm(Path.GetFileNameWithoutExtension(kv.Value[0].Name));
+                    int sc = 0, m = Math.Min(nm.Length, pn.Length);
+                    for (int i = 0; i < m; i++) { if (nm[i] != pn[i]) break; sc++; }
+                    if (sc > bestScore) { bestScore = sc; best = kv.Key; }
+                }
+                if (best == null) { one.Add(c); return one; }
+                byGun[best].Add(it);
+            }
+            Core.Log("INFO", "SPLIT 按型号拆组：原 " + c.Count + " 件 → " + byGun.Count + " 组（" + string.Join("、", new List<string>(guns).ToArray()) + "）");
+            foreach (KeyValuePair<string, List<ModItem>> kv in byGun) one.Add(kv.Value);
+            return one;
+        }
+
         static void BucketOf(ModItem it, out string key, out string name)
         {
             if (!it.IsArchive)
@@ -1294,16 +1352,28 @@ namespace Installer
                 foreach (ModItem it in items)
                     if (Similar(bn, Norm(Path.GetFileNameWithoutExtension(it.Name)))) { namedFolder = true; break; }
                 if (namedFolder && FolderCompatible(items))
+                {
                     for (int i = 1; i < n; i++) Union(p, 0, i);
+                }
             }
 
             // 第二遍：名称规则仅作兼容兜底。名字已经强匹配时，个别部件识别成相邻型号不阻止归组。
             for (int i = 0; i < n; i++)
                 for (int j = i + 1; j < n; j++)
                 {
+                    // 先看是不是两把不同的枪：识别出来的型号不同（silenced_smg vs smg），
+                    // 名字再像也不能并 —— 实测把 RAM7(MAC-10) 和 USS9(UZI) 并成了一套，
+                    // 结果 MAC-10 那栏里根本找不到这个 MOD。
+                    string ga = (items[i].SubjectKey ?? "").Trim();
+                    string gb = (items[j].SubjectKey ?? "").Trim();
+                    if (ga.Length > 0 && gb.Length > 0 && !string.Equals(ga, gb, StringComparison.OrdinalIgnoreCase))
+                        continue;
                     string a = Norm(Path.GetFileNameWithoutExtension(items[i].Name));
                     string b = Norm(Path.GetFileNameWithoutExtension(items[j].Name));
-                    if (Similar(a, b)) Union(p, i, j);
+                    if (Similar(a, b))
+                    {
+                        Union(p, i, j);
+                    }
                 }
             Dictionary<int, List<ModItem>> map = new Dictionary<int, List<ModItem>>();
             for (int i = 0; i < n; i++)
@@ -1458,6 +1528,9 @@ namespace Installer
             return s.ToLowerInvariant();
         }
 
+        /// <summary>本次归组里已经用掉的标题（大类+小分类+标题），防止两行同名。</summary>
+        static readonly HashSet<string> _usedTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         static void MakeGroup(List<ModItem> parts)
         {
             ModGroup g = new ModGroup();
@@ -1496,6 +1569,19 @@ namespace Installer
             if (parts.Count == 1) baseName = CleanName(parts[0].Name);
             else baseName = SetName(parts);
             g.Name = baseName.Length > 0 ? baseName : Path.GetFileNameWithoutExtension(parts[0].Name);
+            // 包内 addoninfo.txt 里通常写着作者给的中文名（「RAM7 星月夜」这种），
+            // 比文件名 shu_weapon_xxx 好认，优先用它；读不到才退回文件名。
+            {
+                ModItem gm0 = g.Main;
+                string title = gm0 == null ? "" : (gm0.AddonTitle ?? "").Trim();
+                if (title.Length >= 2 && title.Length <= 60)
+                {
+                    // 同一大类里已经有同名标题就不用它：作者常把同一套的两个包写成同一个标题，
+                    // 直接显示会出现两行一模一样的名字（用户看到「这两个应该是一个 mod」）。
+                    string tag2 = g.Cat + "\u0001" + g.Sub + "\u0001" + title;
+                    if (_usedTitles.Add(tag2)) g.Name = title;
+                }
+            }
 
             ModItem main = g.Main;
             if (main != null) { g.Subject = main.Subject; g.SubjectLevel = main.SubjectLevel; }
