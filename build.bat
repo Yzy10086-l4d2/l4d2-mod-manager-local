@@ -26,9 +26,15 @@ if %N%==0 (
 )
 echo [i] compiling %N% source files
 
-"%CSC%" /nologo /codepage:65001 /target:winexe /optimize+ /out:"%OUT%" ^
+set "ICONARG="
+if exist "%~dp0app.ico" set "ICONARG=/win32icon:"%~dp0app.ico""
+
+"%CSC%" /nologo /codepage:65001 /target:winexe /optimize+ /out:"%OUT%" %ICONARG% ^
   /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll ^
   /reference:System.Windows.Forms.dll ^
+  /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll ^
+  /resource:"%~dp0desk\index.html",desk.html ^
+  /resource:"%~dp0desk\three.min.js",three.js ^
   %SRCS%
 if errorlevel 1 (
   echo.
