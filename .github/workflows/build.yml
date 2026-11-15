@@ -26,8 +26,8 @@ jobs:
           $bad = 0
           foreach ($f in $flags) {
             Write-Output "=== --$f ==="
-            & .\L4D2LocalSetup.exe "--$f"
-            if ($LASTEXITCODE -ne 0) { Write-Output "FAILED: --$f (exit $LASTEXITCODE)"; $bad++ }
+            $p = Start-Process -FilePath ".\L4D2LocalSetup.exe" -ArgumentList "--$f" -Wait -PassThru -NoNewWindow
+            if ($p.ExitCode -ne 0) { Write-Output "FAILED: --$f (exit $($p.ExitCode))"; $bad++ }
           }
           if ($bad -gt 0) { throw "$bad self-test group(s) failed" }
 
