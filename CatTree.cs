@@ -1081,10 +1081,18 @@ namespace Installer
             lv.ItemDrag += delegate(object s, ItemDragEventArgs e)
             {
                 if (selKey != "#unmatched") return;
+                // 多选一起拖：三个五个不用逐个来回
+                List<ModGroup> picked = new List<ModGroup>();
+                foreach (ListViewItem it in lv.SelectedItems)
+                {
+                    ModGroup gi = it.Tag as ModGroup;
+                    if (gi != null && !picked.Contains(gi)) picked.Add(gi);
+                }
                 ListViewItem li = e.Item as ListViewItem;
-                ModGroup g = li == null ? null : (li.Tag as ModGroup);
-                if (g == null) return;
-                lv.DoDragDrop(g, DragDropEffects.Move);
+                ModGroup g0 = li == null ? null : (li.Tag as ModGroup);
+                if (picked.Count == 0 && g0 != null) picked.Add(g0);
+                if (picked.Count == 0) return;
+                lv.DoDragDrop(picked, DragDropEffects.Move);
             };
             // 拖动期间光标换形状：能放 = 四向移动箭头，不能放 = 禁止圈。
             // 系统默认的「拖动」光标太不明显，用户不知道已经开始拖了 —— GiveFeedback 在源头控制，
@@ -1942,7 +1950,16 @@ namespace Installer
                     Core.Log("OK", "拖拽归类: " + g.Name + " → 分支「" + s.Name + "」");
                     return;
                 }
-                if (s.Pile) { lblFoot.Text = Lang.S("「一堆」收的是叠装（地图 / 喷漆），拖不进去"); return; }
+                if (s.Pile)
+                {
+                    // 地图 / 喷漆这类「一堆」：判定按大类收，归到这一堆就够了，不占具体位置
+                    mf.ApplyCatAssign(g, s.Cat, "");
+                    Rebuild();
+                    if (Unmatched > 0) SelectUnmatched(); else GoSlot(s.Key);
+                    lblFoot.Text = "「" + g.Name + "」已归到「" + s.Cat + "」";
+                    Core.Log("OK", "拖拽归类: " + g.Name + " → " + s.Cat + "（一堆）");
+                    return;
+                }
                 mf.ApplyCatAssign(g, s.Cat, s.Name);
                 Rebuild();
                 // 还有没归类的就留在这一页继续分，别跳到目标位置 —— 以前一跳，列表看起来就"空了"
@@ -1961,6 +1978,46 @@ namespace Installer
             for (int i = 0; i < body.RowCount; i++)
                 if (body.RowIsCat(i) && body.RowCat(i) == cat) { body.ScrollToRow(i); break; }
             lblFoot.Text = "「" + g.Name + "」已归到「" + cat + "」（位置仍按识别结果）";
+        }
+
+        /// <summary>多选批量拖：逐个套用同一个落点，最后只重建一次、只报一句总数。</summary>
+        internal void DropModsOn(List<ModGroup> gs, TreeRow r)
+        {
+            if (gs == null || gs.Count == 0 || r == null) return;
+            if (gs.Count == 1) { DropModOn(gs[0], r); return; }
+
+            if (r.Slot != null)
+            {
+                Slot s = r.Slot;
+                if (IsBranchSlot(s))
+                {
+                    int put = 0;
+                    foreach (ModGroup g in gs) if (g.Main != null) { MyBranch.Put(s.Name, g.Main.Name); put++; }
+                    Rebuild(); GoSlot(s.Key);
+                    lblFoot.Text = Lang.F("{0} 个已放进分支「{1}」", put, s.Name);
+                    Core.Log("OK", "批量拖拽归类: " + put + " 个 → 分支「" + s.Name + "」");
+                    return;
+                }
+                // 「一堆」（地图 / 喷漆）：大类对得上就会收进这一堆，不占具体位置
+                string slotName = s.Pile ? "" : s.Name;
+                foreach (ModGroup g in gs) mf.ApplyCatAssign(g, s.Cat, slotName);
+                Rebuild();
+                if (Unmatched > 0) SelectUnmatched(); else GoSlot(s.Key);
+                lblFoot.Text = s.Pile
+                    ? Lang.F("{0} 个已归到「{1}」", gs.Count, s.Cat)
+                    : Lang.F("{0} 个已归到「{1} · {2}」", gs.Count, s.Cat, s.Name);
+                Core.Log("OK", "批量拖拽归类: " + gs.Count + " 个 → " + s.Cat + (slotName.Length > 0 ? " / " + slotName : ""));
+                return;
+            }
+
+            string cat = r.Cat;
+            if (string.IsNullOrEmpty(cat)) return;
+            foreach (ModGroup g in gs) mf.ApplyCatAssign(g, cat, "");
+            Rebuild();
+            for (int i = 0; i < body.RowCount; i++)
+                if (body.RowIsCat(i) && body.RowCat(i) == cat) { body.ScrollToRow(i); break; }
+            lblFoot.Text = Lang.F("{0} 个只改了归类为「{1}」（位置还是空的）", gs.Count, cat);
+            Core.Log("OK", "批量拖拽归类: " + gs.Count + " 个 → " + cat + "（只改大类）");
         }
 
         /// <summary>右键菜单用：这个 MOD 是不是在当前打开的分支里。</summary>
@@ -4162,6 +4219,9 @@ namespace Installer
         private bool extDrag;
         private string extName = "";
         private int extRow = -1;
+        private List<ModGroup> extGroups = new List<ModGroup>();   // 拖进来的那几组（支持多选批量拖）
+        private readonly System.Windows.Forms.Timer extExpand = new System.Windows.Forms.Timer();  // 悬停折叠分类：到点自动展开
+        private int extExpandRow = -1;
         private Point extPt;
         private readonly Timer extScroll;
 
@@ -4185,6 +4245,19 @@ namespace Installer
             DragDrop += ExtDragDrop;
             extScroll = new Timer { Interval = 130 };
             extScroll.Tick += delegate { ExtAutoScroll(); };
+            extExpand.Interval = 600;
+            extExpand.Tick += delegate
+            {
+                extExpand.Stop();
+                if (!extDrag || extExpandRow < 0 || extExpandRow >= rows.Count) return;
+                TreeRow rr = rows[extExpandRow];
+                if (rr.IsCat && owner.IsFolded(rr.Cat)) owner.SetFolded(rr.Cat, false);
+                else if (rr.IsSub && owner.IsSubFolded(rr.Cat, rr.Sub)) owner.SetSubFolded(rr.Cat, rr.Sub, false);
+                else return;
+                extRow = -1;                 // 摊开后行号全变了，等下一次 DragOver 重算
+                extExpandRow = -1;
+                Invalidate();
+            };
         }
 
         public int RowCount { get { return rows.Count; } }
@@ -4524,10 +4597,13 @@ namespace Installer
             {
                 TreeRow r = rows[extRow];
                 if (r.Slot != null)
-                    to = CatTree.IsBranchSlot(r.Slot) ? " → 放进分支「" + r.Slot.Name + "」"
-                       : " → 替换「" + r.Slot.Cat + " · " + r.Slot.Name + "」";
-                else if (r.IsSub) to = " → 归到「" + r.Cat + " / " + r.Sub + "」整类";
-                else to = " → 归到「" + r.Cat + "」整类";
+                {
+                    if (CatTree.IsBranchSlot(r.Slot)) to = " → 放进分支「" + r.Slot.Name + "」";
+                    else if (r.Slot.Pile) to = " → 归到「" + r.Slot.Cat + "」这一堆";
+                    else to = " → 替换「" + r.Slot.Cat + " · " + r.Slot.Name + "」";
+                }
+                else if (r.IsSub) to = " → 只改归类为「" + r.Cat + " / " + r.Sub + "」（位置不变）";
+                else to = " → 只改归类为「" + r.Cat + "」（位置不变）";
             }
             else to = inRow ? " → 这里放不了，松手取消" : " → 松手取消";
             string txt = "「" + (extName.Length > 0 ? extName : "?") + "」" + to;
@@ -4655,10 +4731,16 @@ namespace Installer
 
         private void ExtDragOver(object s, DragEventArgs e)
         {
-            ModGroup g = e.Data.GetData(typeof(ModGroup)) as ModGroup;
-            if (g == null) { if (extDrag) ExtDragEnd(); e.Effect = DragDropEffects.None; return; }
+            List<ModGroup> gs = e.Data.GetData(typeof(List<ModGroup>)) as List<ModGroup>;
+            if (gs == null)
+            {
+                ModGroup one = e.Data.GetData(typeof(ModGroup)) as ModGroup;
+                if (one != null) gs = new List<ModGroup> { one };
+            }
+            if (gs == null || gs.Count == 0) { if (extDrag) ExtDragEnd(); e.Effect = DragDropEffects.None; return; }
 
-            extName = g.Name;
+            extGroups = gs;
+            extName = gs.Count > 1 ? Lang.F("{0} 个 MOD", gs.Count) : gs[0].Name;
             extPt = PointToClient(new Point(e.X, e.Y));
             int row = IndexAt(extPt.Y);
             e.Effect = (row >= 0 && row < rows.Count && ExtAccepts(rows[row]))
@@ -4666,14 +4748,28 @@ namespace Installer
 
             if (!extDrag) extScroll.Start();
             extDrag = true;
-            if (row != extRow) { extRow = row; Invalidate(); }
+            if (row != extRow)
+            {
+                extRow = row;
+                extExpand.Stop();
+                extExpandRow = row;
+                // 悬停折叠的分类：停 0.6 秒自动摊开，省得先松手、点开、再拖一次
+                if (row >= 0 && row < rows.Count)
+                {
+                    TreeRow rr = rows[row];
+                    if ((rr.IsCat && owner.IsFolded(rr.Cat)) || (rr.IsSub && owner.IsSubFolded(rr.Cat, rr.Sub))) extExpand.Start();
+                }
+                Invalidate();
+            }
         }
 
         private void ExtDragEnd()
         {
             extDrag = false;
             extRow = -1;
+            extExpandRow = -1;
             extScroll.Stop();
+            extExpand.Stop();
             Invalidate();
         }
 
@@ -4691,11 +4787,17 @@ namespace Installer
 
         private void ExtDragDrop(object s, DragEventArgs e)
         {
-            ModGroup g = e.Data.GetData(typeof(ModGroup)) as ModGroup;
-            bool ok = g != null && extRow >= 0 && extRow < rows.Count && ExtAccepts(rows[extRow]);
+            List<ModGroup> gs = extGroups;
+            if (gs == null || gs.Count == 0)
+            {
+                ModGroup one = e.Data.GetData(typeof(ModGroup)) as ModGroup;
+                if (one != null) gs = new List<ModGroup> { one };
+            }
+            bool ok = gs != null && gs.Count > 0 && extRow >= 0 && extRow < rows.Count && ExtAccepts(rows[extRow]);
             TreeRow r = ok ? rows[extRow] : null;
             ExtDragEnd();
-            if (ok) owner.DropModOn(g, r);
+            if (ok) owner.DropModsOn(gs, r);
+            extGroups = new List<ModGroup>();
         }
 
         /// <summary>自测用：不发起真 OLE 拖放，直接走一遍「松手在 row」的落点逻辑，返回结果描述。</summary>
