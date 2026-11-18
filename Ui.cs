@@ -399,7 +399,7 @@ namespace Installer
                 lblStatus.Text = Lang.F("增强包未附带：{0}（只装 MOD 不受影响，缺的已自动取消勾选）", string.Join("、", packMiss.ToArray()));
                 return;
             }
-            lblStatus.Text = Lang.S("就绪");
+            lblStatus.Text = "";
             lblStatus.ForeColor = Theme.Ink2;
         }
 
@@ -465,11 +465,13 @@ namespace Installer
             const int panelW = 56;      // 左栏抽屉
             const int wsW = 64;         // 工坊导入
             const int topGap = 8;
+            // 顶栏分三组：游戏目录 | 启动项·工坊（对象操作）| 总览·面板（视图）| 设置（全局）
+            const int groupGap = 22;
             int settingsX = W - Theme.M - settingsW;
-            int wsX = settingsX - topGap - wsW;
-            int panelX = wsX - topGap - panelW;
+            int panelX = settingsX - groupGap - panelW;
             int viewX = panelX - topGap - viewW;
-            int findX = viewX - topGap - findW;
+            int wsX = viewX - groupGap - wsW;
+            int findX = wsX - topGap - findW;
             int browseX = findX - topGap - browseW;
             txtGame = new ComboBox(); txtGame.SetBounds(80, 18, browseX - topGap - 8 - 80, 24);
             txtGame.DropDownStyle = ComboBoxStyle.DropDown; Theme.Dress(txtGame); Controls.Add(txtGame);
@@ -775,7 +777,7 @@ namespace Installer
             lblPre.BackColor = Color.Transparent;
             lblPre.Visible = false;
             Controls.Add(lblPre);
-            lblStatus = new Label(); lblStatus.SetBounds(Theme.M, CH - 28, W - 2 * Theme.M, 20); lblStatus.Text = Lang.S("就绪");
+            lblStatus = new Label(); lblStatus.SetBounds(Theme.M, CH - 28, W - 2 * Theme.M, 20); lblStatus.Text = "";
             lblStatus.ForeColor = Theme.Ink2; lblStatus.BackColor = Color.Transparent; Controls.Add(lblStatus);
 
             // 随窗口缩放：左右拉伸的跟着走，底部按钮贴右下
@@ -3626,11 +3628,12 @@ namespace Installer
             const int panelW = 56;      // 左栏抽屉
             const int wsW = 64;         // 工坊导入
             const int topGap = 8;
+            const int groupGap = 22;
             int settingsX = W - Theme.M - settingsW;
-            int wsX = settingsX - topGap - wsW;
-            int panelX = wsX - topGap - panelW;
+            int panelX = settingsX - groupGap - panelW;
             int viewX = panelX - topGap - viewW;
-            int findX = viewX - topGap - findW;
+            int wsX = viewX - groupGap - wsW;
+            int findX = wsX - topGap - findW;
             txtGame.Width = Dpi.S(findX - topGap - 8 - 80);
             btnLaunch.Left = Dpi.S(findX);
             btnSettings.Left = Dpi.S(settingsX);
@@ -3701,7 +3704,7 @@ namespace Installer
                 { bad++; Core.Log("FAIL", tag + "「停止剩余」压住了「开始安装」"); }
 
                 // 顶部：设置 ← 工坊 ← 抽屉 ← 台面 ← 启动项 ← 浏览（从左到右依次右移）
-                FlatButton[] top = new FlatButton[] { btnLaunch, btnView, btnPanel, btnWorkshop, btnSettings };
+                FlatButton[] top = new FlatButton[] { btnLaunch, btnWorkshop, btnView, btnPanel, btnSettings };
                 if (btnSettings.Left + Dpi.S(60) > W - m + 1) { bad++; Core.Log("FAIL", tag + "「设置」出窗"); }
                 for (int i = 1; i < top.Length; i++)
                     if (top[i].Left <= top[i - 1].Left + Dpi.S(56)) { bad++; Core.Log("FAIL", tag + "顶部按钮叠在一起：" + top[i].Text); }

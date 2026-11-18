@@ -66,6 +66,8 @@ namespace Installer
         /// </summary>
         public string PkgRoot = "";
         public bool DrawerOpen = false;     // 左栏默认收起：主界面就是三列（方案树 / 候选 / 详情），要看现状再点「面板」
+        public int TreeW = 0;               // 方案树宽度（设计像素，0 = 自动）
+        public int DetailW = 0;             // 右侧详情宽度（设计像素，0 = 自动）
         // 启动时如果一条勾选都没有（换机器、U 盘配置是空的），就按游戏 addons + addonlist.txt
         // 里「真的在用」的那批回填，而不是让人对着 63 个空行自己猜上次装了哪些。
         public bool AutoSync = true;
@@ -540,6 +542,8 @@ namespace Installer
                     else if (k == "LibraryRoot") Cfg.LibraryRoot = v;
                     else if (k == "PkgRoot") Cfg.PkgRoot = v;
                     else if (k == "Drawer") Cfg.DrawerOpen = (v != "0");
+                    else if (k == "TreeW") { int n; if (int.TryParse(v, out n)) Cfg.TreeW = n; }
+                    else if (k == "DetailW") { int n; if (int.TryParse(v, out n)) Cfg.DetailW = n; }
                     else if (k == "AutoSync") Cfg.AutoSync = (v != "0");
                     else if (k == "WorkshopDir") Cfg.WorkshopDir = v;
                     else if (k == "Lang") Cfg.Lang = (string.Equals(v, "en", StringComparison.OrdinalIgnoreCase) ? "en" : "zh");
@@ -574,6 +578,8 @@ namespace Installer
                 sb.AppendLine("LibraryRoot=" + Cfg.LibraryRoot);
                 sb.AppendLine("PkgRoot=" + Cfg.PkgRoot);
                 sb.AppendLine("Drawer=" + (Cfg.DrawerOpen ? "1" : "0"));
+                sb.AppendLine("TreeW=" + Cfg.TreeW);
+                sb.AppendLine("DetailW=" + Cfg.DetailW);
                 sb.AppendLine("AutoSync=" + (Cfg.AutoSync ? "1" : "0"));
                 sb.AppendLine("Lang=" + Cfg.Lang);
                 sb.AppendLine("WorkshopDir=" + Cfg.WorkshopDir);

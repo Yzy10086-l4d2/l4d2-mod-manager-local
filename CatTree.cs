@@ -930,6 +930,64 @@ namespace Installer
     // ============================================================
     //  方案树视图
     // ============================================================
+    /// <summary>一个 18px 高的小开关（pill + 圆钮）：模式类选项用它，比复选框更符合规范。</summary>
+    internal sealed class SwitchBox : Control
+    {
+        private bool on;
+        private string caption = "";
+        public event EventHandler Toggled;
+        public SwitchBox()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
+                   | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.Transparent;
+            Cursor = Cursors.Hand;
+            Font = Theme.UISmall;
+            Height = Dpi.S(22);
+        }
+        public bool Checked
+        {
+            get { return on; }
+            set
+            {
+                if (on == value) return;
+                on = value;
+                Invalidate();
+                if (Toggled != null) Toggled(this, EventArgs.Empty);
+            }
+        }
+        public string Caption
+        {
+            get { return caption; }
+            set { caption = value ?? ""; Invalidate(); }
+        }
+        protected override void OnClick(EventArgs e)
+        {
+            Checked = !Checked;
+            base.OnClick(e);
+        }
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            int tw = TextRenderer.MeasureText(caption, Font).Width;
+            return new Size(Dpi.S(34) + 8 + tw + 4, Dpi.S(22));
+        }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            int w = Dpi.S(34), h = Dpi.S(18);
+            int y = (Height - h) / 2;
+            using (SolidBrush b = new SolidBrush(on ? Theme.Info : Color.FromArgb(206, 212, 220)))
+                g.FillPath(b, Theme.Round(new Rectangle(0, y, w, h), h / 2));
+            int kd = h - Dpi.S(4);
+            int kx = on ? w - kd - Dpi.S(2) : Dpi.S(2);
+            using (SolidBrush b = new SolidBrush(Color.White))
+                g.FillEllipse(b, kx, y + Dpi.S(2), kd, kd);
+            int tx = w + Dpi.S(8);
+            TextRenderer.DrawText(g, caption, Font, new Rectangle(tx, 0, Width - tx, Height),
+                Theme.Ink2, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+    }
     internal sealed class CatTree : UserControl
     {
         private readonly MainForm mf;
@@ -943,11 +1001,17 @@ namespace Installer
         private readonly FlatButton btnPick;
         private readonly ToolTip tipExtra;                 // 「可叠加的扩展」小标题的悬停说明
         private readonly ToolTip tipRow = new ToolTip();    // 列表行悬停：用 ItemMouseHover 触发，比 MouseMove 可靠
-        private CheckBox chkMulti;                         // 「允许多选」：这个位置可以同时开好几个 MOD
+        private SwitchBox chkMulti;                        // 「允许多选」：这个位置可以同时开好几个 MOD（模式类选项，用开关）
         private bool applyingMulti;                        // 程序自己改勾选时别触发联动
         private CoverPeek peek;                            // 封面预览：两列时是候选区上方的横条，三列时是右侧详情栏
         private Label lblDetail;                           // 三列布局时右栏的小标题
         private int peekIdx = -2;                          // 当前预览的是第几行（-2 = 还没算过，-1 = 没悬停）
+        private Panel splitA, splitB;                     // 两处分栏拖条（树|候选、候选|详情）
+        private int treeWpx, detailWpx;                   // 拖过分栏就用这里记着（0 = 按默认比例自动算）
+        private int curTreeW, curDetailW;                 // 上一次排版算出来的实际宽度（拖条要用）
+        private bool widthsLoaded;                        // 配置里的栏宽只读一次
+        private int splitStartCursor, splitStartVal;      // 拖动起点
+        private char splitMode;                           // 'A' = 树宽，'B' = 详情宽
 
         private List<Slot> slots = new List<Slot>();
         private int unmatched;                       // 一个位置都归不上的 MOD 数
@@ -1050,6 +1114,12 @@ namespace Installer
             lv.Resize += delegate { LayoutCols(); };
             // 封面预览：悬停哪行看哪行，移开回落到「当前启用的那个」。
             // 源码原本没有任何 MOD 预览图（CatTree 里的 Thumb() 是滚动条滑块），这块是新加的。
+            // 两处分栏拖条：树宽 / 详情宽都能拖，拖完记进配置
+            splitA = MakeSplit();
+            splitB = MakeSplit();
+            Controls.Add(splitA);
+            Controls.Add(splitB);
+
             peek = new CoverPeek();
             Controls.Add(peek);
 
@@ -1158,13 +1228,10 @@ namespace Installer
             lblCur.AutoEllipsis = true;
             Controls.Add(lblCur);
 
-            chkMulti = new CheckBox();
-            chkMulti.Text = Lang.S("允许多选");
-            chkMulti.Font = Theme.UISmall;
-            chkMulti.ForeColor = Theme.Ink2;
-            chkMulti.BackColor = Color.Transparent;
+            chkMulti = new SwitchBox();
+            chkMulti.Caption = Lang.S("允许多选");
             chkMulti.Visible = false;
-            chkMulti.CheckedChanged += delegate
+            chkMulti.Toggled += delegate
             {
                 Slot s = Current;
                 if (s == null || applyingMulti) return;
@@ -1309,7 +1376,7 @@ namespace Installer
             string swText; Color swInk; Color rowBg;
             if (ins == 0) { swText = "—"; swInk = Theme.Ink3; rowBg = Theme.Surface; }
             else if (shownOn == ins) { swText = Lang.S(local ? "开启" : "开"); swInk = Theme.Ok; rowBg = Theme.RowOn; }
-            else if (shownOn == 0) { swText = Lang.S(local ? "关闭" : "关"); swInk = Theme.Warn; rowBg = Theme.RowOff; }
+            else if (shownOn == 0) { swText = Lang.S(local ? "关闭" : "关"); swInk = Theme.Ink3; rowBg = Theme.RowOff; }
             else { swText = (local ? "开启 " : "") + shownOn + "/" + ins; swInk = Theme.Warn; rowBg = Theme.RowOff; }
 
             li.SubItems[3].Text = instText;
@@ -3465,6 +3532,7 @@ namespace Installer
             {
                 if (!string.IsNullOrEmpty(lead.Subject)) info += Lang.S("改了什么：") + lead.Subject + "\n\n";
                 if (!string.IsNullOrEmpty(lead.AddonTitle)) info += Lang.S("游戏里叫：") + lead.AddonTitle + "\n\n";
+                if (!string.IsNullOrEmpty(lead.AddonAuthor)) info += Lang.S("作者：") + lead.AddonAuthor + "\n\n";
                 info += (lead.AddonOn ? Lang.S("状态：已启用") : Lang.S("状态：已关闭"));
                 if (lead.FromGame) info += "\n\n" + Lang.S("这份就在游戏目录里，删文件得自己去资源管理器");
             }
@@ -3733,26 +3801,85 @@ namespace Installer
                 e.Graphics.DrawLine(p, scroll.Right, 0, scroll.Right, Height);
         }
 
+        /// <summary>分栏拖条：6px 宽的一条，拖它改左边那栏的宽度，松手写配置。</summary>
+        private Panel MakeSplit()
+        {
+            Panel p = new Panel();
+            p.Width = Dpi.S(6);
+            p.BackColor = Theme.LineSoft;
+            p.Cursor = Cursors.SizeWE;
+            p.MouseDown += delegate(object s, MouseEventArgs e2)
+            {
+                if (e2.Button != MouseButtons.Left) return;
+                splitMode = p == splitA ? 'A' : 'B';
+                splitStartCursor = Cursor.Position.X;
+                splitStartVal = splitMode == 'A' ? (treeWpx > 0 ? treeWpx : curTreeW) : (detailWpx > 0 ? detailWpx : curDetailW);
+                p.Capture = true;
+            };
+            p.MouseMove += delegate(object s, MouseEventArgs e2)
+            {
+                if (!p.Capture || splitMode == 0) return;
+                int dx = Cursor.Position.X - splitStartCursor;
+                if (splitMode == 'A')
+                {
+                    int v = Math.Max(Dpi.S(200), Math.Min(ClientSize.Width / 2, (treeWpx > 0 ? treeWpx : curTreeW) + dx));
+                    treeWpx = v;
+                }
+                else
+                {
+                    int cur = detailWpx > 0 ? detailWpx : curDetailW;
+                    int v = Math.Max(Dpi.S(260), cur - dx);
+                    detailWpx = Math.Min(v, Math.Max(Dpi.S(300), ClientSize.Width - curTreeW - Dpi.S(360)));
+                }
+                LayoutSelf();
+            };
+            p.MouseUp += delegate(object s, MouseEventArgs e2)
+            {
+                if (splitMode == 0) return;
+                splitMode = (char)0;
+                p.Capture = false;
+                Core.Cfg.TreeW = treeWpx > 0 ? Dpi.Un(treeWpx) : 0;
+                Core.Cfg.DetailW = detailWpx > 0 ? Dpi.Un(detailWpx) : 0;
+                Core.SaveConfig();
+            };
+            return p;
+        }
         private void LayoutSelf()
         {
             int W = ClientSize.Width, H = ClientSize.Height;
             if (W <= 0 || H <= 0) return;
+            if (!widthsLoaded)
+            {
+                widthsLoaded = true;
+                treeWpx = Core.Cfg.TreeW > 0 ? Dpi.S(Core.Cfg.TreeW) : 0;
+                detailWpx = Core.Cfg.DetailW > 0 ? Dpi.S(Core.Cfg.DetailW) : 0;
+            }
             // 三层之后每行多缩了一级，树比以前宽一点，否则物品名和「选了哪个」会挤在一起
             // 三列：方案树 / 该类候选 / 悬停详情。树不用占一半，右边两列才是干活的
-            int treeW = Math.Min(Dpi.S(340), Math.Max(Dpi.S(240), W * 26 / 100));
+            int treeW = treeWpx > 0 ? treeWpx : Math.Min(Dpi.S(340), Math.Max(Dpi.S(240), W * 26 / 100));
+            treeW = Math.Min(Math.Max(treeW, Dpi.S(200)), Math.Max(Dpi.S(220), W / 2));
+            curTreeW = treeW;
             if (scroll != null) scroll.SetBounds(0, 0, treeW, H);
+            if (splitA != null) splitA.SetBounds(Math.Max(0, treeW - Dpi.S(3)), 0, Dpi.S(6), H);
             // Dock 让树体宽度自动跟着可视区走（含竖直滚动条出现/消失），不然右边「n 个」会被裁掉
             if (scroll != null) scroll.Relayout();
 
             int x = treeW + 1;
             int rightW = Math.Max(120, W - x);
             // 第三列（详情）：窗口够宽才开；不够宽就退回两列，候选吃满
-            int detailW = rightW >= Dpi.S(780) ? Math.Min(Dpi.S(480), Math.Max(Dpi.S(380), rightW * 44 / 100)) : 0;
+            int detailW = 0;
+            if (rightW >= Dpi.S(680))
+            {
+                detailW = detailWpx > 0 ? detailWpx : Math.Min(Dpi.S(480), Math.Max(Dpi.S(380), rightW * 44 / 100));
+                detailW = Math.Min(detailW, Math.Max(Dpi.S(300), rightW - Dpi.S(360)));
+                if (detailW < Dpi.S(260)) detailW = 0;
+            }
+            curDetailW = detailW;
             int candW = rightW - (detailW > 0 ? detailW + Theme.G : 0);
             int pad = Theme.CardPad;
             int actH = Theme.H;
             int by = H - actH - Theme.S;                   // 底部动作行的顶边
-            int top = 60;                                  // 标题两行下面是列表
+            int top = 42;                                  // 头部并成一行后，列表跟着上移
             // 两列时封面条夹在标题与表头之间；三列时它整块搬去右侧详情栏
             int peekH = Dpi.S(100);
             int peekTop = 60;
@@ -3777,9 +3904,9 @@ namespace Installer
                 exX = x + mainW + Theme.G;
             }
 
-            if (lblTitle != null) lblTitle.SetBounds(mainX + pad, 12, Math.Max(60, mainW - 2 * pad - 100), 22);
-            // 「允许多选」对到列表最右边「开启」那一列上，标题行给它留出 118px
-            if (lblCur != null) lblCur.SetBounds(mainX + pad, 34, Math.Max(60, mainW - 2 * pad - 118), 18);
+            // 头部两行并一行：标题在左、当前在同一行右侧，开关贴这一行右端（少一行、没有空洞）
+            if (lblTitle != null) lblTitle.SetBounds(mainX + pad, 10, Dpi.S(96), 22);
+            if (lblCur != null) lblCur.SetBounds(mainX + pad + Dpi.S(102), 13, Math.Max(60, mainW - 2 * pad - 102 - 118), 18);
             if (chkMulti != null)
             {
                 chkMulti.SetBounds(mainX + Math.Max(Dpi.S(60), mainW - Dpi.S(112)), 33, Dpi.S(106), 22);
@@ -3797,10 +3924,16 @@ namespace Installer
                         lblDetail.Visible = lv != null && lv.Visible;
                     }
                     peek.SetBounds(dx, 34, Math.Max(Dpi.S(220), detailW), Math.Max(Dpi.S(240), H - 40));
+                    if (splitB != null)
+                    {
+                        splitB.Visible = true;
+                        splitB.SetBounds(Math.Max(0, dx - Dpi.S(7)), 0, Dpi.S(6), H);
+                    }
                 }
                 else
                 {
                     if (lblDetail != null) lblDetail.Visible = false;
+                    if (splitB != null) splitB.Visible = false;
                     peek.SetBounds(mainX + pad, peekTop, Math.Max(Dpi.S(160), mainW - 2 * pad), peekH);
                 }
                 peek.Visible = lv != null && lv.Visible;
