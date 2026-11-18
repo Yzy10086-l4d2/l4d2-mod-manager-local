@@ -1311,7 +1311,7 @@ namespace Installer
             v.ForeColor = Theme.Ink;
             v.Font = Theme.UI;
             v.HeaderStyle = ColumnHeaderStyle.None;   // 原生表头在深色下永远是一块白，改由 ColHead 自绘
-            v.ShowItemToolTips = true;
+            v.ShowItemToolTips = false;      // 关掉系统自带的：再开就是「系统气泡 + 我们自己的气泡」两个一起弹
             // 系统的行提示在这台机器上不稳（延迟长、换行不刷新），改用 ItemMouseHover 自己弹：
             // 这个事件是控件专门为「鼠标停在一行上」发的，不依赖 MouseMove 是否被上层吃掉。
             v.ItemMouseHover += delegate(object s, ListViewItemMouseHoverEventArgs e2)
