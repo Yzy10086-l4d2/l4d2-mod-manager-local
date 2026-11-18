@@ -1034,6 +1034,18 @@ namespace Installer
             return null;
         }
 
+        /// <summary>把每一行所有格子的底色对齐成整行那个色（行底色是按格子刷的，见 ApplyStateCells）。</summary>
+        private static void SyncRowBacks(ListView v)
+        {
+            if (v == null) return;
+            foreach (ListViewItem li in v.Items)
+            {
+                Color back = li.BackColor;
+                for (int i = 0; i < li.SubItems.Count; i++)
+                    if (li.SubItems[i].BackColor != back) li.SubItems[i].BackColor = back;
+            }
+        }
+
         /// <summary>换主题后重建状态点：位图里存的是旧颜色，不重建会留在深底上看不清。</summary>
         internal void OnThemeChanged()
         {
@@ -1054,6 +1066,11 @@ namespace Installer
                 if (scroll != null) scroll.BackColor = Theme.TreeBg;
                 BackColor = Theme.Surface;
                 body.BackColor = Theme.TreeBg;
+                // 换主题只改颜色、不重建行：底色是按「整行」刷到每个格子上的，
+                // 上面那轮重映射只要有格子没跟上，行就会从中间断开 —— 这里对齐一遍。
+                SyncRowBacks(lv);
+                SyncRowBacks(lvExtra);
+                LayoutSelf();          // 列宽也按当前客户区重算，别留着上一个主题时算的宽度
                 Invalidate(true);
             }
             catch { }
@@ -4094,6 +4111,13 @@ namespace Installer
                 if (v.Columns[3].Text != t3) v.Columns[3].Text = t3;
                 if (v.Columns[4].Text != t4) v.Columns[4].Text = t4;
             }
+
+            // 兜底：上面算出来的列宽加起来没铺满客户区（滚动条预留、DPI 取整都会差十几像素），
+            // 差额补到最后一列 —— 不补的话行底色到那儿就断，右边空出一条。
+            int cw = 0;
+            for (int i = 0; i < v.Columns.Count; i++) cw += v.Columns[i].Width;
+            int slack = v.ClientSize.Width - cw;
+            if (slack > 0) v.Columns[v.Columns.Count - 1].Width += slack;
         }
 
         /// <summary>
