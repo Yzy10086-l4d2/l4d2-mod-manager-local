@@ -30,13 +30,11 @@ namespace Installer
         private ComboBox cboGame, cboLibDrive, cboPkg;
         private FlatButton btnGameBrowse, btnGameFind, btnSave;
         private Label lblGameState, lblLibMain, lblLibExtra, lblLibHint, lblCfg, lblLog, lblPkgState;
-        private CheckBox chkSwapS;
         private string pendingRoot;
         private bool syncing = true;
 
         internal bool WantLocal { get { return false; } }      // 本地版只有一个口径
         internal bool WantReduceMotion { get { return tglMotion != null && tglMotion.Checked; } }
-        internal bool WantSwap { get { return chkSwapS == null || chkSwapS.Checked; } }
         internal ThemeMode WantAppearance { get { return segAppearance == null ? Theme.Mode : (ThemeMode)segAppearance.SelectedIndex; } }
         /// <summary>自测用：模拟在设置窗口里点「外观」分段（走的是真实的点击 + SelectedIndexChanged 路径）。</summary>
         internal void PreviewAppearance(ThemeMode m)
@@ -87,7 +85,6 @@ namespace Installer
             BuildGeneral();
             BuildGameDir();
             BuildDiagnostics();
-            BuildInstall();
             BuildFooter();
 
             syncing = false;
@@ -339,21 +336,8 @@ namespace Installer
             env.Click += delegate { if (owner != null) owner.ShowEnv(); };
         }
 
-        /// <summary>
-        /// 安装选项。本地版只剩「换整套」一项：
-        /// 「严格校验」只是复制后回读算 SHA256、「跳过 / 覆盖重装」也是复制时的分支，
-        /// 本地版一个文件都不复制（MOD 本来就在游戏里），这两项点不点都一样，已删除。
-        /// </summary>
-        private void BuildInstall()
-        {
-            Card s = AddGroup(Lang.S("安装"), 622, 92);
-            chkSwapS = new CheckBox();
-            chkSwapS.Text = Lang.S("换整套（把不在这套里的 MOD 关掉）");
-            chkSwapS.SetBounds(16, 10, 548, 22);
-            Theme.Dress(chkSwapS);
-            chkSwapS.Checked = Core.Cfg.Swap;
-            s.Controls.Add(chkSwapS);
-        }
+        // 安装选项整块已删除：严格校验 / 跳过·覆盖重装 / 换整套 都是复制或切换时代的开关，
+        // 本地版只把勾选写成 addonlist 的 1/0，这三项都没意义。
 
         private void BuildFooter()
         {
@@ -800,7 +784,6 @@ namespace Installer
                 bool newMotion = f.WantReduceMotion;
                 string newRoot = f.WantLibraryRoot;
                 string newGame = f.WantGameRoot;
-                bool newSwap = f.WantSwap;
 
                 if (!newLocal && (string.IsNullOrEmpty(newRoot) || !Directory.Exists(newRoot)))
                 {
@@ -842,12 +825,7 @@ namespace Installer
                     Core.Log("OK", "MOD 主库改为：" + Core.ModRoot);
                 }
 
-                if (newSwap != Core.Cfg.Swap)
-                {
-                    Core.Cfg.Swap = newSwap;
-                    Core.SaveConfig();
-                    Core.Log("OK", "安装选项：换整套=" + (newSwap ? "开" : "关"));
-                }
+                // 安装选项整块已经删掉，这里不再有要写的开关
 
                 // 组件包目录：改了要立刻重查一遍，否则左栏还按旧目录判「缺」
                 string newPkg = f.WantPkgRoot;

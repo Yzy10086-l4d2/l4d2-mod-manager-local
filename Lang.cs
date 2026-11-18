@@ -134,7 +134,6 @@ namespace Installer
             Add(d, "跳过已有 / 全部重写", "Skip existing / overwrite all");
             Add(d, "跳过", "Skip");
             Add(d, "覆盖重装", "Overwrite");
-            Add(d, "换整套（把不在这套里的 MOD 关掉）", "Switch whole set (disable mods outside this one)");
             Add(d, "这一个 vpk：", "This vpk only:");
 
             // ---------- 左栏：方案 ----------

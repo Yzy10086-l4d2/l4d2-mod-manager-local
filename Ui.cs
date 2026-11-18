@@ -4367,8 +4367,7 @@ namespace Installer
             public List<ModItem> Sel = new List<ModItem>();
             /// <summary>同一位置里以前装过、这次没勾的（只翻开关写成 0，文件不动）。</summary>
             public List<ModItem> Off = new List<ModItem>();
-            public bool Swap;
-            public string Tweak = "";
+                public string Tweak = "";
             public string AssetName;
             /// <summary>没做成的步骤名（给用户看的一句话）。</summary>
             public List<string> Failed = new List<string>();
@@ -4414,7 +4413,6 @@ namespace Installer
             InstallJob j = new InstallJob();
             j.Root = root;
             j.Sel = Selected();
-            j.Swap = Core.Cfg.Swap;
 
             if (j.Sel.Count == 0)
             {
@@ -4574,8 +4572,7 @@ namespace Installer
                 Core.Log("STEP", "开始写入");
                 Core.Log("INFO", "模式：跳过已装（只写缺的和不一样的）");
 
-                if (!j.Canceled && (j.Sel.Count > 0 || j.Swap))
-                    InstallModsStep(j);
+                if (!j.Canceled && j.Sel.Count > 0)                    InstallModsStep(j);
 
                 if (j.Canceled || Work.CancelRequested) { ReportInstallCanceled(j); return; }
                 FinishInstall(j);
@@ -4677,23 +4674,6 @@ namespace Installer
             // 只把开关写成 0。「换整套」勾着时 SwitchAddons 已经把库里认识的都关了；
             // 这里补的是库外那些（只在游戏目录里、或创意工坊下的），它们不在 known 里，
             // 以前会被漏掉，结果同一把枪两套模型同时开着。
-            if (j.Swap)
-            {
-                // 换整套：只翻 addonlist 的开关（这次的打开、上一套的关上），文件一个都不动
-                Core.Log("STEP", "换整套：把不在这套里的 MOD 关掉");
-                SetStatus("正在切换 MOD 开关…");
-                int onN, offN, keepN;
-                Work.SwitchAddons(j.Root, j.Sel, null, out onN, out offN, out keepN);
-                if (j.Off.Count > 0)
-                {
-                    Dictionary<string, bool> offOnly = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-                    foreach (ModItem it in j.Off) offOnly[it.Name] = false;
-                    AddonList.Write(j.Root, offOnly);
-                    Core.Log("OK", "同位置的旧 MOD 关掉 " + j.Off.Count + " 个（库外的，换整套没覆盖到）");
-                }
-                j.SwitchesWritten = true;
-                return;
-            }
             Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (ModItem it in j.Off) st[it.Name] = false;      // 先关同位置的旧 MOD
             foreach (ModItem it in j.Sel) st[it.Name] = true;       // 选中的最后写，永远赢
