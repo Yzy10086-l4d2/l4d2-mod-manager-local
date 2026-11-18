@@ -41,7 +41,7 @@ namespace Installer
 
         private LoadingPane lblLoading;          // 读取/重扫期间的加载占位（启动报步骤 / 重扫报细条），平时藏着
         private CatTree treeView;                // 方案树：按「能替换的东西」看，一个位置只留一个 MOD
-        private Label lblSel, lblStatus, lblConflict;
+        private Label lblStatus, lblConflict;
         // 底栏总高（设计值）：按钮行 36 + 间距 12 + 状态栏 20 + 触底 8。
         // 原来是 116，按钮下面空出 68px，「下巴」明显偏厚；收到 76 之后按钮行和状态栏只隔 12px。
         private const int BottomBarH = 76;
@@ -518,13 +518,13 @@ namespace Installer
             Controls.Add(btnSettings);
 
             // 总览 / 方案树：同一份数据的两种看法，按钮上写的是「点了会去哪种」
-            btnView = new FlatButton(); btnView.Soft = true; btnView.Text = Lang.S("总览");
+            btnView = new FlatButton(); btnView.Soft = true; btnView.Text = Lang.S("方案管理");
             btnView.SetBounds(viewX, 16, viewW, Theme.H);
             btnView.Click += delegate { ToggleView(); };
             tips.SetToolTip(btnView, Lang.S("套装总览：这套里每个位置装的是哪个 MOD，一眼看完。\r\n左边点大类，右边列这个类的位置和已装的 MOD；没装的灰着，库里没有的空心点。\r\n点开关直接开/关，点名字就地换 MOD，拖大类改顺序；点一行回方案树改那个位置。再点一下回到方案树。"));
             Controls.Add(btnView);
 
-            btnPanel = new FlatButton(); btnPanel.Soft = true; btnPanel.Text = Lang.S("面板");
+            btnPanel = new FlatButton(); btnPanel.Soft = true; btnPanel.Text = Lang.S("统计");
             btnPanel.SetBounds(panelX, 16, panelW, Theme.H);
             btnPanel.Click += delegate
             {
@@ -717,7 +717,6 @@ namespace Installer
             lblLoading.ShowLoad("正在读取 U 盘上的 MOD 库…",
                 "第一次启动或刚更新完可能要等几秒，别急着关", true);
 
-            lblSel = new Label(); lblSel.SetBounds(12, modH - 64, rightW - 24, 18); lblSel.Text = Lang.S("已选 0 个"); lblSel.Font = Theme.UISmall; Theme.Dress(lblSel); gm.Controls.Add(lblSel);
             lblConflict = new Label();
             lblConflict.SetBounds(12, modH - 40, rightW - 24, 34);
             lblConflict.Text = "";
@@ -787,7 +786,6 @@ namespace Installer
             btnLaunch.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             gl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
             gm.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            lblSel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             lblConflict.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             txtLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             btnInstall.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
@@ -2653,16 +2651,8 @@ namespace Installer
 
         private void UpdateSel()
         {
-            List<ModItem> sel = Selected();
-            long total = 0;
-            foreach (ModItem it in sel) total += it.Size;
-            int mods = 0;
-            foreach (ModGroup g in Catalog.Groups) if (CountChecked(g) > 0) mods++;
-            double rate = Core.LastRateMBps > 0.5 ? Core.LastRateMBps : 20.0;
-            string files = mods == sel.Count ? "" : Lang.F("（{0} 个文件）", sel.Count);
-            lblSel.Text = Lang.F("已选 {0} 个 MOD{1}  ·  {2}  ·  约 {3} 秒（按 {4:0} MB/s）",
-                mods, files, Core.Human(total), (int)(total / (rate * 1048576.0)), rate);
-            lblSel.ForeColor = sel.Count > 0 ? Theme.Ink : Theme.Ink3;
+            // 本地版的 MOD 本来就在游戏里，这里只改开关：既没有「复制多少文件」，也没有「大概几秒装完」，
+            // 那行「已选 … 约 … 秒（按 … MB/s）」对这套程序没有意义，连同它的计算一起删了。
             UpdateSchemeLabel();
             QueuePrecheck();          // 勾选变了，底栏那句「可以装 / 还不能装」跟着变
         }
@@ -3497,8 +3487,6 @@ namespace Installer
             gMod.Width = Dpi.S(rightW);
             viewHost.Left = Dpi.S(12);
             viewHost.Width = Dpi.S(rightW - 24);
-            lblSel.Left = Dpi.S(12);
-            lblSel.Width = Dpi.S(rightW - 24);
             lblConflict.Left = Dpi.S(12);
             lblConflict.Width = Dpi.S(rightW - 24);
 
@@ -3514,7 +3502,6 @@ namespace Installer
                 gMod.Height = Dpi.S(modH);
                 viewHost.Top = Dpi.S(118);
                 viewHost.Height = Dpi.S(Math.Max(80, modH - 118 - 74));
-                lblSel.Top = Dpi.S(modH - 64);
                 lblConflict.Top = Dpi.S(modH - 40);
                 // 左栏纵向：安装选项搬进设置后，顶上那张卡没了 —— 切换按钮和「游戏现状」直接贴顶，
                 // 把原来空出来的半屏交给现状卡（它自己会按高度铺分类分布）。
@@ -3750,7 +3737,7 @@ namespace Installer
             drawerOpen = open;
             if (gLog != null) gLog.Visible = open && logOpen;
             if (btnLogToggle != null) btnLogToggle.Visible = open;
-            if (btnPanel != null) btnPanel.Text = open ? Lang.S("收起") : "面板";
+            if (btnPanel != null) btnPanel.Text = open ? Lang.S("收起") : Lang.S("统计");
             lastRespW = -1;                    // 强制重排一次（尺寸没变也要排）
             ApplyResponsive();
         }

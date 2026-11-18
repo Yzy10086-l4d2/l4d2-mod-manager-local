@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Text;
@@ -142,6 +142,7 @@ namespace Installer
             // ---------- 左栏：方案 ----------
             Add(d, "方案", "Set");
             Add(d, "方案管理", "Manage sets");
+            Add(d, "统计", "Stats");
             Add(d, "方案管理…", "Manage sets…");
             Add(d, "存为方案", "Save as set");
             Add(d, "另存为…", "Save as…");
@@ -346,8 +347,6 @@ namespace Installer
             Add(d, "还没从工坊下过东西。\r\n在左边卡片上点「下载这个 MOD」，下完就会出现在这里。",
                 "Nothing downloaded from the Workshop yet.\r\nClick \"Download this mod\" on a card and it shows up here.");
             Add(d, "    默认位置（跟随主库）", "    default (follows library)");
-            Add(d, "已选 {0} 个 MOD{1}  ·  {2}  ·  约 {3} 秒（按 {4:0} MB/s）",
-                "Selected {0} mods{1}  ·  {2}  ·  ~{3}s (at {4:0} MB/s)");
             Add(d, "当前：{0}{1}", "Current: {0}{1}");
             Add(d, "　+ {0} 个扩展", "  + {0} extras");
             Add(d, "{0} 个模型候选 · 点一个就换掉原来的", "{0} model candidates · click one to replace");
