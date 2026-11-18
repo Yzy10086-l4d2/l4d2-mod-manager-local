@@ -4674,14 +4674,21 @@ namespace Installer
             // 只把开关写成 0。「换整套」勾着时 SwitchAddons 已经把库里认识的都关了；
             // 这里补的是库外那些（只在游戏目录里、或创意工坊下的），它们不在 known 里，
             // 以前会被漏掉，结果同一把枪两套模型同时开着。
-            Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-            foreach (ModItem it in j.Off) st[it.Name] = false;      // 先关同位置的旧 MOD
-            foreach (ModItem it in j.Sel) st[it.Name] = true;       // 选中的最后写，永远赢
-            if (st.Count == 0) return;
-            AddonList.Write(j.Root, st);
+            // 套用方案 = 换整套（这个开关已经删掉，改成永远这么做）：只翻 addonlist 的开关，
+            // 选中的打开、库里认识的其它全关掉，文件一个都不动。不然换方案会变成几套混着开。
+            Core.Log("STEP", "换方案：把不在这套里的 MOD 关掉");
+            SetStatus("正在切换 MOD 开关…");
+            int onN, offN, keepN;
+            Work.SwitchAddons(j.Root, j.Sel, null, out onN, out offN, out keepN);
+            if (j.Off.Count > 0)
+            {
+                Dictionary<string, bool> offOnly = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                foreach (ModItem it in j.Off) offOnly[it.Name] = false;
+                AddonList.Write(j.Root, offOnly);
+                Core.Log("OK", "同位置的旧 MOD 关掉 " + j.Off.Count + " 个（库外的）");
+            }
             j.SwitchesWritten = true;
-            Core.Log("OK", "启用状态已写入"
-                + (j.Off.Count > 0 ? "（其中同位置的旧 MOD 关掉 " + j.Off.Count + " 个）" : ""));
+            return;
         }
 
         private void ReportInstallCanceled(InstallJob j)
