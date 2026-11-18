@@ -1156,7 +1156,6 @@ namespace Installer
             lblCur.ForeColor = Theme.Ink2;
             lblCur.BackColor = Color.Transparent;
             lblCur.AutoEllipsis = true;
-            lblCur.TextChanged += delegate { PlaceMulti(); };
             Controls.Add(lblCur);
 
             chkMulti = new CheckBox();
@@ -1227,19 +1226,6 @@ namespace Installer
 
             Resize += delegate { LayoutSelf(); };
             LayoutSelf();
-        }
-
-        /// <summary>「允许多选」紧跟「当前：…」的尾巴，而不是钉死在右边缘白占一条。</summary>
-        private void PlaceMulti()
-        {
-            if (chkMulti == null || lblCur == null || !chkMulti.Visible) return;
-            int tw = TextRenderer.MeasureText(lblCur.Text ?? "", lblCur.Font).Width;
-            int maxX = lblCur.Left + lblCur.Width - Dpi.S(114);
-            int x = Math.Min(lblCur.Left + tw + Dpi.S(12), maxX);
-            chkMulti.Left = Math.Max(lblCur.Left, x);
-            // 标签在后加的控件下面，不提到最前就会被「当前：…」这块透明背景盖住
-            chkMulti.BringToFront();
-            lblCur.Width = Math.Max(Dpi.S(60), chkMulti.Left - lblCur.Left - Dpi.S(8));
         }
 
         /// <summary>候选列表的共同外观：三列、圆点状态、不显示表头焦点。</summary>
@@ -3753,7 +3739,7 @@ namespace Installer
             if (W <= 0 || H <= 0) return;
             // 三层之后每行多缩了一级，树比以前宽一点，否则物品名和「选了哪个」会挤在一起
             // 三列：方案树 / 该类候选 / 悬停详情。树不用占一半，右边两列才是干活的
-            int treeW = Math.Min(Dpi.S(380), Math.Max(Dpi.S(240), W * 30 / 100));
+            int treeW = Math.Min(Dpi.S(340), Math.Max(Dpi.S(240), W * 26 / 100));
             if (scroll != null) scroll.SetBounds(0, 0, treeW, H);
             // Dock 让树体宽度自动跟着可视区走（含竖直滚动条出现/消失），不然右边「n 个」会被裁掉
             if (scroll != null) scroll.Relayout();
@@ -3761,7 +3747,7 @@ namespace Installer
             int x = treeW + 1;
             int rightW = Math.Max(120, W - x);
             // 第三列（详情）：窗口够宽才开；不够宽就退回两列，候选吃满
-            int detailW = rightW >= Dpi.S(700) ? Math.Min(Dpi.S(340), rightW * 32 / 100) : 0;
+            int detailW = rightW >= Dpi.S(780) ? Math.Min(Dpi.S(480), Math.Max(Dpi.S(380), rightW * 44 / 100)) : 0;
             int candW = rightW - (detailW > 0 ? detailW + Theme.G : 0);
             int pad = Theme.CardPad;
             int actH = Theme.H;
@@ -3792,9 +3778,13 @@ namespace Installer
             }
 
             if (lblTitle != null) lblTitle.SetBounds(mainX + pad, 12, Math.Max(60, mainW - 2 * pad - 100), 22);
-            // 「当前」这行吃满宽度；「允许多选」不再钉在最右边（那会白占一条），改成紧跟在这行文字右边
-            if (lblCur != null) lblCur.SetBounds(mainX + pad, 34, Math.Max(60, mainW - 2 * pad), 18);
-            if (chkMulti != null) { chkMulti.SetBounds(mainX + pad + Dpi.S(150), 33, 110, 22); PlaceMulti(); }
+            // 「允许多选」对到列表最右边「开启」那一列上，标题行给它留出 118px
+            if (lblCur != null) lblCur.SetBounds(mainX + pad, 34, Math.Max(60, mainW - 2 * pad - 118), 18);
+            if (chkMulti != null)
+            {
+                chkMulti.SetBounds(mainX + Math.Max(Dpi.S(60), mainW - Dpi.S(112)), 33, Dpi.S(106), 22);
+                chkMulti.BringToFront();
+            }
 
             if (peek != null)
             {
@@ -3894,7 +3884,7 @@ namespace Installer
             // 只有名字列因为吃剩余宽度反而变宽，看着尤其别扭。
             int w = Math.Max(Dpi.S(120), v.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - Dpi.S(8));
             int kindW, sizeW, instW, swW;
-            if (w >= Dpi.S(440))
+            if (w >= Dpi.S(410))
             {
                 kindW = Dpi.S(100); sizeW = Dpi.S(74); instW = Dpi.S(84); swW = Dpi.S(62);
             }
