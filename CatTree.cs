@@ -3198,7 +3198,7 @@ namespace Installer
                 if (chkMulti != null)
                 {
                     applyingMulti = true;
-                    chkMulti.Visible = !s.Pile && !s.Empty;
+                    chkMulti.Visible = !s.Pile && !s.Empty && s.Items.Count >= 2;
                     chkMulti.Checked = IsMulti(s);
                     applyingMulti = false;
                 }
@@ -3715,8 +3715,11 @@ namespace Installer
             }
 
             if (lblTitle != null) lblTitle.SetBounds(mainX + pad, 12, Math.Max(60, mainW - 2 * pad - 100), 22);
-            if (lblCur != null) lblCur.SetBounds(mainX + pad, 34, Math.Max(60, mainW - 2 * pad - 130), 18);
-            if (chkMulti != null) chkMulti.SetBounds(mainX + mainW - 126, 33, 110, 22);
+            // 「允许多选」只有一个候选时没有意义：不给它留位置，标题行就能吃满宽度
+            Slot curSlot = Current;
+            bool multiShown = chkMulti != null && curSlot != null && !curSlot.Pile && !curSlot.Empty && curSlot.Items.Count >= 2;
+            if (chkMulti != null) { chkMulti.Visible = multiShown; chkMulti.SetBounds(mainX + mainW - 126, 33, 110, 22); }
+            if (lblCur != null) lblCur.SetBounds(mainX + pad, 34, Math.Max(60, mainW - 2 * pad - (multiShown ? 130 : 0)), 18);
 
             if (peek != null)
             {
