@@ -435,8 +435,12 @@ namespace Installer
                 Native.DarkCombo(root.Handle, pal.IsDark);
                 Native.RepaintFrame(root.Handle);
             }
+            else if (root.IsHandleCreated && root is ListView)
+            {
+                Native.DarkList(root.Handle, pal.IsDark);      // 不用 Explorer：它会给列画竖线
+            }
             else if (root.IsHandleCreated
-                && (root is TextBox || root is ListView
+                && (root is TextBox
                     || root is TreeView || root is ProgressBar || root is NumericUpDown))
             {
                 Native.DarkControl(root.Handle, pal.IsDark);
@@ -1513,6 +1517,24 @@ namespace Installer
                 // 会被继续用，列表/日志框就一直是深底 —— 用户看到的就是「切成浅色还是一片黑」。
                 SetWindowTheme(hwnd, "", "");
                 SetWindowTheme(hwnd, dark ? "DarkMode_Explorer" : "Explorer", null);
+                SendMessage(hwnd, WM_THEMECHANGED, IntPtr.Zero, IntPtr.Zero);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 列表专用：深色下 Explorer 那套主题会给每一列画竖分隔线（(64,66,70)，贯穿整个列表高度，
+        /// 删不掉、也没开关），换 ItemsView 那套就干净了 —— 表头本来用的就是它。
+        /// </summary>
+        public static void DarkList(IntPtr hwnd, bool dark)
+        {
+            try
+            {
+                if (ux == IntPtr.Zero) { uxTried = true; ux = LoadLibrary("uxtheme.dll"); }
+                // 不给列表挂 Explorer 主题：深色下它会沿每列画一条 (64,66,70) 的竖线（贯穿整个列表高度，
+                // 网格线样式、ItemsView 主题都去不掉）。不挂主题就没有那几条线，底色/字色本来就是我们自己设的。
+                AllowDark(hwnd, dark);
+                SetWindowTheme(hwnd, "", "");
                 SendMessage(hwnd, WM_THEMECHANGED, IntPtr.Zero, IntPtr.Zero);
             }
             catch { }
