@@ -1385,7 +1385,13 @@ namespace Installer
             li.SubItems[4].Text = swText;
             li.SubItems[4].ForeColor = swInk;
             li.SubItems[4].Font = Theme.UIBold;
-            if (li.BackColor != rowBg) li.BackColor = rowBg;
+            // 这一行关掉了「子项继承整行样式」（每列要自己的状态色），所以底色得逐个格子刷：
+            // 只设 li.BackColor 的话，只有第一列是这行的底色，右边仍是列表底色 —— 行看起来从中间断开。
+            if (li.BackColor != rowBg)
+            {
+                li.BackColor = rowBg;
+                for (int i = 0; i < li.SubItems.Count; i++) li.SubItems[i].BackColor = rowBg;
+            }
         }
 
         private static void SelectRow(ListView v, MouseEventArgs e)
@@ -4050,7 +4056,11 @@ namespace Installer
             // 控件尺寸和字体，ListView 的 Columns[].Width 不在其列 —— 不换算的话 125%/150%
             // 下字变大了、四列还是原来的像素宽，「改了什么 / 大小 / 已装 / 开关」就会截字，
             // 只有名字列因为吃剩余宽度反而变宽，看着尤其别扭。
-            int w = Math.Max(Dpi.S(120), v.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - Dpi.S(8));
+            // 只在真要出竖滚动条时才扣它的宽度：以前一律扣「滚动条 + 8」，列表不滚动时右侧就空出一条，
+            // 行底色跟着断在那儿，看着像一道缝。列宽铺满后，行底色自然铺满整行。
+            int sbW = v.Items.Count > 0 && (v.Items.Count * Dpi.S(24)) > v.ClientSize.Height
+                ? SystemInformation.VerticalScrollBarWidth : 0;
+            int w = Math.Max(Dpi.S(120), v.ClientSize.Width - sbW);
             int kindW, sizeW, instW, swW;
             if (w >= Dpi.S(410))
             {
