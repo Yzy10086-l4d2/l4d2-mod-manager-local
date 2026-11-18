@@ -454,8 +454,8 @@ namespace Installer
             if (bakList.Count > 0) Core.Log("INFO", "覆盖前已快照 " + bakList.Count + " 个旧文件到 _装机记录\\装机快照\\" + txn);
             string tail = "共 " + Core.Human(total) + "，" + Math.Round(sec, 1) + " 秒（" + Core.LastRateMBps + " MB/s）";
             Core.Log("OK", Overwrite
-                ? ("MOD: 覆盖重写 " + c + " 个（并行 " + degree + " 路" + (Core.StrictVerify ? " + 全量 SHA256" : " + 大小校验") + "），同名去重跳过 " + s + " 个，" + tail)
-                : ("MOD: 新装 " + c + " 个（并行 " + degree + " 路" + (Core.StrictVerify ? " + 全量 SHA256" : " + 大小校验") + "），已装跳过 " + s + " 个，" + tail));
+                ? ("MOD: 覆盖重写 " + c + " 个（并行 " + degree + " 路 + 大小校验），同名去重跳过 " + s + " 个，" + tail)
+                : ("MOD: 新装 " + c + " 个（并行 " + degree + " 路 + 大小校验），已装跳过 " + s + " 个，" + tail));
             return total;
         }
 

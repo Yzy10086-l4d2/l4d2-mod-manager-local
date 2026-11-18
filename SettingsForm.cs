@@ -30,16 +30,13 @@ namespace Installer
         private ComboBox cboGame, cboLibDrive, cboPkg;
         private FlatButton btnGameBrowse, btnGameFind, btnLibBrowse, btnLibManage, btnSave;
         private Label lblGameState, lblLibMain, lblLibExtra, lblLibHint, lblCfg, lblLog, lblLocalOnly, lblPkgState;
-        private CheckBox chkSwapS, chkStrictS;
-        private RadioButton rdSkipS, rdOverS;
+        private CheckBox chkSwapS;
         private string pendingRoot;
         private bool syncing = true;
 
         internal bool WantLocal { get { return false; } }      // 本地版只有一个口径
         internal bool WantReduceMotion { get { return tglMotion != null && tglMotion.Checked; } }
         internal bool WantSwap { get { return chkSwapS == null || chkSwapS.Checked; } }
-        internal bool WantStrict { get { return chkStrictS != null && chkStrictS.Checked; } }
-        internal bool WantOverwrite { get { return rdOverS != null && rdOverS.Checked; } }
         internal ThemeMode WantAppearance { get { return segAppearance == null ? Theme.Mode : (ThemeMode)segAppearance.SelectedIndex; } }
         /// <summary>自测用：模拟在设置窗口里点「外观」分段（走的是真实的点击 + SelectedIndexChanged 路径）。</summary>
         internal void PreviewAppearance(ThemeMode m)
@@ -342,57 +339,20 @@ namespace Installer
             env.Click += delegate { if (owner != null) owner.ShowEnv(); };
         }
 
-        /// <summary>安装选项：换整套 / 严格校验 / 已装的怎么办。以前挂主窗口左栏，占地方且跟「装哪个」混在一起。</summary>
+        /// <summary>
+        /// 安装选项。本地版只剩「换整套」一项：
+        /// 「严格校验」只是复制后回读算 SHA256、「跳过 / 覆盖重装」也是复制时的分支，
+        /// 本地版一个文件都不复制（MOD 本来就在游戏里），这两项点不点都一样，已删除。
+        /// </summary>
         private void BuildInstall()
         {
-            Card s = AddGroup(Lang.S("安装"), 622, 132);
+            Card s = AddGroup(Lang.S("安装"), 622, 92);
             chkSwapS = new CheckBox();
             chkSwapS.Text = Lang.S("换整套（把不在这套里的 MOD 关掉）");
             chkSwapS.SetBounds(16, 10, 548, 22);
             Theme.Dress(chkSwapS);
             chkSwapS.Checked = Core.Cfg.Swap;
             s.Controls.Add(chkSwapS);
-
-            chkStrictS = new CheckBox();
-            chkStrictS.Text = Lang.S("严格校验（慢一倍，更保险）");
-            chkStrictS.SetBounds(16, 36, 548, 22);
-            Theme.Dress(chkStrictS);
-            chkStrictS.Checked = Core.Cfg.StrictVerify;
-            s.Controls.Add(chkStrictS);
-
-            Label l = new Label();
-            l.Text = Lang.S("已装的");
-            l.SetBounds(16, 70, 56, 18);
-            Theme.Dress(l);
-            s.Controls.Add(l);
-
-            rdSkipS = new RadioButton();
-            rdSkipS.Text = Lang.S("跳过");
-            rdSkipS.SetBounds(78, 68, 62, 22);
-            Theme.Dress(rdSkipS);
-            rdSkipS.Checked = !Core.Cfg.Overwrite;
-            s.Controls.Add(rdSkipS);
-
-            rdOverS = new RadioButton();
-            rdOverS.Text = Lang.S("覆盖重装");
-            rdOverS.SetBounds(146, 68, 100, 22);
-            Theme.Dress(rdOverS);
-            rdOverS.Checked = Core.Cfg.Overwrite;
-            s.Controls.Add(rdOverS);
-
-            Label note = new Label();
-            note.Text = Lang.S("跳过已有 / 全部重写");
-            note.SetBounds(252, 70, 312, 16);
-            note.Font = Theme.UISmall;
-            note.ForeColor = Theme.Ink3;
-            s.Controls.Add(note);
-
-            if (Core.IsLocal)
-            {
-                // 本地版没有来源库：选中的 MOD 本来就在游戏目录里，覆盖重装跑不到那个分支
-                rdOverS.Enabled = false;
-                note.Text = Lang.S("本地版：MOD 已在游戏里，这里只改启用开关");
-            }
         }
 
         private void BuildFooter()
@@ -841,8 +801,6 @@ namespace Installer
                 string newRoot = f.WantLibraryRoot;
                 string newGame = f.WantGameRoot;
                 bool newSwap = f.WantSwap;
-                bool newStrict = f.WantStrict;
-                bool newOver = f.WantOverwrite;
 
                 if (!newLocal && (string.IsNullOrEmpty(newRoot) || !Directory.Exists(newRoot)))
                 {
@@ -884,15 +842,11 @@ namespace Installer
                     Core.Log("OK", "MOD 主库改为：" + Core.ModRoot);
                 }
 
-                if (newSwap != Core.Cfg.Swap || newStrict != Core.Cfg.StrictVerify || newOver != Core.Cfg.Overwrite)
+                if (newSwap != Core.Cfg.Swap)
                 {
                     Core.Cfg.Swap = newSwap;
-                    Core.Cfg.StrictVerify = newStrict;
-                    Core.Cfg.Overwrite = newOver;
-                    Core.StrictVerify = newStrict;
-                    Work.Overwrite = newOver;
                     Core.SaveConfig();
-                    Core.Log("OK", "安装选项：换整套=" + (newSwap ? "开" : "关") + "，严格校验=" + (newStrict ? "开" : "关") + "，已装的=" + (newOver ? "重装" : "跳过"));
+                    Core.Log("OK", "安装选项：换整套=" + (newSwap ? "开" : "关"));
                 }
 
                 // 组件包目录：改了要立刻重查一遍，否则左栏还按旧目录判「缺」

@@ -278,7 +278,6 @@ namespace Installer
             Add(d, "dxvk 防闪退（d3d9.dll）", "dxvk crash fix (d3d9.dll)");
             Add(d, "写参数配置（L4N 按键 + Skeeto 设置）", "Write config (L4N keys + Skeeto)");
             Add(d, "启动项", "Launch options");
-            Add(d, "严格校验（慢一倍，更保险）", "Strict verify (2× slower, safer)");
             Add(d, "参数", "Params");
             Add(d, "参数配置…", "Config file…");
                 Add(d, "留原版", "Keep vanilla");

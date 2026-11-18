@@ -3095,7 +3095,7 @@ namespace Installer
                 return;
             }
             // 压缩包里的 vpk 也能装：CopyMods 会单独抽那一个出来，不解整包、不动 U 盘上的包
-            Work.Overwrite = Core.Cfg.Overwrite;
+            Work.Overwrite = false;      // 本地版只改开关，不重写已装的文件
             int copied = 0, skipped = 0;
             List<string> added = null, failed = null;
             try
@@ -4416,7 +4416,6 @@ namespace Installer
             j.Root = root;
             j.Sel = Selected();
             j.Swap = Core.Cfg.Swap;
-            Core.StrictVerify = Core.Cfg.StrictVerify;
 
             if (j.Sel.Count == 0)
             {
@@ -4492,7 +4491,7 @@ namespace Installer
             }
             catch { }
 
-            Work.Overwrite = Core.Cfg.Overwrite;       // 所有 Install* 都读这个开关
+            Work.Overwrite = false;       // 所有 Install* 都读这个开关；本地版永远不重写已装的文件
             Core.Cfg.GameRoot = root;
             Core.Cfg.Recent.RemoveAll(delegate(string s) { return string.Equals(s, root, StringComparison.OrdinalIgnoreCase); });
             Core.Cfg.Recent.Insert(0, root);

@@ -52,9 +52,7 @@ namespace Installer
         // 组件默认全不勾：单 exe 下载的新人只想装一个 MOD，不该一点「开始装」就顺带
         // 铺进去约 580MB 平台组件。要用的人自己勾；老配置里写过 True 的仍按配置回填。
         public bool CfgFile = false;        // 新人首装不默认写 cfg；老配置里写过 True 的照旧
-        public bool Overwrite = false;      // false = 已装的跳过；true = 全部重装一遍
         public bool Swap = true;            // 换整套：切方案时把不在这套里的 MOD 关掉
-        public bool StrictVerify = false;   // 严格校验：复制完回读比一次 SHA256
         public bool ReduceMotion = false;   // true = 关闭轻量过渡，直接显示最终状态
         public bool DpiAware = true;        // true = 自己按 DPI 缩放界面（高 DPI 下不再模糊）；false = 老样子交给系统拉伸
         public string Mode = "local";       // 工作模式：local = 游戏目录 addons 当库（默认，单 exe 下载的人只有这一种）；usb = 拿 U 盘去装机
@@ -115,8 +113,6 @@ namespace Installer
         public static Dictionary<string, int> DirCount = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         public static Action<string> Sink;
 
-        // 复制完是否回读目标再算一遍 SHA256。默认关：只比大小，装 30 GB 能省掉一半 I/O。
-        public static bool StrictVerify = false;
         // 上次实测的落地速度（MB/s），用于估算剩余时间
         public static double LastRateMBps = 20.0;
 
@@ -532,9 +528,7 @@ namespace Installer
                     if (k == "GameRoot") Cfg.GameRoot = v;
                     else if (k == "LastRun") Cfg.LastRun = v;
                     else if (k == "CfgFile") Cfg.CfgFile = (v == "1");
-                    else if (k == "Overwrite") Cfg.Overwrite = (v == "1");
                     else if (k == "Swap") Cfg.Swap = (v == "1");
-                    else if (k == "StrictVerify") Cfg.StrictVerify = (v == "1");
                     else if (k == "ReduceMotion") Cfg.ReduceMotion = (v == "1");
                     else if (k == "DpiAware") Cfg.DpiAware = (v != "0");
                     else if (k == "Mode") Cfg.Mode = v;
@@ -568,9 +562,7 @@ namespace Installer
                 sb.AppendLine("LastRun=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                 sb.AppendLine("[platform]");
                 sb.AppendLine("CfgFile=" + (Cfg.CfgFile ? "1" : "0"));
-                sb.AppendLine("Overwrite=" + (Cfg.Overwrite ? "1" : "0"));
                 sb.AppendLine("Swap=" + (Cfg.Swap ? "1" : "0"));
-                sb.AppendLine("StrictVerify=" + (Cfg.StrictVerify ? "1" : "0"));
                 sb.AppendLine("ReduceMotion=" + (Cfg.ReduceMotion ? "1" : "0"));
                 sb.AppendLine("DpiAware=" + (Cfg.DpiAware ? "1" : "0"));
                 sb.AppendLine("Mode=" + (ModeLock ?? Cfg.Mode));
@@ -1181,7 +1173,7 @@ namespace Installer
             catch { return null; }
         }
 
-        // 校验：大小必查；StrictVerify 打开时才回读目标算一遍 SHA256
+        // 校验：只比大小（原来还有个「严格校验」开关，装完回读算 SHA256；本地版不复制文件，用不上，删了）
         public static bool CopyOneVerified(string src, string dst, out string why)
         {
             why = null;
@@ -1191,12 +1183,6 @@ namespace Installer
                 CopyOneHash(src, dst, out hs);
                 long a = new FileInfo(src).Length, b = new FileInfo(dst).Length;
                 if (a != b) { why = "大小不符 " + b + "/" + a; return false; }
-                if (StrictVerify)
-                {
-                    string hd = HashOf(dst);
-                    if (hd == null) { why = "目标哈希算不出来"; return false; }
-                    if (!string.Equals(hs, hd, StringComparison.OrdinalIgnoreCase)) { why = "SHA256 不一致"; return false; }
-                }
                 return true;
             }
             catch (Exception ex) { why = ex.Message; return false; }
