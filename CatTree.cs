@@ -3435,21 +3435,24 @@ namespace Installer
         {
             if (peek == null) return;
             Slot s = Current;
-            if (s == null)
+            bool unmatchedPage = selKey == "#unmatched";
+            if (s == null && !unmatchedPage)
             {
                 peek.Visible = false;
                 return;
             }
             peek.Visible = lv.Visible;
 
-            if (g == null)
+            if (g == null && !unmatchedPage)
             {
                 g = ChosenOf(s);
                 if (g == null && s.Items.Count > 0) g = s.Items[0];
             }
             if (g == null)
             {
-                peek.Clear(s.Empty ? Lang.S("这个位置还没有 MOD") : Lang.S("没有可预览的 MOD"));
+                // 未归类页没有「当前位置」这回事，只提示划过一行看详情
+                peek.Clear(unmatchedPage ? Lang.S("鼠标划过一行，看这条 MOD 的详情")
+                           : (s.Empty ? Lang.S("这个位置还没有 MOD") : Lang.S("没有可预览的 MOD")));
                 return;
             }
 
@@ -3543,6 +3546,7 @@ namespace Installer
         {
             lblExtraTitle.Visible = false;
             lvExtra.Visible = false;
+            if (chkMulti != null) chkMulti.Visible = false;   // 未归类页没有「位置」，多选没意义
             lblTitle.Text = Lang.S("未归类");
             lblCur.Text = unmatched + " 个 MOD 没认出改的是哪件东西";
             lv.BeginUpdate();
@@ -3576,6 +3580,8 @@ namespace Installer
             }
             finally { lv.EndUpdate(); }
             lblFoot.Text = Lang.S("不影响装机，照常能勾。按住一行拖到左边的树上松手 = 归到那；或双击打开「设置 MOD 分类」细调。");
+            peekIdx = -2;                 // 换了页面，悬停行号作废
+            UpdatePeek(null);
             LayoutSelf();
             LayoutCols();
         }
@@ -5150,8 +5156,12 @@ namespace Installer
         {
             ScrollHost p = Parent as ScrollHost;
             if (p == null || !p.CanScroll) return;
-            if (y < RowH / 2) p.ScrollTo(p.Offset - RowH);
-            else if (y > Height - RowH / 2) p.ScrollTo(p.Offset + RowH);
+            // 这里以前拿 Height（整棵树的内容高）当视口底边，只有拖到内容最末一行才会滚；
+            // 要按「视口」算：树体坐标 y 落在视口上下边一个行高内才滚。
+            int vh = p.ClientSize.Height;
+            if (vh <= 0) return;
+            if (y - p.Offset < RowH / 2) p.ScrollTo(p.Offset - RowH);
+            else if (p.Offset + vh - y < RowH / 2) p.ScrollTo(p.Offset + RowH);
         }
 
         // 悬停说明：这行有几个本体候选、有没有可叠的扩展、有没有组合装。
