@@ -988,7 +988,7 @@ namespace Installer
                 Theme.Ink2, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
         }
     }
-    internal sealed class CatTree : UserControl, IMessageFilter
+    internal sealed class CatTree : UserControl
     {
         private readonly MainForm mf;
         private readonly ScrollHost scroll;
@@ -1061,8 +1061,6 @@ namespace Installer
 
         public CatTree(MainForm owner)
         {
-            // 拖未归类 MOD 进树时，滚轮消息原本落在被拖的列表上 —— 用消息过滤器把它转给树
-            Application.AddMessageFilter(this);
             mf = owner;
             BackColor = Theme.Surface;
             Font = Theme.UI;
@@ -3846,24 +3844,39 @@ namespace Installer
             };
             return p;
         }
-        /// <summary>拖拽期间把 WM_MOUSEWHEEL 转给树：OLE 拖动时鼠标被源列表捕获，滚轮默认滚不到方案树。</summary>
-        public bool PreFilterMessage(ref Message m)
+        /// <summary>拖拽期间的滚轮：OLE 拖动时消息循环不经过 Application 的过滤器，改用低级鼠标钩子。</summary>
+        private Native.HookProc wheelHookProc;
+        private IntPtr wheelHook;
+
+        internal void StartWheelHook()
         {
-            const int WM_MOUSEWHEEL = 0x020A;
-            if (m.Msg != WM_MOUSEWHEEL) return false;
-            if (body == null || !body.ExtDragging) return false;
-            long lp = m.LParam.ToInt64();
-            Point sp = new Point(unchecked((short)(lp & 0xFFFF)), unchecked((short)((lp >> 16) & 0xFFFF)));
-            if (!RectangleToScreen(ClientRectangle).Contains(sp)) return false;
-            int delta = unchecked((short)((m.WParam.ToInt64() >> 16) & 0xFFFF));
-            body.WheelScroll(delta);
-            return true;
+            if (wheelHook != IntPtr.Zero) return;
+            wheelHookProc = WheelHookProc;                  // 必须留引用，否则委托被回收、钩子直接失效
+            wheelHook = Native.SetWindowsHookEx(14, wheelHookProc, IntPtr.Zero, 0);   // WH_MOUSE_LL
         }
 
-        protected override void Dispose(bool disposing)
+        internal void StopWheelHook()
         {
-            if (disposing) Application.RemoveMessageFilter(this);
-            base.Dispose(disposing);
+            if (wheelHook == IntPtr.Zero) return;
+            Native.UnhookWindowsHookEx(wheelHook);
+            wheelHook = IntPtr.Zero;
+            wheelHookProc = null;
+        }
+
+        private IntPtr WheelHookProc(int nCode, IntPtr wParam, IntPtr lParam)
+        {
+            const int WM_MOUSEWHEEL = 0x020A;
+            if (nCode >= 0 && wParam.ToInt32() == WM_MOUSEWHEEL && body != null && body.ExtDragging)
+            {
+                if (RectangleToScreen(ClientRectangle).Contains(Cursor.Position))
+                {
+                    // MSLLHOOKSTRUCT: pt(x,y) 占前 8 字节，mouseData 在 +8，高 16 位是滚动量
+                    int delta = unchecked((short)((System.Runtime.InteropServices.Marshal.ReadInt32(lParam, 8) >> 16) & 0xFFFF));
+                    body.WheelScroll(delta);
+                    return (IntPtr)1;                        // 吞掉：别让被拖的列表跟着滚
+                }
+            }
+            return Native.CallNextHookEx(wheelHook, nCode, wParam, lParam);
         }
 
         private void LayoutSelf()
@@ -4406,7 +4419,7 @@ namespace Installer
             DragOver += ExtDragOver;
             DragLeave += delegate { ExtDragEnd(); };
             DragDrop += ExtDragDrop;
-            extScroll = new Timer { Interval = 130 };
+            extScroll = new Timer { Interval = 45 };
             extScroll.Tick += delegate { ExtAutoScroll(); };
             extExpand.Interval = 600;
             extExpand.Tick += delegate
@@ -4909,7 +4922,7 @@ namespace Installer
             e.Effect = (row >= 0 && row < rows.Count && ExtAccepts(rows[row]))
                 ? DragDropEffects.Move : DragDropEffects.None;
 
-            if (!extDrag) extScroll.Start();
+            if (!extDrag) { extScroll.Start(); owner.StartWheelHook(); }
             extDrag = true;
             if (row != extRow)
             {
@@ -4945,6 +4958,7 @@ namespace Installer
             extExpandRow = -1;
             extScroll.Stop();
             extExpand.Stop();
+            owner.StopWheelHook();
             Invalidate();
         }
 
@@ -4956,8 +4970,12 @@ namespace Installer
             int vh = host.ClientSize.Height;
             if (vh <= 0) return;
             // extPt 是树体坐标：视口上沿在树体坐标里是 offset，下沿是 offset + 视口高
-            if (extPt.Y - host.Offset < RowH) host.ScrollTo(host.Offset - RowH);
-            else if (host.Offset + vh - extPt.Y < RowH) host.ScrollTo(host.Offset + RowH);
+            // 越靠近边缘滚得越快：进入 3 行高的感应带就开始滚，一 tick 1~3 行
+            int band = Math.Max(Dpi.S(24), RowH * 3);
+            int dTop = extPt.Y - host.Offset;
+            int dBottom = host.Offset + vh - extPt.Y;
+            if (dTop < band) host.ScrollTo(host.Offset - Math.Max(Dpi.S(6), (band - dTop) / 3));
+            else if (dBottom < band) host.ScrollTo(host.Offset + Math.Max(Dpi.S(6), (band - dBottom) / 3));
         }
 
         private void ExtDragDrop(object s, DragEventArgs e)
