@@ -3931,7 +3931,7 @@ namespace Installer
             if (lblCur != null) lblCur.SetBounds(mainX + pad + Dpi.S(102), 13, Math.Max(60, mainW - 2 * pad - 102 - 118), 18);
             if (chkMulti != null)
             {
-                chkMulti.SetBounds(mainX + Math.Max(Dpi.S(60), mainW - Dpi.S(112)), 33, Dpi.S(106), 22);
+                chkMulti.SetBounds(mainX + Math.Max(Dpi.S(60), mainW - Dpi.S(112)), 9, Dpi.S(106), 22);
                 chkMulti.BringToFront();
             }
 
@@ -4055,7 +4055,7 @@ namespace Installer
             // 本地模式：没有「库」可比，「已装」恒为真 —— 这一列纯属噪音，收成 0 宽、把宽度并给开关列。
             // 于是本地模式下能看到的只剩「开启 / 关闭」两个状态（开关列同时也是点击入口）。
             bool local = Core.IsLocal && v.Columns.Count >= 5;
-            if (local) { swW += instW; instW = 0; }
+            if (local) { instW = 0; }        // 本地模式没有「已装」这列，腾出来的宽度给名字列，别让开关列空占一大截
 
             int nameW = Math.Max(Dpi.S(90), w - kindW - sizeW - instW - swW);
             v.Columns[0].Width = nameW;
