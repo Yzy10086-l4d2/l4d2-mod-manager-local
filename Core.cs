@@ -53,6 +53,8 @@ namespace Installer
         // 铺进去约 580MB 平台组件。要用的人自己勾；老配置里写过 True 的仍按配置回填。
         public bool CfgFile = false;        // 新人首装不默认写 cfg；老配置里写过 True 的照旧
         public bool Overwrite = false;      // false = 已装的跳过；true = 全部重装一遍
+        public bool Swap = true;            // 换整套：切方案时把不在这套里的 MOD 关掉
+        public bool StrictVerify = false;   // 严格校验：复制完回读比一次 SHA256
         public bool ReduceMotion = false;   // true = 关闭轻量过渡，直接显示最终状态
         public bool DpiAware = true;        // true = 自己按 DPI 缩放界面（高 DPI 下不再模糊）；false = 老样子交给系统拉伸
         public string Mode = "local";       // 工作模式：local = 游戏目录 addons 当库（默认，单 exe 下载的人只有这一种）；usb = 拿 U 盘去装机
@@ -529,6 +531,8 @@ namespace Installer
                     else if (k == "LastRun") Cfg.LastRun = v;
                     else if (k == "CfgFile") Cfg.CfgFile = (v == "1");
                     else if (k == "Overwrite") Cfg.Overwrite = (v == "1");
+                    else if (k == "Swap") Cfg.Swap = (v == "1");
+                    else if (k == "StrictVerify") Cfg.StrictVerify = (v == "1");
                     else if (k == "ReduceMotion") Cfg.ReduceMotion = (v == "1");
                     else if (k == "DpiAware") Cfg.DpiAware = (v != "0");
                     else if (k == "Mode") Cfg.Mode = v;
@@ -561,6 +565,8 @@ namespace Installer
                 sb.AppendLine("[platform]");
                 sb.AppendLine("CfgFile=" + (Cfg.CfgFile ? "1" : "0"));
                 sb.AppendLine("Overwrite=" + (Cfg.Overwrite ? "1" : "0"));
+                sb.AppendLine("Swap=" + (Cfg.Swap ? "1" : "0"));
+                sb.AppendLine("StrictVerify=" + (Cfg.StrictVerify ? "1" : "0"));
                 sb.AppendLine("ReduceMotion=" + (Cfg.ReduceMotion ? "1" : "0"));
                 sb.AppendLine("DpiAware=" + (Cfg.DpiAware ? "1" : "0"));
                 sb.AppendLine("Mode=" + (ModeLock ?? Cfg.Mode));

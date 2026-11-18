@@ -26,12 +26,10 @@ namespace Installer
         private string nowStamp = "";             // 上一次读到游戏现状的时刻
         private int nowCatRows = 6;               // 「分类分布」这一块能放几行（按卡片高度算，放不下就截断）
         private bool logOpen;                     // 日志卡片展开（默认收起：排错才看，不该常驻）
-        private CheckBox chkSwap, chkStrict;
-        private RadioButton rdSkip, rdOver;
         private ComboBox cboProfile;
         // 最近套用/保存过的方案名（空=没套方案）：自检结果写回它
         private string appliedProfile = "";
-        private Section gMod, gLog, gOpt;
+        private Section gMod, gLog;
         private Button btnManage;
         private Button btnUnmatched;          // 「未识别 N 个」：打开手动分类页
         private TextBox txtSearch;
@@ -537,38 +535,6 @@ namespace Installer
             tips.SetToolTip(btnPanel, Lang.S("展开 / 收起左边那栏（装什么、安装选项、日志）。\r\n收起来以后整个窗口就是一张台面。"));
             Controls.Add(btnPanel);
 
-            // ---- 左栏中：安装选项（原来挤在 MOD 列表底部，语义上属于"怎么装"，跟"挑什么"分开）----
-            gOpt = new Section();
-            gOpt.Caption = Lang.S("安装选项"); gOpt.SetBounds(Theme.M, 56, leftW, 144); Controls.Add(gOpt);
-            chkSwap = new CheckBox(); chkSwap.Text = Lang.S("换整套（把不在这套里的 MOD 关掉）");
-            chkSwap.SetBounds(12, 28, leftW - 24, 22); Theme.Dress(chkSwap); gOpt.Controls.Add(chkSwap);
-            chkSwap.Checked = true;
-            tips.SetToolTip(chkSwap, "切方案时，上一套的 MOD 在 addonlist 里改成「关闭」，文件留在 addons 里不动。\r\n"
-                + "切回去直接打开就能用，不用重新复制。\r\n"
-                + "只认 U 盘库里有的 vpk —— 你自己丢进 addons 的不会被碰。");
-            chkStrict = new CheckBox(); chkStrict.Text = Lang.S("严格校验（慢一倍，更保险）");
-            chkStrict.SetBounds(12, 52, leftW - 24, 22); Theme.Dress(chkStrict); gOpt.Controls.Add(chkStrict);
-            tips.SetToolTip(chkStrict, Lang.S("默认只比文件大小。勾上之后，复制完再回读源文件和目标各算一遍 SHA256 比对。"));
-
-            // 已装的怎么办：这是机房里最常遇到的一件事 —— 有的机器上次装过一半，有的要原样重来
-            Label l5 = new Label(); l5.Text = Lang.S("已装的"); l5.SetBounds(12, 80, 56, 20); Theme.Dress(l5); gOpt.Controls.Add(l5);
-            rdSkip = new RadioButton(); rdSkip.Text = Lang.S("跳过"); rdSkip.SetBounds(70, 78, 66, 22); Theme.Dress(rdSkip); gOpt.Controls.Add(rdSkip);
-            rdOver = new RadioButton(); rdOver.Text = Lang.S("覆盖重装"); rdOver.SetBounds(140, 78, 96, 22); Theme.Dress(rdOver); gOpt.Controls.Add(rdOver);
-            Label l6 = new Label(); l6.Text = Lang.S("跳过已有 / 全部重写"); l6.SetBounds(240, 80, leftW - 240 - 12, 18); l6.Font = Theme.UISmall; Theme.Dress(l6); l6.ForeColor = Theme.Ink3; gOpt.Controls.Add(l6);
-            tips.SetToolTip(rdSkip, Lang.S("平台、Skeeto、素材包、MQCam、MOD 只要已经装过且大小一致就跳过。\r\n装得快，适合新机器或者上次已经装好了。"));
-            tips.SetToolTip(rdOver, Lang.S("不管装没装过，全都重新写一遍。\r\n用来修「装了一半」「文件被删/被改」的机器，慢一些但最干净。"));
-            // 本地模式没有「来源库」：选中的条目全都在游戏目录里，CopyMods 遇到 FromGame 直接跳过，
-            // 连「覆盖重装」这个分支都走不到。留着能勾就是骗人 —— 勾了想修一个坏包，什么都不会发生。
-            if (Core.IsLocal)
-            {
-                rdOver.Enabled = false;
-                tips.SetToolTip(rdOver, Lang.S("本地模式下没有可覆盖的来源：这些 MOD 本来就在游戏目录里，这里只改启用开关。\r\n"
-                    + "要重写某个包，从库里重新装（U 盘模式），或者先把 addons 里那份删掉。"));
-            }
-
-            // 参数配置：全套管理在对话框里，外面只留「选哪套 + 还原」
-            Label l7 = new Label(); l7.Text = Lang.S("参数"); l7.SetBounds(12, 110, 56, 20); Theme.Dress(l7); gOpt.Controls.Add(l7);
-
             // ---- 左栏下：日志（默认收起）----
             // 日志是排错才看的东西：常驻的话左栏一半高度都被它占着，把「装什么 / 安装选项」
             // 挤到上面一小块。收起来只留一个切换按钮，点了才展开；高度由 ApplyResponsive 算。
@@ -829,7 +795,6 @@ namespace Installer
             txtGame.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             btnBrowse.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnLaunch.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            gOpt.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             gl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
             gm.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             lblSel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
@@ -964,15 +929,6 @@ namespace Installer
 
         private void ApplyConfig()
         {
-            // 存过参数存档的老用户，默认勾上「写参数配置」是合理的（他存过就说明下次要用）。
-            // 但全新安装的人连一个 MOD 都还没下，不该有任何默认勾选项 —— 否则 0 个 MOD
-            // 点「开始装」也会顺手写 cfg。用「配置文件是否存在」区分，不靠猜。
-            bool fresh = !File.Exists(Core.CfgPath);
-            rdSkip.Checked = !Core.Cfg.Overwrite;
-            rdOver.Checked = Core.Cfg.Overwrite;
-            // 本地模式没有来源库：配置里就算存着 Overwrite=true，界面也不能显示成「能覆盖」，
-            // 否则用户勾着它装机、以为重写了一遍，实际 Work.CopyMods 早就按 FromGame 跳过了。
-            if (Core.IsLocal) { rdOver.Checked = false; rdOver.Enabled = false; rdSkip.Checked = true; }
             foreach (string m in Core.Cfg.Mods) checkedKeys.Add(m);
             CheckRowsByKeys();
             UpdateSel();
@@ -3197,7 +3153,7 @@ namespace Installer
                 return;
             }
             // 压缩包里的 vpk 也能装：CopyMods 会单独抽那一个出来，不解整包、不动 U 盘上的包
-            Work.Overwrite = !rdSkip.Checked;
+            Work.Overwrite = Core.Cfg.Overwrite;
             int copied = 0, skipped = 0;
             List<string> added = null, failed = null;
             try
@@ -3462,8 +3418,6 @@ namespace Installer
             Profile p = new Profile();
             p.Name = name;
             p.HasOpt = true;
-            p.Swap = chkSwap.Checked;
-            p.Overwrite = rdOver != null && rdOver.Checked;
             foreach (ModItem it in sel) p.Mods.Add(it.Key);
             ProfileStore.Save(p);                     // 同名就是覆盖，不留副本
             appliedProfile = p.Name;
@@ -3485,12 +3439,6 @@ namespace Installer
             }
             checkedKeys.Clear();
             foreach (string r in ok) checkedKeys.Add(r);
-            if (withOptions && p.HasOpt)
-            {
-                chkSwap.Checked = p.Swap;
-                if (rdOver != null) rdOver.Checked = p.Overwrite;
-                if (rdSkip != null) rdSkip.Checked = !p.Overwrite;
-            }
             CheckRowsByKeys();
             UpdateSel();
             if (withOptions) appliedProfile = p.Name;
@@ -3548,11 +3496,6 @@ namespace Installer
             HashSet<string> stored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string k in p.Mods) if (Core.ByRel.ContainsKey(k)) stored.Add(k);
             if (!stored.SetEquals(checkedKeys)) return true;
-            if (p.HasOpt)
-            {
-                if (chkSwap.Checked != p.Swap) return true;
-                if ((rdOver != null && rdOver.Checked) != p.Overwrite) return true;
-            }
             return false;
         }
 
@@ -3595,11 +3538,8 @@ namespace Installer
             int rightX = drawerOpen ? Theme.M + leftW + Theme.G : Theme.M;
             int rightW = W - Theme.M - rightX;
 
-            gOpt.Width = Dpi.S(leftW);
             gLog.Width = Dpi.S(leftW);
             txtLog.Width = Dpi.S(leftW - 24);
-            chkSwap.Width = Dpi.S(leftW - 24);
-            chkStrict.Width = Dpi.S(leftW - 24);
 
             gMod.Left = Dpi.S(rightX);
             gMod.Width = Dpi.S(rightW);
@@ -3624,13 +3564,10 @@ namespace Installer
                 viewHost.Height = Dpi.S(Math.Max(80, modH - 118 - 74));
                 lblSel.Top = Dpi.S(modH - 64);
                 lblConflict.Top = Dpi.S(modH - 40);
-                // 左栏纵向：两张卡高度由内容定死（装什么 222 / 安装选项 144），
-                // 日志切换按钮贴左栏底部，日志在它上方展开、吃掉中间那片空白，收起时高度归零。
-                // 以前日志是常驻的 CH-438-BottomBarH，窗口一高它就把左栏一半占了。
-                // 左栏底部成组：日志按钮 + 一行库信息，都贴底但留 16px。
-                // 试过让按钮紧跟「安装选项」，结果中间空出一块、底部也空 —— 上密下疏比"中间漏一块"自然。
+                // 左栏纵向：安装选项搬进设置后，顶上那张卡没了 —— 切换按钮和「游戏现状」直接贴顶，
+                // 把原来空出来的半屏交给现状卡（它自己会按高度铺分类分布）。
                 int infoTop = H - BottomBarH - 24;
-                const int btnLogTop = 320;                  // 紧跟「安装选项」卡片
+                const int btnLogTop = 56;                   // 贴顶：顶栏下面就是「显示日志」
                 int logTop = btnLogTop + Theme.H + Theme.S;
                 int logH = Math.Max(0, infoTop - Theme.S - logTop);
                 if (btnLogToggle != null)
@@ -3818,7 +3755,7 @@ namespace Installer
                 SetLogOpen(true);
                 if (gLog.Top + gLog.Height > btnInstall.Top + 1)
                 { bad++; Core.Log("FAIL", tag + "日志展开后压到底栏（底 " + (gLog.Top + gLog.Height) + " / 按钮 " + btnInstall.Top + "）"); }
-                if (gLog.Top < gOpt.Top + gOpt.Height)
+                if (gLog.Top < Dpi.S(56))
                 { bad++; Core.Log("FAIL", tag + "日志展开后压到「安装选项」卡片"); }
                 if (gLog.Height < Dpi.S(120))
                 { bad++; Core.Log("FAIL", tag + "日志展开后只有 " + gLog.Height + "px，装不下内容"); }
@@ -3866,7 +3803,6 @@ namespace Installer
         internal void SetDrawer(bool open)
         {
             drawerOpen = open;
-            if (gOpt != null) gOpt.Visible = open;
             if (gLog != null) gLog.Visible = open && logOpen;
             if (btnLogToggle != null) btnLogToggle.Visible = open;
             if (btnPanel != null) btnPanel.Text = open ? Lang.S("收起") : "面板";
@@ -4067,10 +4003,10 @@ namespace Installer
 
             // 5) 抽屉：收起时右栏顶到左边距，展开时让出 396 给左栏
             SetDrawer(true);
-            if (gOpt == null || !gOpt.Visible) { bad++; Core.Log("FAIL", "DESK 抽屉展开后左栏没出来"); }
+            if (gNow == null || !gNow.Visible) { bad++; Core.Log("FAIL", "DESK 抽屉展开后左栏没出来"); }
             if (gMod.Left != Theme.M + 396 + Theme.G) { bad++; Core.Log("FAIL", "DESK 抽屉展开后右栏位置不对: " + gMod.Left); }
             SetDrawer(false);
-            if (gOpt != null && gOpt.Visible) { bad++; Core.Log("FAIL", "DESK 抽屉收起后左栏还在"); }
+            if (gNow != null && gNow.Visible) { bad++; Core.Log("FAIL", "DESK 抽屉收起后左栏还在"); }
             if (gMod.Left != Theme.M) { bad++; Core.Log("FAIL", "DESK 抽屉收起后右栏没顶到左边: " + gMod.Left); }
 
             Snap("desk-tree");
@@ -4566,8 +4502,8 @@ namespace Installer
             InstallJob j = new InstallJob();
             j.Root = root;
             j.Sel = Selected();
-            j.Swap = chkSwap.Checked;
-            Core.StrictVerify = chkStrict.Checked;
+            j.Swap = Core.Cfg.Swap;
+            Core.StrictVerify = Core.Cfg.StrictVerify;
 
             if (j.Sel.Count == 0)
             {
@@ -4643,9 +4579,8 @@ namespace Installer
             }
             catch { }
 
-            Work.Overwrite = !rdSkip.Checked;          // 所有 Install* 都读这个开关
+            Work.Overwrite = Core.Cfg.Overwrite;       // 所有 Install* 都读这个开关
             Core.Cfg.GameRoot = root;
-            Core.Cfg.Overwrite = !rdSkip.Checked;
             Core.Cfg.Recent.RemoveAll(delegate(string s) { return string.Equals(s, root, StringComparison.OrdinalIgnoreCase); });
             Core.Cfg.Recent.Insert(0, root);
             while (Core.Cfg.Recent.Count > 6) Core.Cfg.Recent.RemoveAt(Core.Cfg.Recent.Count - 1);
