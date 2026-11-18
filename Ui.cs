@@ -11,7 +11,7 @@ namespace Installer
     public partial class MainForm : Form
     {
         private ComboBox txtGame;
-        private FlatButton btnBrowse, btnFind, btnSettings, btnInstall, btnRestore, btnOpen, btnSwitch, btnCancel, btnClearSearch;
+        private FlatButton btnBrowse, btnLaunch, btnSettings, btnInstall, btnRestore, btnOpen, btnSwitch, btnCancel, btnClearSearch;
         private FlatButton btnView, btnPanel;     // 顶部：台面/方案树 切换、左栏抽屉
         private FlatButton btnWorkshop;           // 顶部：从创意工坊导入
         private bool drawerOpen;                  // 左栏（装什么 / 安装选项 / 日志）是否展开
@@ -480,7 +480,11 @@ namespace Installer
             txtGame.DropDownStyle = ComboBoxStyle.DropDown; Theme.Dress(txtGame); Controls.Add(txtGame);
             txtGame.TextChanged += delegate { QueuePrecheck(); };   // 手输路径时底栏那句提示跟着变
             btnBrowse = new FlatButton(); btnBrowse.Soft = true; btnBrowse.Text = Lang.S("浏览…"); btnBrowse.SetBounds(browseX, 16, browseW, Theme.H); btnBrowse.Click += delegate { BrowseGame(); }; Controls.Add(btnBrowse);
-            btnFind = new FlatButton(); btnFind.Soft = true; btnFind.Text = Lang.S("自动找"); btnFind.SetBounds(findX, 16, findW, Theme.H); btnFind.Click += delegate { FindGame(); }; Controls.Add(btnFind);
+            btnLaunch = new FlatButton(); btnLaunch.Soft = true; btnLaunch.Text = Lang.S("启动项"); btnLaunch.SetBounds(findX, 16, findW, Theme.H);
+            btnLaunch.AccessibleName = "启动项组合";
+            btnLaunch.Click += delegate { using (LaunchCatalogForm f = new LaunchCatalogForm()) f.ShowDialog(this); };
+            tips.SetToolTip(btnLaunch, "自己组合启动项：勾要用的开关，一键复制组合，去 Steam 里粘。\r\n找游戏目录仍在「设置」里（自动找 / 浏览…）。");
+            Controls.Add(btnLaunch);
             // 工坊导入：入口放顶栏而不是藏在设置里 —— 这是「往库里加东西」的主路径之一
             btnWorkshop = new FlatButton(); btnWorkshop.Text = Lang.S("工坊");
             btnWorkshop.SetBounds(wsX, 16, wsW, Theme.H);
@@ -866,7 +870,7 @@ namespace Installer
             MinimumSize = new Size(Math.Min(1120, wmin.Width - 20), Math.Min(740, wmin.Height - 20));
             txtGame.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             btnBrowse.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            btnFind.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnLaunch.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             gp.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             gOpt.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             gl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
@@ -3854,7 +3858,7 @@ namespace Installer
             btnManage.Left = Dpi.S(rightW - 12 - 88);
             if (btnUnmatched != null) btnUnmatched.Left = Dpi.S(rightW - 12 - 88 - 8 - 120);
 
-            // 顶部：游戏目录 / 浏览 / 自动找 / 设置
+            // 顶部：游戏目录 / 浏览 / 启动项 / 台面 / 抽屉 / 工坊 / 设置
             const int findW = 76;
             const int browseW = 76;
             const int settingsW = 60;
@@ -3870,7 +3874,7 @@ namespace Installer
             int browseX = findX - topGap - browseW;
             txtGame.Width = Dpi.S(browseX - topGap - 8 - 80);
             btnBrowse.Left = Dpi.S(browseX);
-            btnFind.Left = Dpi.S(findX);
+            btnLaunch.Left = Dpi.S(findX);
             btnSettings.Left = Dpi.S(settingsX);
             btnView.Left = Dpi.S(viewX);
             btnPanel.Left = Dpi.S(panelX);
@@ -3941,8 +3945,8 @@ namespace Installer
                 if (btnCancel.Left + btnCancel.Width > btnInstall.Left)
                 { bad++; Core.Log("FAIL", tag + "「停止剩余」压住了「开始安装」"); }
 
-                // 顶部：设置 ← 抽屉 ← 台面 ← 自动找 ← 浏览（从左到右依次右移）
-                FlatButton[] top = new FlatButton[] { btnBrowse, btnFind, btnView, btnPanel, btnWorkshop, btnSettings };
+                // 顶部：设置 ← 工坊 ← 抽屉 ← 台面 ← 启动项 ← 浏览（从左到右依次右移）
+                FlatButton[] top = new FlatButton[] { btnBrowse, btnLaunch, btnView, btnPanel, btnWorkshop, btnSettings };
                 if (btnSettings.Left + Dpi.S(60) > W - m + 1) { bad++; Core.Log("FAIL", tag + "「设置」出窗"); }
                 for (int i = 1; i < top.Length; i++)
                     if (top[i].Left <= top[i - 1].Left + Dpi.S(56)) { bad++; Core.Log("FAIL", tag + "顶部按钮叠在一起：" + top[i].Text); }
@@ -4470,7 +4474,7 @@ namespace Installer
                 btnInstall.Enabled = !busy && preOk;
                 btnRestore.Enabled = !busy;
                 btnSwitch.Enabled = !busy;
-                btnFind.Enabled = !busy;
+                btnLaunch.Enabled = !busy;
                 btnBrowse.Enabled = !busy;
                 // 空闲时不摆一条空进度条：深色主题下它是一道白条，看着像没画完
                 if (bar != null) bar.Visible = busy;

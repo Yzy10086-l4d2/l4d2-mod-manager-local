@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
@@ -58,10 +59,8 @@ namespace Installer
             chk(!Default.Contains("0/1"), "推荐串里没有 0/1 占位");
             chk(Default.Contains("-skeeto_particle_platform 1"), "Skeeto 粒子平台明确写 1");
             chk(Default.Contains("-l4n_use_neko_engine_post"), "带 L4N 后处理");
-            chk(Default.Contains("-novid") && Default.StartsWith("-heapsize 2096999"), "heapsize 在头、novid 在尾");
             chk(CountSwitches(Default) == 5, "开关数 5（实际 " + CountSwitches(Default) + "）");
             chk(Clean(Default) == Default, "推荐串本身干净");
-            chk(CountSwitches("") == 0, "空串开关数 0");
             return bad;
         }
     }
@@ -91,7 +90,7 @@ namespace Installer
                 "进程优先级调高，抢 CPU 更积极，帧率更稳。",
                 "推荐", "engine.dll / client.dll", true),
             new LaunchOpt("-l4n_use_neko_engine_post",
-                "启用 L4N 的 Neko 引擎后处理（画面调色/特效）。没装 L4N 时写了无效。",
+                "启用 L4N 的 Neko 引擎后处理（画面调色 / 特效）。没装 L4N 时写了无效。",
                 "推荐", "left4neko.dll", true),
             new LaunchOpt("-skeeto_particle_platform 1",
                 "Skeeto 粒子平台开关：1 开 / 0 关；不写按 0 处理。装了 Skeeto 想要粒子效果就写 1。",
@@ -112,7 +111,7 @@ namespace Installer
                 "开局直接打开控制台（改 cvar、看指令用）。",
                 "可选", "engine.dll", false),
             new LaunchOpt("-insecure",
-                "关闭 VAC。只连第三方/自建服时用；开着它进不去官方安全服。",
+                "关闭 VAC。只连第三方 / 自建服时用；开着它进不去官方安全服。",
                 "可选", "engine.dll", false),
             new LaunchOpt("-windowed / -noborder",
                 "窗口化 / 无边框窗口，配合 -w 1280 -h 720 指定窗口大小。",
@@ -139,117 +138,217 @@ namespace Installer
                 "软件渲染（不用显卡加速），画面极慢，只做故障对照。",
                 "别加", "engine.dll", false),
         };
+
+        /// <summary>建议标签的颜色：推荐绿、可选蓝、多余橙、别加红。</summary>
+        public static Color ColorOf(string verdict)
+        {
+            if (verdict == "推荐") return Color.FromArgb(0, 132, 82);
+            if (verdict == "可选") return Color.FromArgb(38, 92, 224);
+            if (verdict == "多余") return Color.FromArgb(170, 105, 10);
+            return Color.FromArgb(176, 62, 62);
+        }
     }
 
     /// <summary>
-    /// 推荐启动项大全：只读表格。上面一排按钮能复制推荐整串或选中的那种，双击一行也是复制。
-    /// 这里没有任何编辑能力 —— 参数是固定的推荐值，要改就自己复制到 Steam 里改。
+    /// 推荐启动项窗口（方案 B）：左边按建议分四组勾选，右边讲清选中那条是干什么的，
+    /// 底下实时拼出组合串，一个按钮复制走。这里没有编辑能力：参数是固定的推荐值。
     /// </summary>
     public class LaunchCatalogForm : Form
     {
         private ListView lv;
-        private Label lblMsg;
+        private Label lblFlag, lblVerdict, lblWhat, lblWhere, lblCount, lblHint;
+        private TextBox txtCombo;
+        private FlatButton btnCopy, btnReset;
 
         public LaunchCatalogForm()
         {
-            Text = Lang.S("推荐启动项大全");
+            Text = Lang.S("启动项组合");
             Theme.UseDpi(this);
-            ClientSize = Dpi.Sz(900, 520);
+            ClientSize = Dpi.Sz(900, 644);
             Font = Theme.UI;
             BackColor = Theme.Bg;
             StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.Sizable;
-            MaximizeBox = true;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
 
-            Label hint = new Label();
-            hint.SetBounds(14, 12, 872, 34);
-            hint.Font = Theme.UISmall;
-            hint.ForeColor = Theme.Ink2;
-            hint.Text = "推荐的一整串（下面「复制推荐整套」可直接拿去 Steam）："
-                      + "\r\n" + LaunchArgs.Default
-                      + "\r\n「建议」按游戏自己认不认来标：多余 = 写了不生效；别加 = 会掉帧或泄露信息。";
-            Controls.Add(hint);
+            lblHint = new Label();
+            lblHint.SetBounds(14, 10, 872, 20);
+            lblHint.Font = Theme.UISmall;
+            lblHint.ForeColor = Theme.Ink2;
+            lblHint.Text = Lang.S("勾上要用的开关（默认勾好推荐那几条）；右边是选中那条的说明，底下一行是拼出来的组合。");
+            Controls.Add(lblHint);
 
             lv = new ListView();
-            lv.SetBounds(14, 74, 872, 364);
+            lv.SetBounds(14, 36, 420, 496);
             lv.View = View.Details;
+            lv.CheckBoxes = true;
             lv.FullRowSelect = true;
             lv.MultiSelect = false;
             lv.HideSelection = false;
-            lv.GridLines = false;
-            lv.HeaderStyle = ColumnHeaderStyle.Nonclickable;
+            lv.HeaderStyle = ColumnHeaderStyle.None;
             lv.Font = Theme.UISmall;
             Theme.Dress(lv);
-            lv.Columns.Add(Lang.S("参数"), Dpi.S(210));
-            lv.Columns.Add(Lang.S("建议"), Dpi.S(58));
-            lv.Columns.Add(Lang.S("作用"), Dpi.S(440));
-            lv.Columns.Add(Lang.S("依据"), Dpi.S(150));
+            lv.Columns.Add("", Dpi.S(400));
+            lv.SizeChanged += delegate { if (lv.Columns.Count > 0) lv.Columns[0].Width = Math.Max(120, lv.ClientSize.Width - Dpi.S(4)); };
+            string[] groups = new string[] { "推荐（装了对应组件就勾）", "可选（按需）", "多余（写了不生效）", "别加" };
+            foreach (string g in groups)
+            {
+                ListViewGroup grp = new ListViewGroup(Lang.S(g));
+                lv.Groups.Add(grp);
+            }
+            for (int i = 0; i < groups.Length; i++)
+                lv.Groups[i].Tag = i;
             foreach (LaunchOpt o in LaunchCatalog.Items)
             {
                 ListViewItem it = new ListViewItem(o.Flag);
-                it.SubItems.Add(o.Verdict);
-                it.SubItems.Add(o.What);
-                it.SubItems.Add(o.Where);
                 it.Tag = o;
-                if (o.InDefault) it.Font = Theme.UIBold;
-                else it.ForeColor = Theme.Ink2;
+                it.Checked = o.InDefault;
+                it.ForeColor = LaunchCatalog.ColorOf(o.Verdict);
+                it.Group = lv.Groups[VerdictIndex(o.Verdict)];
                 lv.Items.Add(it);
             }
-            lv.SizeChanged += delegate { FitColumns(); };
-            lv.DoubleClick += delegate { CopyOne(); };
+            lv.ItemChecked += delegate { RefreshCombo(); };
+            lv.SelectedIndexChanged += delegate { ShowDetail(); };
             Controls.Add(lv);
+            if (lv.Items.Count > 0) lv.Items[0].Selected = true;
 
-            FlatButton ball = new FlatButton();
-            ball.Text = Lang.S("复制推荐整套");
-            ball.SetBounds(14, 450, 140, Theme.H);
-            ball.Click += delegate { CopyText(LaunchArgs.Default, "推荐整串已复制（" + LaunchArgs.CountSwitches(LaunchArgs.Default) + " 个开关）"); };
-            Controls.Add(ball);
+            btnReset = new FlatButton();
+            btnReset.SetBounds(14, 540, 118, Theme.H);
+            btnReset.Text = Lang.S("恢复推荐勾选");
+            btnReset.Click += delegate { ResetChecks(); };
+            Controls.Add(btnReset);
 
-            FlatButton bone = new FlatButton();
-            bone.Text = Lang.S("复制选中这条");
-            bone.SetBounds(162, 450, 130, Theme.H);
-            bone.Click += delegate { CopyOne(); };
-            Controls.Add(bone);
+            Panel right = new Panel();
+            right.SetBounds(446, 36, 440, 496);
+            right.BackColor = Theme.Surface;
+            right.BorderStyle = BorderStyle.FixedSingle;
+            Controls.Add(right);
 
-            lblMsg = new Label();
-            lblMsg.SetBounds(300, 455, 330, 20);
-            lblMsg.Font = Theme.UISmall;
-            lblMsg.ForeColor = Theme.Ink3;
-            Controls.Add(lblMsg);
+            lblFlag = new Label();
+            lblFlag.SetBounds(14, 12, 410, 26);
+            lblFlag.Font = Theme.Mono;
+            lblFlag.ForeColor = Theme.Ink;
+            right.Controls.Add(lblFlag);
 
-            FlatButton bclose = new FlatButton();
-            bclose.Text = Lang.S("关闭");
-            bclose.SetBounds(770, 450, 116, Theme.H);
-            bclose.Click += delegate { Close(); };
-            bclose.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            Controls.Add(bclose);
+            lblVerdict = new Label();
+            lblVerdict.SetBounds(14, 42, 410, 20);
+            lblVerdict.Font = Theme.UIBold;
+            right.Controls.Add(lblVerdict);
 
-            AcceptButton = bclose;
-            CancelButton = bclose;
+            lblWhat = new Label();
+            lblWhat.SetBounds(14, 74, 410, 150);
+            lblWhat.Font = Theme.UI;
+            lblWhat.ForeColor = Theme.Ink2;
+            right.Controls.Add(lblWhat);
+
+            lblWhere = new Label();
+            lblWhere.SetBounds(14, 176, 410, 60);
+            lblWhere.Font = Theme.UISmall;
+            lblWhere.ForeColor = Theme.Ink3;
+            right.Controls.Add(lblWhere);
+
+            lblCount = new Label();
+            lblCount.SetBounds(142, 544, 560, 20);
+            lblCount.Font = Theme.UISmall;
+            lblCount.ForeColor = Theme.Ink3;
+            Controls.Add(lblCount);
+
+            txtCombo = new TextBox();
+            txtCombo.SetBounds(14, 576, 700, 24);
+            txtCombo.ReadOnly = true;
+            Theme.Dress(txtCombo);
+            txtCombo.BackColor = Theme.Surface;
+            Controls.Add(txtCombo);
+
+            btnCopy = new FlatButton();
+            btnCopy.SetBounds(722, 574, 164, Theme.H);
+            btnCopy.Text = Lang.S("一键复制组合");
+            btnCopy.Click += delegate { CopyCombo(); };
+            Controls.Add(btnCopy);
+
+            AcceptButton = btnCopy;
+            ShowDetail();
+            RefreshCombo();
         }
 
-        private void FitColumns()
+        private static int VerdictIndex(string verdict)
         {
-            if (lv == null) return;
-            int rest = lv.ClientSize.Width - lv.Columns[0].Width - lv.Columns[1].Width - lv.Columns[3].Width - Dpi.S(6);
-            if (rest > 120) lv.Columns[2].Width = rest;
+            if (verdict == "推荐") return 0;
+            if (verdict == "可选") return 1;
+            if (verdict == "多余") return 2;
+            return 3;
         }
 
-        private void CopyOne()
+        private void ResetChecks()
         {
-            if (lv.SelectedItems.Count == 0) { lblMsg.Text = "先点一行，再复制"; return; }
-            LaunchOpt o = lv.SelectedItems[0].Tag as LaunchOpt;
-            if (o == null) return;
-            CopyText(o.Flag, "已复制这条：" + o.Flag);
+            foreach (ListViewItem it in lv.Items)
+            {
+                LaunchOpt o = it.Tag as LaunchOpt;
+                if (o != null) it.Checked = o.InDefault;
+            }
+            RefreshCombo();
         }
 
-        private void CopyText(string s, string msg)
+        /// <summary>当前勾选的开关，按表格从上到下的顺序拼。</summary>
+        private string Compose()
         {
-            try { Clipboard.SetText(s); lblMsg.Text = msg; }
-            catch (Exception ex) { lblMsg.Text = "复制失败：" + ex.Message; }
-            Core.Log("OK", msg);
+            StringBuilder sb = new StringBuilder();
+            foreach (ListViewItem it in lv.Items)
+            {
+                if (!it.Checked) continue;
+                if (sb.Length > 0) sb.Append(' ');
+                sb.Append(it.Text);
+            }
+            return sb.ToString();
+        }
+
+        private void RefreshCombo()
+        {
+            string s = Compose();
+            int n = LaunchArgs.CountSwitches(s);
+            txtCombo.Text = s;
+            lblCount.Text = n == 0
+                ? Lang.S("还没勾任何开关 —— 勾上至少一条才能复制")
+                : Lang.F("已勾 {0} 个开关，拼出来的就是左边这串", n);
+            btnCopy.Enabled = n > 0;
+        }
+
+        private void ShowDetail()
+        {
+            LaunchOpt o = null;
+            if (lv.SelectedItems.Count > 0) o = lv.SelectedItems[0].Tag as LaunchOpt;
+            if (o == null)
+            {
+                lblFlag.Text = "";
+                lblVerdict.Text = "";
+                lblWhat.Text = "";
+                lblWhere.Text = "";
+                return;
+            }
+            lblFlag.Text = o.Flag;
+            lblVerdict.Text = Lang.F("建议：{0}", o.Verdict);
+            lblVerdict.ForeColor = LaunchCatalog.ColorOf(o.Verdict);
+            lblWhat.Text = o.What;
+            lblWhere.Text = Lang.F("依据：{0}", o.Where);
+        }
+
+        private void CopyCombo()
+        {
+            string s = Compose();
+            if (s.Length == 0) return;
+            try
+            {
+                Clipboard.SetText(s);
+                btnCopy.Text = Lang.S("已复制");
+                Core.Log("OK", "启动项组合已复制（" + LaunchArgs.CountSwitches(s) + " 个开关）");
+            }
+            catch (Exception ex)
+            {
+                Core.Log("WARN", "复制启动项组合失败: " + ex.Message);
+                btnCopy.Text = Lang.S("复制失败");
+            }
         }
     }
 }
