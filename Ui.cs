@@ -11,7 +11,7 @@ namespace Installer
     public partial class MainForm : Form
     {
         private ComboBox txtGame;
-        private FlatButton btnLaunch, btnSettings, btnInstall, btnRestore, btnOpen, btnCancel, btnClearSearch;
+        private FlatButton btnLaunch, btnSettings, btnInstall, btnRestore, btnCancel, btnClearSearch;
         private FlatButton btnView, btnPanel;     // 顶部：台面/方案树 切换、左栏抽屉
         private FlatButton btnWorkshop;           // 顶部：从创意工坊导入
         private bool drawerOpen;                  // 左栏（装什么 / 安装选项 / 日志）是否展开
@@ -732,10 +732,9 @@ namespace Installer
             // 右侧只留「次要 + 主操作」两个；破坏性的「一键还原」挪到最左下角，
             // 和主操作隔开近一个屏宽 —— 以前它跟「开始安装」同高同排只差 8px，
             // 手滑一下就得读一段四行长的确认框，读多了确认就失效。
-            const int bwRestore = 96, bwOpen = 112, bwInstall = 132;
+            const int bwRestore = 96, bwInstall = 132;
             int rightEdge = W - Theme.M;
-            int xOpen = rightEdge - bwOpen;
-            int xInstall = xOpen - Theme.S - bwInstall;
+            int xInstall = rightEdge - bwInstall;
 
             // 本地版这个按钮不「安装」任何文件：它把游戏里每个位置的开关换成当前勾选的那套。
             // 叫「开始安装」会让人以为要复制文件，语义对不上。
@@ -753,9 +752,6 @@ namespace Installer
             // 这个按钮会让人以为能撤掉什么，直接藏掉；开关都能在「已装 MOD 开关」里单独翻。
             btnRestore.Visible = false;
             tips.SetToolTip(btnRestore, Lang.S("危险操作：删掉装进游戏的文件。执行前会再次确认。\r\n故意放在最左下角，离「替换为当前设定」最远的地方。"));
-            btnOpen = new FlatButton(); btnOpen.Soft = true; btnOpen.Text = Lang.S("打开游戏目录");
-            btnOpen.SetBounds(xOpen, CH - BottomBarH, bwOpen, Theme.HP);
-            btnOpen.Click += delegate { try { System.Diagnostics.Process.Start("explorer.exe", txtGame.Text); } catch { } }; Controls.Add(btnOpen);
 
             // 进度条和「停止剩余」跟着让位：起点从还原按钮右边开始
             bar = new ProgressBar(); bar.SetBounds(Theme.M + bwRestore + Theme.G, CH - BottomBarH + 12, 360, 12); bar.Visible = false; Controls.Add(bar);
@@ -796,7 +792,6 @@ namespace Installer
             txtLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             btnInstall.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             btnRestore.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;    // 左下角：和右边的主操作分开
-            btnOpen.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             bar.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             lblPre.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             btnCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
@@ -3608,7 +3603,6 @@ namespace Installer
                 // 会一路漂（窗口缩回 900 却还停在 200% 的位置），所以每次按设计值钉死。
                 btnInstall.Top = Dpi.S(H - BottomBarH);
                 btnRestore.Top = Dpi.S(H - BottomBarH);
-                btnOpen.Top = Dpi.S(H - BottomBarH);
                 bar.Top = Dpi.S(H - BottomBarH + 12);
                 btnCancel.Top = Dpi.S(H - BottomBarH + 6);
                 lblStatus.Top = Dpi.S(H - 28);
@@ -3645,8 +3639,7 @@ namespace Installer
             if (btnWorkshop != null) btnWorkshop.Left = Dpi.S(wsX);
 
             // 底部：右边一组（工具 + 次要 + 主操作），「一键还原」单独钉在左下角
-            btnOpen.Left = Dpi.S(W - Theme.M - 104);
-            btnInstall.Left = Dpi.S(W - Theme.M - 104 - 8 - 112);
+            btnInstall.Left = Dpi.S(W - Theme.M - 112);
             btnRestore.Left = Dpi.S(Theme.M);
             btnRestore.Width = Dpi.S(96);
             lblStatus.Width = Dpi.S(W - 2 * Theme.M);
@@ -3654,7 +3647,7 @@ namespace Installer
             {
                 int preLeft = Theme.M + 96 + Theme.G;
                 int barW = Math.Max(160,
-                    (W - Theme.M - 104 - 8 - 112) - preLeft - 8 - 92 - 8);
+                    (W - Theme.M - 112) - preLeft - 8 - 92 - 8);
                 bar.Left = Dpi.S(preLeft);
                 bar.Width = Dpi.S(barW);
                 btnCancel.Left = Dpi.S(preLeft + barW + 8);
@@ -3691,8 +3684,7 @@ namespace Installer
                 int m = Dpi.S(Theme.M);
 
                 // 底部右侧三连从右往左排：位置必须严格递减，最左的不能压进左边距，最右的不能出窗
-                FlatButton[] bottom = new FlatButton[] { btnOpen, btnInstall };
-                if (btnOpen.Left + Dpi.S(104) > W - m + 1) { bad++; Core.Log("FAIL", tag + "「打开」按钮出窗"); }
+                FlatButton[] bottom = new FlatButton[] { btnInstall };
                 for (int i = 1; i < bottom.Length; i++)
                     if (bottom[i].Left >= bottom[i - 1].Left) { bad++; Core.Log("FAIL", tag + "底部按钮顺序错：" + bottom[i].Text); }
                 if (btnInstall.Left < m + Dpi.S(200)) { bad++; Core.Log("FAIL", tag + "底部按钮把进度条挤没了"); }
