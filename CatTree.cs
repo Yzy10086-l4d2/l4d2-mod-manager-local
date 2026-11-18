@@ -3389,7 +3389,7 @@ namespace Installer
             if (lead == null && g.Parts.Count > 0) lead = g.Parts[0];
 
             string imgPath = null;
-            if (lead != null && !lead.FromGame && string.IsNullOrEmpty(lead.Container) && lead.FullPath != null)
+            if (lead != null && string.IsNullOrEmpty(lead.Container) && lead.FullPath != null)
             {
                 try { imgPath = Cover.For(lead.FullPath); } catch { imgPath = null; }
             }
