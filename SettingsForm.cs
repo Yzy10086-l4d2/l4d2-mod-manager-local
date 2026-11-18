@@ -63,7 +63,7 @@ namespace Installer
 
             Text = Lang.S("设置 · L4D2 MOD 管理工具");
             Theme.UseDpi(this);
-            ClientSize = Dpi.Sz(620, 856);
+            ClientSize = Dpi.Sz(620, 676);
             Font = Theme.UI;
             BackColor = Theme.Bg;
             ForeColor = Theme.Ink;
@@ -342,13 +342,13 @@ namespace Installer
         private void BuildFooter()
         {
             Panel rule = new Panel();
-            rule.SetBounds(20, 798, 580, 1);
+            rule.SetBounds(20, 618, 580, 1);
             rule.BackColor = Theme.Line;
             Controls.Add(rule);
 
             Label note = new Label();
             note.Text = Lang.S("保存后立即生效，不改已经装进游戏的文件。");
-            note.SetBounds(20, 804, 360, 20);
+            note.SetBounds(20, 624, 360, 20);
             note.Font = Theme.UISmall;
             note.ForeColor = Theme.Ink3;
             note.BackColor = Color.Transparent;
@@ -357,13 +357,13 @@ namespace Installer
             FlatButton cancel = new FlatButton();
             cancel.Text = Lang.S("取消");
             cancel.Plain = true;
-            cancel.SetBounds(408, 804, 88, 32);
+            cancel.SetBounds(408, 624, 88, 32);
             cancel.DialogResult = DialogResult.Cancel;
             Controls.Add(cancel);
 
             btnSave = new FlatButton();
             btnSave.Text = Lang.S("保存设置");
-            btnSave.SetBounds(504, 804, 96, 32);
+            btnSave.SetBounds(504, 624, 96, 32);
             btnSave.Primary = true;
             btnSave.DialogResult = DialogResult.OK;
             // 校验放进点击里：以前是「先关窗、再在 ShowSettings 里发现路径不对」，
