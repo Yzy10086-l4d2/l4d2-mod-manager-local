@@ -95,7 +95,6 @@ namespace Installer
             string uiFix = null;
             string uiParts = null;
             bool uiLaunch = false;
-            bool uiCopy = false;
             bool uiPaint = false;
             bool uiGlyphs = false;
             bool uiDup = false;
@@ -170,7 +169,6 @@ namespace Installer
                 else if (a.StartsWith("--uifix=", StringComparison.OrdinalIgnoreCase)) uiFix = a.Substring(8).Trim('"');
                 else if (a.StartsWith("--parts=", StringComparison.OrdinalIgnoreCase)) uiParts = a.Substring(8);
                 else if (string.Equals(a, "--launch", StringComparison.OrdinalIgnoreCase)) uiLaunch = true;
-                else if (string.Equals(a, "--copy", StringComparison.OrdinalIgnoreCase)) { uiCopy = true; uiTest = true; }
                 else if (string.Equals(a, "--uipaint", StringComparison.OrdinalIgnoreCase)) { uiPaint = true; uiTest = true; }
                 else if (string.Equals(a, "--uiglyphs", StringComparison.OrdinalIgnoreCase)) { uiGlyphs = true; uiTest = true; }
                 else if (string.Equals(a, "--dup", StringComparison.OrdinalIgnoreCase)) uiDup = true;
@@ -575,14 +573,6 @@ namespace Installer
                         return bad == 0 ? 0 : 1;
                     }
                     if (uiParts != null) { f.UiTestParts(uiParts); System.Windows.Forms.Application.DoEvents(); }
-                    if (uiCopy)
-                    {
-                        // 一键复制回归：只碰剪贴板，不动配置和游戏目录。失败条数当退出码。
-                        int bad = f.UiTestCopy();
-                        System.Windows.Forms.Application.DoEvents();
-                        Console.WriteLine("copyself failures = " + bad);
-                        return bad == 0 ? 0 : 1;
-                    }
                     if (uiLaunch) { f.UiTestLaunch(); System.Windows.Forms.Application.DoEvents(); }
                     if (uiDup) { f.UiTestDup(); System.Windows.Forms.Application.DoEvents(); }
                     // --logopen 单独就能生效：截图要看「日志展开时左栏怎么排」，不该非得先进抽屉自检

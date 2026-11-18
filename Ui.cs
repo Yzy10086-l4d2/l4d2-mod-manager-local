@@ -28,13 +28,10 @@ namespace Installer
         private bool logOpen;                     // 日志卡片展开（默认收起：排错才看，不该常驻）
         private CheckBox chkSwap, chkStrict;
         private RadioButton rdSkip, rdOver;
-        private FlatButton btnLaunchEdit, btnLaunchCopy;
-        private TextBox txtLaunch;
-        private readonly System.Windows.Forms.Timer copyTimer = new System.Windows.Forms.Timer();
         private ComboBox cboProfile;
         // 最近套用/保存过的方案名（空=没套方案）：自检结果写回它
         private string appliedProfile = "";
-        private Section gMod, gLog, gPlat, gOpt;
+        private Section gMod, gLog, gOpt;
         private Button btnManage;
         private Button btnUnmatched;          // 「未识别 N 个」：打开手动分类页
         private TextBox txtSearch;
@@ -540,48 +537,9 @@ namespace Installer
             tips.SetToolTip(btnPanel, Lang.S("展开 / 收起左边那栏（装什么、安装选项、日志）。\r\n收起来以后整个窗口就是一张台面。"));
             Controls.Add(btnPanel);
 
-            // ---- 左栏上：装什么 ----
-            Section gp = new Section();
-            gp.SetBounds(Theme.M, 56, leftW, 66); Controls.Add(gp);
-            // 本地版不装「环境组件」（那是便携版从 U 盘组件包里复制进游戏的东西）。
-            // 先把这几项藏起来，下一步连带装机逻辑一起删。
-            gp.Caption = Lang.S("推荐启动项");
-            Label l4 = new Label(); l4.Text = Lang.S("推荐"); l4.SetBounds(12, 30, 44, 20); Theme.Dress(l4); gp.Controls.Add(l4);
-            txtLaunch = new TextBox(); txtLaunch.SetBounds(60, 28, 246, 24); Theme.Dress(txtLaunch);
-            txtLaunch.ReadOnly = true;
-            txtLaunch.BackColor = Theme.Surface;
-            txtLaunch.Text = LaunchArgs.Default;
-            gp.Controls.Add(txtLaunch);
-            // 一行输入框放不下 130 个字符：外面只给个预览，真正的编辑交给「…」里的放大窗口
-            txtLaunch.TextChanged += delegate { UpdateLaunchTip(); };
-            txtLaunch.DoubleClick += delegate { EditLaunch(); };
-
-            // 复制 / 放大：两个按钮都靠右，位置统一由 LayoutLaunchRow 算，拖动窗口也不会错位
-            btnLaunchCopy = new FlatButton(); btnLaunchCopy.Text = Lang.S("复制");
-            btnLaunchCopy.SetBounds(310, 28, 44, 24);
-            btnLaunchCopy.Click += delegate { CopyLaunch(); };
-            tips.SetToolTip(btnLaunchCopy, Lang.S("把当前启动项整段复制到剪贴板，方便贴到 Steam、记事本或发给别人。"));
-            gp.Controls.Add(btnLaunchCopy);
-            copyTimer.Interval = 1400;
-            copyTimer.Tick += delegate(object s2, EventArgs e2)
-            {
-                copyTimer.Stop();
-                if (btnLaunchCopy != null) btnLaunchCopy.Text = Lang.S("复制");
-            };
-
-            btnLaunchEdit = new FlatButton(); btnLaunchEdit.Text = "大全"; btnLaunchEdit.Font = Theme.UIBold;
-            btnLaunchEdit.AccessibleName = "推荐启动项大全";
-            btnLaunchEdit.SetBounds(358, 28, 26, 24);
-            btnLaunchEdit.Click += delegate { EditLaunch(); };
-            tips.SetToolTip(btnLaunchEdit, Lang.S("看每个启动项干什么用的：只读表格，能复制整串或单条。双击输入框也能打开。"));
-            gp.Controls.Add(btnLaunchEdit);
-
-            LayoutLaunchRow(leftW);
-            UpdateLaunchTip();
-
             // ---- 左栏中：安装选项（原来挤在 MOD 列表底部，语义上属于"怎么装"，跟"挑什么"分开）----
             gOpt = new Section();
-            gOpt.Caption = Lang.S("安装选项"); gOpt.SetBounds(Theme.M, 130, leftW, 144); Controls.Add(gOpt);
+            gOpt.Caption = Lang.S("安装选项"); gOpt.SetBounds(Theme.M, 56, leftW, 144); Controls.Add(gOpt);
             chkSwap = new CheckBox(); chkSwap.Text = Lang.S("换整套（把不在这套里的 MOD 关掉）");
             chkSwap.SetBounds(12, 28, leftW - 24, 22); Theme.Dress(chkSwap); gOpt.Controls.Add(chkSwap);
             chkSwap.Checked = true;
@@ -864,14 +822,13 @@ namespace Installer
             lblStatus.ForeColor = Theme.Ink2; lblStatus.BackColor = Color.Transparent; Controls.Add(lblStatus);
 
             // 随窗口缩放：左右拉伸的跟着走，底部按钮贴右下
-            gMod = gm; gLog = gl; gPlat = gp;
+            gMod = gm; gLog = gl;
             // 最小尺寸也守着屏幕：网吧小屏上不能出现「窗口比桌面还宽」
             Rectangle wmin = Screen.PrimaryScreen.WorkingArea;
             MinimumSize = new Size(Math.Min(1120, wmin.Width - 20), Math.Min(740, wmin.Height - 20));
             txtGame.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             btnBrowse.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnLaunch.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            gp.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             gOpt.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             gl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
             gm.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
@@ -1024,61 +981,6 @@ namespace Installer
 
         // ---------------------------------------------------------- 参数配置
 
-        /// <summary>启动项一行：输入框 + 复制 + 放大编辑。位置只在这里算，构建和重排共用。</summary>
-        private void LayoutLaunchRow(int leftW)
-        {
-            const int editW = 46, copyW = 44, gap = 4;
-            int editX = leftW - 12 - editW;
-            int copyX = editX - gap - copyW;
-            if (btnLaunchEdit != null) btnLaunchEdit.Left = Dpi.S(editX);
-            if (btnLaunchCopy != null) btnLaunchCopy.Left = Dpi.S(copyX);
-            if (txtLaunch != null) txtLaunch.Width = Dpi.S(Math.Max(80, copyX - gap - 60));
-        }
-
-        /// <summary>一键复制推荐启动项：永远复制固定的推荐串。</summary>
-        private void CopyLaunch()
-        {
-            string s = LaunchArgs.Default;
-            if (s.Length == 0)
-            {
-                FlashCopy("空");
-                Log("启动项是空的，没有可复制的内容");
-                return;
-            }
-            try { Clipboard.SetText(s); }
-            catch (Exception ex)
-            {
-                FlashCopy("失败");
-                Log("复制启动项失败：" + ex.Message);
-                return;
-            }
-            FlashCopy("已复制");
-            Log("启动项已复制（" + LaunchArgs.CountSwitches(s) + " 个开关，" + s.Length + " 个字符）");
-
-        }
-
-        /// <summary>按钮上的短反馈，1.4 秒后自动变回「复制」。</summary>
-        private void FlashCopy(string text)
-        {
-            if (btnLaunchCopy == null) return;
-            btnLaunchCopy.Text = text;
-            copyTimer.Stop();
-            copyTimer.Start();
-        }
-
-        /// <summary>只读输入框太窄，鼠标悬停看全文；要逐条看作用点「大全」。</summary>
-        private void UpdateLaunchTip()
-        {
-            string s = LaunchArgs.Clean(txtLaunch.Text);
-            tips.SetToolTip(txtLaunch, s + "\r\n\r\n共 " + LaunchArgs.CountSwitches(s) + " 个开关。只读；"
-                + "点右边「大全」看每个参数干什么用的，要改就在 Steam 里改。");
-        }
-
-        private void EditLaunch()
-        {
-            using (LaunchCatalogForm f = new LaunchCatalogForm()) f.ShowDialog(this);
-        }
-
         private void FillProfiles(string keep)
         {
             cboProfile.Items.Clear();
@@ -1228,57 +1130,6 @@ namespace Installer
             }
         }
 
-        /// <summary>
-        /// 自测用：一键复制走一遍真实按钮路径 —— 有内容时原样进剪贴板；
-        /// 空内容只提示「空」，不能把用户原来的剪贴板覆盖掉。返回失败条数。
-        /// </summary>
-        internal int UiTestCopy()
-        {
-            int bad = 0;
-            string keep = txtLaunch.Text;
-            string sample = "-novid -windowed";
-
-            // 自测不该留在别人的剪贴板里：先备份，结束时原样放回去
-            string backup = "";
-            bool hadBackup = false;
-            try { backup = Clipboard.GetText(); hadBackup = true; }
-            catch { }
-
-            txtLaunch.Text = sample;
-            Application.DoEvents();
-            CopyLaunch();
-            Application.DoEvents();
-            string got = "";
-            try { got = Clipboard.GetText(); }
-            catch { got = "(读不到剪贴板)"; }
-            bool ok1 = string.Equals(got, sample, StringComparison.Ordinal);
-            Core.Log(ok1 ? "OK" : "FAIL", "COPYTEST 有内容：" + (ok1 ? "剪贴板与输入框一致" : "剪贴板=" + got));
-            if (!ok1) bad++;
-
-            txtLaunch.Text = "";
-            Application.DoEvents();
-            CopyLaunch();
-            Application.DoEvents();
-            string got2 = "";
-            try { got2 = Clipboard.GetText(); } catch { }
-            bool ok2 = string.Equals(got2, sample, StringComparison.Ordinal);
-            Core.Log(ok2 ? "OK" : "FAIL", "COPYTEST 空内容：" + (ok2 ? "没覆盖剪贴板" : "剪贴板被改成其他内容"));
-            if (!ok2) bad++;
-
-            txtLaunch.Text = keep;
-            Application.DoEvents();
-            UpdateLaunchTip();
-
-            try
-            {
-                if (hadBackup && backup.Length > 0) Clipboard.SetText(backup);
-                else Clipboard.Clear();
-            }
-            catch { }
-
-            Core.Log("INFO", "COPYTEST 结束：失败 " + bad + " 条（剪贴板已还原）");
-            return bad;
-        }
 
         /// <summary>自测用：打开「启动项」放大编辑并截图，同时核对默认值与清洗结果。</summary>
         internal void UiTestLaunch()
@@ -3725,11 +3576,6 @@ namespace Installer
             sb.AppendLine("日志框    : " + txtLog.Width + " x " + txtLog.Height);
             sb.AppendLine("进度条    : " + bar.Left + "," + bar.Top + " " + bar.Width + " x " + bar.Height);
             sb.AppendLine("按钮行    : 顶=" + btnInstall.Top + " 左=" + btnInstall.Left);
-            sb.AppendLine("启动项框  : " + txtLaunch.Left + "," + txtLaunch.Top + " " + txtLaunch.Width + " x " + txtLaunch.Height
-                          + "  复制按钮 " + btnLaunchCopy.Left + "," + btnLaunchCopy.Top + " " + btnLaunchCopy.Width + "x" + btnLaunchCopy.Height
-                          + "  编辑按钮 " + btnLaunchEdit.Left + "," + btnLaunchEdit.Top + " " + btnLaunchEdit.Width + "x" + btnLaunchEdit.Height);
-            sb.AppendLine("启动项值  : " + LaunchArgs.Clean(txtLaunch.Text));
-            sb.AppendLine("启动项默认: " + LaunchArgs.Default);
             sb.AppendLine("开始装按钮: " + btnInstall.Left + "," + btnInstall.Top + " " + btnInstall.Width + " x " + btnInstall.Height);
             return sb.ToString();
         }
@@ -3749,11 +3595,9 @@ namespace Installer
             int rightX = drawerOpen ? Theme.M + leftW + Theme.G : Theme.M;
             int rightW = W - Theme.M - rightX;
 
-            gPlat.Width = Dpi.S(leftW);
             gOpt.Width = Dpi.S(leftW);
             gLog.Width = Dpi.S(leftW);
             txtLog.Width = Dpi.S(leftW - 24);
-            LayoutLaunchRow(leftW);
             chkSwap.Width = Dpi.S(leftW - 24);
             chkStrict.Width = Dpi.S(leftW - 24);
 
@@ -4022,7 +3866,6 @@ namespace Installer
         internal void SetDrawer(bool open)
         {
             drawerOpen = open;
-            if (gPlat != null) gPlat.Visible = open;
             if (gOpt != null) gOpt.Visible = open;
             if (gLog != null) gLog.Visible = open && logOpen;
             if (btnLogToggle != null) btnLogToggle.Visible = open;
@@ -4224,10 +4067,10 @@ namespace Installer
 
             // 5) 抽屉：收起时右栏顶到左边距，展开时让出 396 给左栏
             SetDrawer(true);
-            if (gPlat == null || !gPlat.Visible) { bad++; Core.Log("FAIL", "DESK 抽屉展开后左栏没出来"); }
+            if (gOpt == null || !gOpt.Visible) { bad++; Core.Log("FAIL", "DESK 抽屉展开后左栏没出来"); }
             if (gMod.Left != Theme.M + 396 + Theme.G) { bad++; Core.Log("FAIL", "DESK 抽屉展开后右栏位置不对: " + gMod.Left); }
             SetDrawer(false);
-            if (gPlat != null && gPlat.Visible) { bad++; Core.Log("FAIL", "DESK 抽屉收起后左栏还在"); }
+            if (gOpt != null && gOpt.Visible) { bad++; Core.Log("FAIL", "DESK 抽屉收起后左栏还在"); }
             if (gMod.Left != Theme.M) { bad++; Core.Log("FAIL", "DESK 抽屉收起后右栏没顶到左边: " + gMod.Left); }
 
             Snap("desk-tree");

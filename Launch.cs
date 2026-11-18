@@ -159,6 +159,7 @@ namespace Installer
         private Label lblFlag, lblVerdict, lblWhat, lblWhere, lblCount, lblHint;
         private TextBox txtCombo;
         private FlatButton btnCopy, btnReset;
+        private int hoverIdx = -1;     // 鼠标停在列表哪一行（右侧讲解跟着走）
 
         public LaunchCatalogForm()
         {
@@ -210,7 +211,20 @@ namespace Installer
                 lv.Items.Add(it);
             }
             lv.ItemChecked += delegate { RefreshCombo(); };
-            lv.SelectedIndexChanged += delegate { ShowDetail(); };
+            lv.SelectedIndexChanged += delegate
+            {
+                hoverIdx = lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] : -1;
+                ShowDetail();
+            };
+            // 右侧讲解跟着鼠标走：不用先点一下再看说明，扫过去就换内容
+            lv.MouseMove += delegate(object s2, MouseEventArgs e2)
+            {
+                ListViewItem hit = lv.GetItemAt(e2.X, e2.Y);
+                if (hit == null || hit.Index == hoverIdx) return;
+                hoverIdx = hit.Index;
+                if (!hit.Selected) hit.Selected = true;
+            };
+            lv.MouseLeave += delegate { hoverIdx = -1; };
             Controls.Add(lv);
             if (lv.Items.Count > 0) lv.Items[0].Selected = true;
 
