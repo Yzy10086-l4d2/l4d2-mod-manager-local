@@ -539,7 +539,16 @@ namespace Installer
 
                     string bak = have >= 0 ? SnapshotPlugin(gameRoot, f.Rel, txn) : null;
                     string why;
-                    if (Core.CopyOneVerified(f.Src, dst, out why))
+                    // 源在压缩包里：按条目取出来写，不整包解压
+                    bool ok;
+                    if (f.Inner != null)
+                    {
+                        string pd = Path.GetDirectoryName(dst);
+                        if (!string.IsNullOrEmpty(pd) && !Directory.Exists(pd)) Directory.CreateDirectory(pd);
+                        ok = Catalog.ExtractEntryTo(f.Src, f.Inner, dst, out why);
+                    }
+                    else ok = Core.CopyOneVerified(f.Src, dst, out why);
+                    if (ok)
                     {
                         wrote++;
                         if (f.Shared) r.SharedWritten.Add(f.Rel); else r.Written.Add(f.Rel);

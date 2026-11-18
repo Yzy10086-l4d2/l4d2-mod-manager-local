@@ -310,6 +310,150 @@ namespace Installer
             return list;
         }
 
+        /// <summary>跑一个外部命令收 stdout（WinRAR 输出是 936 代码页）。stderr 必须读掉，否则缓冲满了双方卡死。</summary>
+        internal static string RunTool(string exe, string args, out string err)
+        {
+            err = null;
+            string text = null;
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo(exe, args);
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                try { psi.StandardOutputEncoding = Encoding.GetEncoding(936); } catch { }
+                using (Process p = Process.Start(psi))
+                {
+                    string junk = null;
+                    System.Threading.Thread th = new System.Threading.Thread(delegate()
+                    {
+                        try { junk = p.StandardError.ReadToEnd(); } catch { }
+                    });
+                    th.IsBackground = true;
+                    th.Start();
+                    text = p.StandardOutput.ReadToEnd();
+                    if (!p.WaitForExit(60000)) { try { p.Kill(); } catch { } }
+                    th.Join(2000);
+                }
+            }
+            catch (Exception ex) { err = ex.Message; return null; }
+            return text;
+        }
+
+        /// <summary>
+        /// 列出压缩包里的**全部文件**（不限 vpk）。插件包要认 bin\neko\plugins 那棵树，
+        /// 只列 vpk 的 ListArchive 不够用。zip 读目录表；rar 走 Rar.exe vt；7z 不支持。
+        /// </summary>
+        public static List<ArcEntry> ListArchiveFiles(string arcPath, out string err)
+        {
+            err = null;
+            List<ArcEntry> list = new List<ArcEntry>();
+            string ext = Path.GetExtension(arcPath).ToLowerInvariant();
+            if (ext == ".zip")
+            {
+                try
+                {
+                    using (System.IO.Compression.ZipArchive za = System.IO.Compression.ZipFile.OpenRead(arcPath))
+                        foreach (System.IO.Compression.ZipArchiveEntry e in za.Entries)
+                        {
+                            if (e.FullName.EndsWith("/")) continue;
+                            list.Add(new ArcEntry { Inner = e.FullName.Replace('/', '\\'), Size = e.Length });
+                        }
+                }
+                catch (Exception ex) { err = ex.Message; }
+                return list;
+            }
+            if (ext == ".7z")
+            {
+                // 7z 只有图形版 WinRAR 解得动，逐个条目取会弹窗、几十个文件要开几十次，先不做
+                err = "7z 里的插件包暂不支持";
+                return list;
+            }
+            if (ext != ".rar") { err = "不认识的压缩包格式"; return list; }
+
+            string rar = RarExe();
+            if (rar.Length == 0) { err = "找不到 WinRAR（Rar.exe）"; return list; }
+            string text = RunTool(rar, "vt -idc \"" + arcPath + "\"", out err);
+            if (text == null) return list;
+            string curName = null;
+            foreach (string raw in text.Split('\n'))
+            {
+                string line = raw.TrimEnd('\r').Trim();
+                string name = Field(line, "名称:", "Name:");
+                if (name != null) { curName = name; continue; }
+                string size = Field(line, "大小:", "Size:");
+                if (size != null && curName != null)
+                {
+                    long n = 0;
+                    long.TryParse(size, out n);
+                    list.Add(new ArcEntry { Inner = curName.Replace('/', '\\'), Size = n });
+                    curName = null;
+                }
+            }
+            return list;
+        }
+
+        // ---------- 压缩包里有没有按游戏根摆的插件树（bin\neko\plugins） ----------
+        // rar 要调 Rar.exe 列目录，一百多个包每次启动列一遍太慢；按「大小|修改时间」记一版结论，
+        // 只有新包 / 改过的包才真去读一次。
+        static Dictionary<string, string> _plugCache;
+        static bool _plugCacheDirty;
+        static string PlugCachePath { get { return Path.Combine(Core.LogDir, "archive-plugins-v1.tsv"); } }
+
+        static void LoadPlugCache()
+        {
+            if (_plugCache != null) return;
+            _plugCache = new Dictionary<string, string>(StringComparer.Ordinal);
+            try
+            {
+                if (File.Exists(PlugCachePath))
+                    foreach (string raw in File.ReadAllLines(PlugCachePath))
+                    {
+                        string[] p = raw.Split('\t');
+                        if (p.Length >= 2 && p[0].Length > 0) _plugCache[p[0]] = p[1];
+                    }
+            }
+            catch { }
+        }
+
+        static void SavePlugCache()
+        {
+            if (_plugCache == null || !_plugCacheDirty) return;
+            try
+            {
+                StringBuilder sb = new StringBuilder();
+                foreach (KeyValuePair<string, string> kv in _plugCache) sb.AppendLine(kv.Key + "\t" + kv.Value);
+                Core.WriteAllTextAtomic(PlugCachePath, sb.ToString(), new UTF8Encoding(false));
+                _plugCacheDirty = false;
+            }
+            catch { }
+        }
+
+        /// <summary>这个压缩包里有没有 bin\neko\plugins。结论落盘缓存，命中时不开包。</summary>
+        public static bool ArchiveHasPlugins(string arcPath)
+        {
+            string sig = ArcSig(arcPath);
+            LoadPlugCache();
+            string v;
+            if (_plugCache.TryGetValue(sig, out v)) return v == "1";
+            bool has = false;
+            try
+            {
+                string err;
+                foreach (ArcEntry e in ListArchiveFiles(arcPath, out err))
+                {
+                    string p = e.Inner.Replace('/', '\\');
+                    if (p.IndexOf(PluginKit.Anchor, StringComparison.OrdinalIgnoreCase) >= 0) { has = true; break; }
+                }
+            }
+            catch { }
+            _plugCache[sig] = has ? "1" : "0";
+            _plugCacheDirty = true;
+            SavePlugCache();
+            return has;
+        }
+
         /// <summary>
         /// 7z 的目录表：Rar.exe 不认这个格式，用系统自带的 tar.exe 读。
         /// 输出照系统代码页走（中文机是 GBK），必须按 936 解，否则中文名全变问号。
@@ -1227,9 +1371,12 @@ namespace Installer
             {
                 foreach (ModItem it in g.Parts)
                 {
-                    // 压缩包里的 vpk 没有真实目录结构可找；游戏 addons 里那份本来就没有 bin
-                    if (it.IsArchive || it.FromGame) continue;
-                    PluginPack p = PluginKit.Find(it.FullPath);
+                    // 游戏 addons 里那份本来就没有 bin，跳过
+                    if (it.FromGame) continue;
+                    // 压缩包里的 vpk 没有真实目录：改读包里有没有按游戏根摆的 bin\neko\plugins
+                    PluginPack p = it.IsArchive
+                        ? (ArchiveHasPlugins(it.FullPath) ? PluginKit.LoadFromArchive(it.FullPath) : null)
+                        : PluginKit.Find(it.FullPath);
                     if (p == null) continue;
                     g.Plugin = p;
                     n++;

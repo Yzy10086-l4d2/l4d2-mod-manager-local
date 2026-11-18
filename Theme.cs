@@ -438,7 +438,10 @@ namespace Installer
             else if (root.IsHandleCreated
                 && (root is TextBox || root is ListView
                     || root is TreeView || root is ProgressBar || root is NumericUpDown))
+            {
                 Native.DarkControl(root.Handle, pal.IsDark);
+                if (root is TextBox) SetEdge(root, InputEdgeIdle);   // 换主题后边线跟着换色
+            }
             // 滚动面板的滚动条是系统画的，要单独打招呼；列表的表头同理
             if (root.IsHandleCreated && root is ScrollableControl && !(root is TextBox))
             {
@@ -541,6 +544,74 @@ namespace Installer
                 (int)Math.Round(a.B + (b.B - a.B) * t));
         }
 
+        /// <summary>
+        /// 输入框获得焦点时的边线。比结构线亮一档就够了 —— 深色下用纯白 / Ink2 画边框，
+        /// 那条 1px 线会亮得像刻痕，四周一圈看着很脏。
+        /// </summary>
+        public static Color InputEdge
+        {
+            get { return pal.IsDark ? Color.FromArgb(96, 103, 113) : Color.FromArgb(168, 175, 184); }
+        }
+
+        /// <summary>输入框常态边线：深色下是结构线，浅色下要比结构线深一点，不然白底上等于没有边。</summary>
+        public static Color InputEdgeIdle
+        {
+            get { return pal.IsDark ? Color.FromArgb(51, 56, 64) : Color.FromArgb(202, 207, 214); }
+        }
+
+        /// <summary>
+        /// 输入框的边线交给父容器补。文本框自带的 BorderStyle.FixedSingle 是 WS_BORDER，
+        /// 由系统按浅色画 —— 深色下就是一条白线，换主题句柄、在窗口 DC 上盖都留不住。
+        /// 所以边框干脆不要：父容器 Paint 时沿控件外沿描一圈 1px 的主题线
+        /// （父先画、子后画，线在控件外侧，不会被盖住）。
+        /// </summary>
+        sealed class EdgeHook : NativeWindow
+        {
+            public Color Edge = Line;
+            public Control Owner;
+            protected override void WndProc(ref Message m)
+            {
+                base.WndProc(ref m);
+                if (m.Msg == 0x000F)        // WM_PAINT：控件自己画完，再补一道边
+                {
+                    try { Native.ComboFrame(Handle, Edge); } catch { }
+                }
+            }
+        }
+
+        static readonly ConditionalWeakTable<Control, EdgeHook> edgeHooks =
+            new ConditionalWeakTable<Control, EdgeHook>();
+
+        static void AttachEdge(Control c)
+        {
+            try
+            {
+                if (c == null || !c.IsHandleCreated) return;
+                EdgeHook h;
+                if (edgeHooks.TryGetValue(c, out h)) return;
+                h = new EdgeHook();
+                h.Edge = InputEdgeIdle;
+                h.Owner = c;
+                h.AssignHandle(c.Handle);
+                edgeHooks.Add(c, h);
+                c.Invalidate();
+            }
+            catch { }
+        }
+
+        static void SetEdge(Control c, Color color)
+        {
+            try
+            {
+                if (c == null) return;
+                EdgeHook h;
+                if (!edgeHooks.TryGetValue(c, out h)) { AttachEdge(c); if (!edgeHooks.TryGetValue(c, out h)) return; }
+                h.Edge = color;
+                c.Invalidate();
+            }
+            catch { }
+        }
+
         /// <summary>输入类控件统一外观：白底、一条细线、内边距靠系统。</summary>
         public static void Dress(Control c)
         {
@@ -548,9 +619,12 @@ namespace Installer
             if (c is TextBox)
             {
                 TextBox t = (TextBox)c;
-                t.BorderStyle = BorderStyle.FixedSingle;
+                t.BorderStyle = BorderStyle.None;      // 原生边框是白线，改不掉；见 EdgeHook
                 t.BackColor = Surface;
                 t.ForeColor = Ink;
+                t.HandleCreated += delegate { AttachEdge(t); };
+                t.GotFocus += delegate { SetEdge(t, InputEdge); };
+                t.LostFocus += delegate { SetEdge(t, InputEdgeIdle); };
             }
             else if (c is ComboBox)
             {
@@ -624,11 +698,11 @@ namespace Installer
                 {
                     // WM_PAINT 的 DC 被更新区裁掉，画不到四条边；边框得单独用窗口 DC 补
                     PaintButton(IntPtr.Zero);
-                    Native.ComboFrame(cb.Handle, cb.Focused ? Theme.Ink2 : Theme.Line);
+                    Native.ComboFrame(cb.Handle, cb.Focused ? Theme.InputEdge : Theme.Line);
                 }
                 else if (m.Msg == 0x0085)                             // WM_NCPAINT
                 {
-                    Native.ComboFrame(cb.Handle, cb.Focused ? Theme.Ink2 : Theme.Line);
+                    Native.ComboFrame(cb.Handle, cb.Focused ? Theme.InputEdge : Theme.Line);
                     PaintButton(IntPtr.Zero);
                 }
                 else if (m.Msg == 0x0318 || m.Msg == 0x0317)           // 截图/打印时走的通道
