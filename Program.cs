@@ -59,10 +59,8 @@ namespace Installer
             string themeOverride = null;
             string uiFilter = null;
             string uiDeep = null;
-            bool uiProfile = false;
             bool uiSettings = false;
             bool uiTheme = false;
-            bool uiDeps = false;
             bool uiTree = false;
             bool mapShot = false;
             bool loadShot = false;
@@ -126,10 +124,8 @@ namespace Installer
                 // 只给 --uifilter 不给 --uitest 时，千万别落进 GUI 主循环 —— 命令行会一直挂着不返回
                 else if (a.StartsWith("--uifilter=", StringComparison.OrdinalIgnoreCase)) { uiFilter = a.Substring(11); uiTest = true; }
                 else if (a.StartsWith("--uideep=", StringComparison.OrdinalIgnoreCase)) uiDeep = a.Substring(9);
-                else if (string.Equals(a, "--uiprofile", StringComparison.OrdinalIgnoreCase)) uiProfile = true;
                 else if (string.Equals(a, "--uisettings", StringComparison.OrdinalIgnoreCase)) { uiSettings = true; uiTest = true; }
                 else if (string.Equals(a, "--uitheme", StringComparison.OrdinalIgnoreCase)) { uiTheme = true; uiTest = true; }
-                else if (string.Equals(a, "--uideps", StringComparison.OrdinalIgnoreCase)) uiDeps = true;
                 else if (string.Equals(a, "--uitree", StringComparison.OrdinalIgnoreCase)) uiTree = true;
                 else if (string.Equals(a, "--treeshot", StringComparison.OrdinalIgnoreCase)) { mapShot = true; uiTest = true; }
                 // 诊断截图：把「读取中」的启动占位截一张，确认步骤文案与进度条在真机上好看

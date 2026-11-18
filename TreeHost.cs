@@ -56,7 +56,7 @@ namespace Installer
         internal void HideOverview()
         {
             if (map != null) map.Visible = false;
-            if (btnView != null) btnView.Text = Lang.S("总览");
+            if (btnView != null) btnView.Text = Lang.S("方案管理");
             ShowTree();
         }
 

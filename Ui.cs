@@ -521,7 +521,7 @@ namespace Installer
             btnView = new FlatButton(); btnView.Soft = true; btnView.Text = Lang.S("方案管理");
             btnView.SetBounds(viewX, 16, viewW, Theme.H);
             btnView.Click += delegate { ToggleView(); };
-            tips.SetToolTip(btnView, Lang.S("套装总览：这套里每个位置装的是哪个 MOD，一眼看完。\r\n左边点大类，右边列这个类的位置和已装的 MOD；没装的灰着，库里没有的空心点。\r\n点开关直接开/关，点名字就地换 MOD，拖大类改顺序；点一行回方案树改那个位置。再点一下回到方案树。"));
+            tips.SetToolTip(btnView, Lang.S("方案总览：这套里每个位置装的是哪个 MOD，一眼看完。\r\n左边点大类，右边列这个类的位置和已装的 MOD；没装的灰着，库里没有的空心点。\r\n点开关直接开/关，点名字就地换 MOD，拖大类改顺序；点一行回方案树改那个位置。再点一下回到方案树。"));
             Controls.Add(btnView);
 
             btnPanel = new FlatButton(); btnPanel.Soft = true; btnPanel.Text = Lang.S("统计");
@@ -2713,7 +2713,7 @@ namespace Installer
                 sb.AppendLine();
                 sb.AppendLine("这些不是体积重复，本工具不自动处理：");
                 sb.AppendLine("· 同名文件：右键菜单「清理同名重复」可以每个名字只留第一个");
-                sb.AppendLine("· 已装文件：勾「覆盖重装」或「换整套」再装一次就清掉了");
+                sb.AppendLine("· 已装文件：这个位置的文件本来就在游戏里，不用再装一次");
                 MessageBox.Show(this, sb.ToString(), "其它提示 · " + others.Count + " 条", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -3577,7 +3577,6 @@ namespace Installer
 
             // 顶部：游戏目录 / 浏览 / 启动项 / 台面 / 抽屉 / 工坊 / 设置
             const int findW = 76;
-            const int browseW = 76;
             const int settingsW = 60;
             const int viewW = 56;       // 台面 ⇄ 方案树
             const int panelW = 56;      // 左栏抽屉
@@ -4573,7 +4572,7 @@ namespace Installer
             try
             {
                 Core.Log("STEP", "开始写入");
-                Core.Log("INFO", Work.Overwrite ? "模式：覆盖重装（已装的也全部重写一遍）" : "模式：跳过已装（只写缺的和不一样的）");
+                Core.Log("INFO", "模式：跳过已装（只写缺的和不一样的）");
 
                 if (!j.Canceled && (j.Sel.Count > 0 || j.Swap))
                     InstallModsStep(j);

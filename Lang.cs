@@ -102,8 +102,6 @@ namespace Installer
             Add(d, "游戏目录", "Game folder");
             Add(d, "浏览…", "Browse…");
             Add(d, "自动找", "Auto-detect");
-            Add(d, "面板", "Panel");
-            Add(d, "总览", "Overview");
             Add(d, "工坊", "Workshop");
             Add(d, "设置", "Settings");
             Add(d, "目录不对：里面没有 left4dead2.exe", "Wrong folder: left4dead2.exe not found");

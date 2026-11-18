@@ -25,11 +25,11 @@ namespace Installer
         }
 
         private readonly MainForm owner;
-        private Segmented segMode, segAppearance, segLang;
+        private Segmented segAppearance, segLang;
         private Toggle tglMotion;
         private ComboBox cboGame, cboLibDrive, cboPkg;
-        private FlatButton btnGameBrowse, btnGameFind, btnLibBrowse, btnLibManage, btnSave;
-        private Label lblGameState, lblLibMain, lblLibExtra, lblLibHint, lblCfg, lblLog, lblLocalOnly, lblPkgState;
+        private FlatButton btnGameBrowse, btnGameFind, btnSave;
+        private Label lblGameState, lblLibMain, lblLibExtra, lblLibHint, lblCfg, lblLog, lblPkgState;
         private CheckBox chkSwapS;
         private string pendingRoot;
         private bool syncing = true;
