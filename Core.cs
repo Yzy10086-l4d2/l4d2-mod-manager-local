@@ -65,7 +65,7 @@ namespace Installer
         /// 空 = 自动找：程序目录旁边 → 主库盘的 `游戏内容\求生之路2各项MOD\扩展平台` → U 盘三层扫。
         /// </summary>
         public string PkgRoot = "";
-        public bool DrawerOpen = true;      // 左栏（组件 / 安装选项）展开状态；首次进来看得到勾选项
+        public bool DrawerOpen = false;     // 左栏默认收起：主界面就是三列（方案树 / 候选 / 详情），要看现状再点「面板」
         // 启动时如果一条勾选都没有（换机器、U 盘配置是空的），就按游戏 addons + addonlist.txt
         // 里「真的在用」的那批回填，而不是让人对着 63 个空行自己猜上次装了哪些。
         public bool AutoSync = true;

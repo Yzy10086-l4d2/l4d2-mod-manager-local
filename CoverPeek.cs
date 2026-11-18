@@ -18,6 +18,7 @@ namespace Installer
         private string meta = "";
         private string src = "";
         private string hint = "";
+        private string info = "";        // 竖版才用：附加几行（改了什么 / 游戏里叫什么 / 开关状态）
         private bool owned;                 // img 是不是自己 new 出来的（要自己释放）
 
         public CoverPeek()
@@ -28,7 +29,7 @@ namespace Installer
         }
 
         /// <summary>显示某个 MOD 的封面。imgPath 为 null 就画占位。</summary>
-        public void Show(string name, string metaText, string srcText, string imgPath, string hintText)
+        public void Show(string name, string metaText, string srcText, string imgPath, string hintText, string infoText)
         {
             Image loaded = null;
             try
@@ -50,6 +51,7 @@ namespace Installer
             meta = metaText ?? "";
             src = srcText ?? "";
             hint = hintText ?? "";
+            info = infoText ?? "";
             Invalidate();
         }
 
@@ -61,6 +63,7 @@ namespace Installer
             meta = "";
             src = "";
             hint = hintText ?? "";
+            info = "";
             Invalidate();
         }
 
@@ -84,6 +87,9 @@ namespace Installer
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+
+            // 竖着用（右侧详情栏）：图在上、字在下；横着用（候选区顶上那条）：图在左、字在右
+            if (Height > Width * 8 / 10) { PaintTall(g); return; }
 
             Rectangle full = new Rectangle(0, 0, Width, Height);
             using (GraphicsPath bg = Round(full, Dpi.S(8)))
@@ -179,6 +185,91 @@ namespace Installer
                 }
                 TextRenderer.DrawText(g, src, f, badge, ink,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            }
+        }
+
+        /// <summary>竖版：16:9 大图在上，标题 / 类型·体积 / 来源 / 提示依次排在下面。</summary>
+        private void PaintTall(Graphics g)
+        {
+            int pad = Dpi.S(10);
+            Rectangle full = new Rectangle(0, 0, Width, Height);
+            using (GraphicsPath bg = Round(full, Dpi.S(8)))
+            {
+                using (SolidBrush b = new SolidBrush(Theme.SurfaceAlt)) g.FillPath(b, bg);
+                using (Pen p = new Pen(Theme.LineSoft)) g.DrawPath(p, bg);
+            }
+
+            int iw = Math.Max(Dpi.S(40), Width - pad * 2);
+            int ih = iw * 9 / 16;
+            int maxH = Math.Max(Dpi.S(40), Height * 55 / 100);
+            if (ih > maxH) { ih = maxH; iw = ih * 16 / 9; }
+            Rectangle thumb = new Rectangle((Width - iw) / 2, pad, iw, ih);
+
+            using (GraphicsPath clip = Round(thumb, Dpi.S(6)))
+            {
+                GraphicsState st = g.Save();
+                g.SetClip(clip);
+                if (img != null)
+                {
+                    float s = Math.Max((float)thumb.Width / img.Width, (float)thumb.Height / img.Height);
+                    int dw = (int)Math.Ceiling(img.Width * s), dh = (int)Math.Ceiling(img.Height * s);
+                    g.DrawImage(img, new Rectangle(thumb.X + (thumb.Width - dw) / 2,
+                                                   thumb.Y + (thumb.Height - dh) / 2, dw, dh));
+                }
+                else
+                {
+                    using (SolidBrush b = new SolidBrush(Theme.IsDark
+                               ? Color.FromArgb(46, 50, 58) : Color.FromArgb(232, 236, 242)))
+                        g.FillRectangle(b, thumb);
+                    string tag = hint.Length > 0 ? hint : "包内无图";
+                    using (Font f = new Font(Theme.UISmall.FontFamily, 8.5f))
+                    using (SolidBrush b = new SolidBrush(Theme.Ink3))
+                    {
+                        SizeF sz = g.MeasureString(tag, f);
+                        g.DrawString(tag, f, b, thumb.X + (thumb.Width - sz.Width) / 2,
+                                     thumb.Y + (thumb.Height - sz.Height) / 2);
+                    }
+                }
+                g.Restore(st);
+            }
+            using (Pen p = new Pen(Theme.LineSoft)) { using (GraphicsPath cp = Round(thumb, Dpi.S(6))) g.DrawPath(p, cp); }
+
+            int tx = pad;
+            int tw = Width - pad * 2;
+            int y = thumb.Bottom + Dpi.S(10);
+            if (title.Length == 0)
+            {
+                TextRenderer.DrawText(g, hint, Theme.UI, new Rectangle(tx, y, tw, Height - y - pad),
+                    Theme.Ink3, TextFormatFlags.Left | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+                return;
+            }
+            TextRenderer.DrawText(g, title, Theme.UIBold, new Rectangle(tx, y, tw, Dpi.S(40)),
+                Theme.Ink, TextFormatFlags.Left | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+            y += Dpi.S(42);
+            TextRenderer.DrawText(g, meta, Theme.UISmall, new Rectangle(tx, y, tw, Dpi.S(20)),
+                Theme.Ink2, TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            y += Dpi.S(22);
+            if (src.Length > 0)
+            {
+                bool has = img != null;
+                Color ink = has ? Theme.Info : Theme.Ink3;
+                Color bgb = has ? (Theme.IsDark ? Color.FromArgb(27, 42, 58) : Color.FromArgb(227, 240, 250))
+                                : (Theme.IsDark ? Color.FromArgb(42, 46, 53) : Color.FromArgb(242, 243, 246));
+                Font f = Theme.UISmall;
+                Size sz = TextRenderer.MeasureText(g, src, f);
+                Rectangle badge = new Rectangle(tx, y, Math.Min(tw, sz.Width + Dpi.S(6)), Dpi.S(18));
+                using (GraphicsPath bp = Round(badge, Dpi.S(3)))
+                {
+                    using (SolidBrush b = new SolidBrush(bgb)) g.FillPath(b, bp);
+                }
+                TextRenderer.DrawText(g, src, f, badge, ink,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                y = badge.Bottom + Dpi.S(10);
+            }
+            if (info.Length > 0)
+            {
+                TextRenderer.DrawText(g, info, Theme.UISmall, new Rectangle(tx, y, tw, Height - y - pad),
+                    Theme.Ink3, TextFormatFlags.Left | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
             }
         }
 

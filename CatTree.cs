@@ -945,7 +945,8 @@ namespace Installer
         private readonly ToolTip tipRow = new ToolTip();    // 列表行悬停：用 ItemMouseHover 触发，比 MouseMove 可靠
         private CheckBox chkMulti;                         // 「允许多选」：这个位置可以同时开好几个 MOD
         private bool applyingMulti;                        // 程序自己改勾选时别触发联动
-        private CoverPeek peek;                            // 候选区上方的封面预览（包内图 / 工坊同 ID 配图）
+        private CoverPeek peek;                            // 封面预览：两列时是候选区上方的横条，三列时是右侧详情栏
+        private Label lblDetail;                           // 三列布局时右栏的小标题
         private int peekIdx = -2;                          // 当前预览的是第几行（-2 = 还没算过，-1 = 没悬停）
 
         private List<Slot> slots = new List<Slot>();
@@ -1051,6 +1052,14 @@ namespace Installer
             // 源码原本没有任何 MOD 预览图（CatTree 里的 Thumb() 是滚动条滑块），这块是新加的。
             peek = new CoverPeek();
             Controls.Add(peek);
+
+            lblDetail = new Label();
+            lblDetail.Text = Lang.S("详情 · 鼠标划过一行看哪条");
+            lblDetail.Font = Theme.UISmall;
+            lblDetail.ForeColor = Theme.Ink3;
+            lblDetail.BackColor = Color.Transparent;
+            lblDetail.Visible = false;
+            Controls.Add(lblDetail);
             lv.MouseMove += delegate(object s2, MouseEventArgs e2)
             {
                 if (peek == null || !peek.Visible) return;
@@ -3386,12 +3395,23 @@ namespace Installer
             }
 
             string src;
-            if (imgPath != null) src = Lang.S("预览图：vpk 内置 / 工坊同 ID");
-            else if (lead == null || lead.FromGame) src = "";
-            else if (!string.IsNullOrEmpty(lead.Container)) src = Lang.S("预览图：在压缩包里，读不到");
-            else src = Lang.S("预览图：这个 MOD 没带");
+            if (lead == null) src = "";
+            else if (lead.FromGame) src = Lang.S("来源：游戏 addons 里已有");
+            else if (!string.IsNullOrEmpty(lead.Container)) src = Lang.S("来源：压缩包 ") + System.IO.Path.GetFileName(lead.Container);
+            else src = Lang.S("来源：") + System.IO.Path.GetFileName(lead.FullPath ?? "");
 
-            peek.Show(g.Name, KindsOf(g) + " · " + Core.Human(g.Size), src, imgPath, null);
+            string info = "";
+            if (lead != null)
+            {
+                if (!string.IsNullOrEmpty(lead.Subject)) info += Lang.S("改了什么：") + lead.Subject + "\n\n";
+                if (!string.IsNullOrEmpty(lead.AddonTitle)) info += Lang.S("游戏里叫：") + lead.AddonTitle + "\n\n";
+                info += (lead.AddonOn ? Lang.S("状态：已启用") : Lang.S("状态：已关闭"));
+                if (lead.FromGame) info += "\n\n" + Lang.S("这份就在游戏目录里，删文件得自己去资源管理器");
+            }
+
+            string meta = KindsOf(g) + " · " + Core.Human(g.Size);
+            if (g.Parts.Count > 1) meta += " · " + g.Parts.Count + " 件";
+            peek.Show(g.Name, meta, src, imgPath, null, info);
         }
 
         /// <summary>
@@ -3655,22 +3675,25 @@ namespace Installer
             int W = ClientSize.Width, H = ClientSize.Height;
             if (W <= 0 || H <= 0) return;
             // 三层之后每行多缩了一级，树比以前宽一点，否则物品名和「选了哪个」会挤在一起
-            int treeW = Math.Min(430, Math.Max(260, W * 46 / 100));
+            // 三列：方案树 / 该类候选 / 悬停详情。树不用占一半，右边两列才是干活的
+            int treeW = Math.Min(Dpi.S(380), Math.Max(Dpi.S(240), W * 30 / 100));
             if (scroll != null) scroll.SetBounds(0, 0, treeW, H);
             // Dock 让树体宽度自动跟着可视区走（含竖直滚动条出现/消失），不然右边「n 个」会被裁掉
             if (scroll != null) scroll.Relayout();
 
             int x = treeW + 1;
             int rightW = Math.Max(120, W - x);
+            // 第三列（详情）：窗口够宽才开；不够宽就退回两列，候选吃满
+            int detailW = rightW >= Dpi.S(720) ? Math.Min(Dpi.S(300), rightW / 4) : 0;
+            int candW = rightW - (detailW > 0 ? detailW + Theme.G : 0);
             int pad = Theme.CardPad;
             int actH = Theme.H;
             int by = H - actH - Theme.S;                   // 底部动作行的顶边
             int top = 60;                                  // 标题两行下面是列表
-            // 封面预览条插在标题与表头之间：看图比读文件名快得多，
-            // 但也不能占太多高度，所以压成一条 16:9 的横带。
+            // 两列时封面条夹在标题与表头之间；三列时它整块搬去右侧详情栏
             int peekH = Dpi.S(100);
             int peekTop = 60;
-            top = peekTop + peekH + Theme.S;
+            if (detailW == 0) top = peekTop + peekH + Theme.S;
             int bottom = by - Theme.S;                     // 列表底边，与动作行之间留一个步长
             const int headH = 26;
 
@@ -3680,14 +3703,14 @@ namespace Installer
             // 判据用条目数而不是 Visible：Visible 是本方法自己在改的，拿它当输入会互相打架
             // （上一次隐藏了 → 这次走窄窗分支 → 又把隐藏的那块摆出来 → 下一轮变成可见）。
             bool hasEx = lvExtra != null && lvExtra.Items.Count > 0;
-            bool side = hasEx && rightW >= Dpi.S(Theme.SideMin);
-            int mainX = x, mainW = rightW;
+            bool side = hasEx && candW >= Dpi.S(Theme.SideMin);
+            int mainX = x, mainW = candW;
             int exX = 0, exW = 0;
             if (side)
             {
                 // 扩展栏定宽，但最多占右半的三分之一：窗口再宽也不让它抢候选的地盘
-                exW = Math.Min(Dpi.S(Theme.ExtraW), rightW / 3);
-                mainW = rightW - exW - Theme.G;
+                exW = Math.Min(Dpi.S(Theme.ExtraW), candW / 3);
+                mainW = candW - exW - Theme.G;
                 exX = x + mainW + Theme.G;
             }
 
@@ -3697,7 +3720,21 @@ namespace Installer
 
             if (peek != null)
             {
-                peek.SetBounds(mainX + pad, peekTop, Math.Max(Dpi.S(160), mainW - 2 * pad), peekH);
+                if (detailW > 0)
+                {
+                    int dx = x + candW + Theme.G;
+                    if (lblDetail != null)
+                    {
+                        lblDetail.SetBounds(dx, 12, Math.Max(80, detailW), 18);
+                        lblDetail.Visible = lv != null && lv.Visible;
+                    }
+                    peek.SetBounds(dx, 34, Math.Max(Dpi.S(200), detailW), Math.Max(Dpi.S(240), H - 46));
+                }
+                else
+                {
+                    if (lblDetail != null) lblDetail.Visible = false;
+                    peek.SetBounds(mainX + pad, peekTop, Math.Max(Dpi.S(160), mainW - 2 * pad), peekH);
+                }
                 peek.Visible = lv != null && lv.Visible;
             }
 
@@ -3755,7 +3792,7 @@ namespace Installer
             int edge = x + rightW - 8;
             int used = 0;
             if (lblFoot != null)
-                lblFoot.SetBounds(x + pad, by + (actH - 18) / 2, Math.Max(60, rightW - 2 * pad - used), 18);
+                lblFoot.SetBounds(x + pad, by + (actH - 18) / 2, Math.Max(60, candW - 2 * pad - used), 18);
             LayoutCols();
         }
 
