@@ -988,7 +988,7 @@ namespace Installer
                 Theme.Ink2, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
         }
     }
-    internal sealed class CatTree : UserControl
+    internal sealed class CatTree : UserControl, IMessageFilter
     {
         private readonly MainForm mf;
         private readonly ScrollHost scroll;
@@ -1061,6 +1061,8 @@ namespace Installer
 
         public CatTree(MainForm owner)
         {
+            // 拖未归类 MOD 进树时，滚轮消息原本落在被拖的列表上 —— 用消息过滤器把它转给树
+            Application.AddMessageFilter(this);
             mf = owner;
             BackColor = Theme.Surface;
             Font = Theme.UI;
@@ -3844,6 +3846,26 @@ namespace Installer
             };
             return p;
         }
+        /// <summary>拖拽期间把 WM_MOUSEWHEEL 转给树：OLE 拖动时鼠标被源列表捕获，滚轮默认滚不到方案树。</summary>
+        public bool PreFilterMessage(ref Message m)
+        {
+            const int WM_MOUSEWHEEL = 0x020A;
+            if (m.Msg != WM_MOUSEWHEEL) return false;
+            if (body == null || !body.ExtDragging) return false;
+            long lp = m.LParam.ToInt64();
+            Point sp = new Point(unchecked((short)(lp & 0xFFFF)), unchecked((short)((lp >> 16) & 0xFFFF)));
+            if (!RectangleToScreen(ClientRectangle).Contains(sp)) return false;
+            int delta = unchecked((short)((m.WParam.ToInt64() >> 16) & 0xFFFF));
+            body.WheelScroll(delta);
+            return true;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) Application.RemoveMessageFilter(this);
+            base.Dispose(disposing);
+        }
+
         private void LayoutSelf()
         {
             int W = ClientSize.Width, H = ClientSize.Height;
@@ -4902,6 +4924,18 @@ namespace Installer
                 }
                 Invalidate();
             }
+        }
+
+        /// <summary>外部拖拽（未归类 MOD 拖进树）正在发生：滚轮要转给树用。</summary>
+        internal bool ExtDragging { get { return extDrag; } }
+
+        /// <summary>拖拽中滚轮滚动树（delta 正 = 向上滚）。</summary>
+        internal void WheelScroll(int delta)
+        {
+            ScrollHost host = Parent as ScrollHost;
+            if (host == null || !host.CanScroll) return;
+            int lines = Math.Max(1, Math.Abs(delta) / 120) * 3;
+            host.ScrollTo(host.Offset - Math.Sign(delta) * Dpi.S(Theme.RowH) * lines);
         }
 
         private void ExtDragEnd()
