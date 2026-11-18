@@ -615,8 +615,7 @@ namespace Installer
                     if (uiCatForm) { f.UiTestCatForm(); System.Windows.Forms.Application.DoEvents(); }
                     if (uiAddons) { f.UiTestAddonSwitch(); System.Windows.Forms.Application.DoEvents(); }
                     if (uiFix != null) { f.UiFixProfile(uiFix); System.Windows.Forms.Application.DoEvents(); }
-                    if (uiProfile) { f.UiTestProfileForm(); System.Windows.Forms.Application.DoEvents(); }
-                    if (uiSettings) { f.UiTestSettings(); System.Windows.Forms.Application.DoEvents(); }
+                            if (uiSettings) { f.UiTestSettings(); System.Windows.Forms.Application.DoEvents(); }
                     if (uiTheme)
                     {
                         int bad = f.UiTestTheme();
