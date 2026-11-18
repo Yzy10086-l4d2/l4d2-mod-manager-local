@@ -110,6 +110,7 @@ namespace Installer
             bool plugSelf = false;
             string plugTry = null;
             bool layoutSelf = false;
+            bool imgSelf = false;
             bool noDpi = false;
             string vpkFile = null;
 
@@ -185,6 +186,7 @@ namespace Installer
                 else if (a.StartsWith("--plugtry=", StringComparison.OrdinalIgnoreCase)) plugTry = a.Substring(10).Trim('"');
                 else if (string.Equals(a, "--nodpi", StringComparison.OrdinalIgnoreCase)) noDpi = true;
                 else if (string.Equals(a, "--layoutself", StringComparison.OrdinalIgnoreCase)) layoutSelf = true;
+                else if (string.Equals(a, "--imgself", StringComparison.OrdinalIgnoreCase)) imgSelf = true;
                 else if (a.StartsWith("--vpk=", StringComparison.OrdinalIgnoreCase)) vpkFile = a.Substring(6).Trim('"');
 
                 else if (a.StartsWith("--game=", StringComparison.OrdinalIgnoreCase)) gameRoot = a.Substring(7).Trim('"');
@@ -196,7 +198,7 @@ namespace Installer
             // 以前这行写在所有自检分支后面，等于对它们全部无效。
             Core.SelfTesting = selfTest || uiTest || copyTest || launchSelf || dupSelf
                             || addonSelf || safeSelf || dumpId || dumpTree || ovDump || recogSelf || plugSelf || plugTry != null
-                            || mapShot || mapSelf || scanRace || layoutSelf || wsSelf || wsNet != null || wsSearch != null;
+                            || mapShot || mapSelf || scanRace || layoutSelf || imgSelf || wsSelf || wsNet != null || wsSearch != null;
 
             // 单实例只约束界面模式：已经开着就把那个窗口叫到前面来。
             // 用 Core.SelfTesting 判，不再手写参数清单 —— 以前漏了 --workshopself / --layoutself /
@@ -357,6 +359,64 @@ namespace Installer
                 int bad = DupVerify.SelfTest();
                 Console.WriteLine("dupself failures = " + bad);
                 return bad == 0 ? 0 : 1;
+            }
+            if (imgSelf)
+            {
+                // 封面图自检：遍历游戏 addons，看 ReadAddonImage 到底能解出几张、解出来的是不是真图片。
+                // 只读不写，不解包到临时目录，跑一遍就能判断这条路的覆盖率。
+                string addons = Core.GameAddonsDir();
+                if (addons == null)
+                {
+                    Console.WriteLine("imgself: 找不到 addons 目录（游戏路径没配？）");
+                    return 1;
+                }
+                string[] vpks = System.IO.Directory.GetFiles(addons, "*.vpk", System.IO.SearchOption.AllDirectories);
+                Console.WriteLine("[imgself] addons = " + addons);
+                Console.WriteLine("[imgself] vpk 总数 " + vpks.Length);
+                int hit = 0, miss = 0, broken = 0, sidecar = 0;
+                foreach (string f in vpks)
+                {
+                    // 走 Cover 这一层：解包 → 裁成 16:9 → 写缓存，一条链路全验
+                    string thumb = Cover.For(f);
+                    if (thumb == null)
+                    {
+                        miss++;
+                        // 工坊 MOD 的图不在包里，是同目录的 <id>.jpg，这里顺手统计一下能补上多少
+                        string stem = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(f),
+                                                             System.IO.Path.GetFileNameWithoutExtension(f));
+                        if (System.IO.File.Exists(stem + ".jpg") || System.IO.File.Exists(stem + ".png")
+                            || System.IO.File.Exists(stem + ".gif") || System.IO.File.Exists(stem + ".jpeg"))
+                            sidecar++;
+                        continue;
+                    }
+                    try
+                    {
+                        using (System.Drawing.Image im = System.Drawing.Image.FromFile(thumb))
+                        {
+                            hit++;
+                            if (im.Width != Cover.ThumbW || im.Height != Cover.ThumbH) broken++;
+                            if (hit <= 6)
+                                Console.WriteLine("  OK " + System.IO.Path.GetFileName(f)
+                                    + "  → " + im.Width + "x" + im.Height
+                                    + "  " + (new System.IO.FileInfo(thumb).Length / 1024) + " KB");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        broken++;
+                        Console.WriteLine("  缩略图打不开 " + System.IO.Path.GetFileName(f) + "  " + ex.Message);
+                    }
+                }
+                // 第二遍必须全命中缓存，否则说明缓存没写进去或 key 不稳定
+                int hits2 = 0, drift = 0;
+                foreach (string f in vpks)
+                {
+                    try { if (Cover.For(f) != null) hits2++; } catch { drift++; }
+                }
+                Console.WriteLine("[imgself] 有封面 " + hit + " / 无封面 " + miss + "（其中同 ID 配图可补 " + sidecar
+                                  + "） / 尺寸异常或打不开 " + broken);
+                Console.WriteLine("[imgself] 二次调用命中 " + hits2 + " / 异常 " + drift + "（应等于上面的有封面数）");
+                return broken == 0 && drift == 0 && hits2 == hit ? 0 : 1;
             }
 
             if (selfTest) return Work.SelfTest(gameRoot);

@@ -945,6 +945,8 @@ namespace Installer
         private readonly ToolTip tipRow = new ToolTip();    // 列表行悬停：用 ItemMouseHover 触发，比 MouseMove 可靠
         private CheckBox chkMulti;                         // 「允许多选」：这个位置可以同时开好几个 MOD
         private bool applyingMulti;                        // 程序自己改勾选时别触发联动
+        private CoverPeek peek;                            // 候选区上方的封面预览（包内图 / 工坊同 ID 配图）
+        private int peekIdx = -2;                          // 当前预览的是第几行（-2 = 还没算过，-1 = 没悬停）
 
         private List<Slot> slots = new List<Slot>();
         private int unmatched;                       // 一个位置都归不上的 MOD 数
@@ -1045,6 +1047,26 @@ namespace Installer
             };
             lv.ContextMenuStrip = mf.BuildTreeMenu(lv);
             lv.Resize += delegate { LayoutCols(); };
+            // 封面预览：悬停哪行看哪行，移开回落到「当前启用的那个」。
+            // 源码原本没有任何 MOD 预览图（CatTree 里的 Thumb() 是滚动条滑块），这块是新加的。
+            peek = new CoverPeek();
+            Controls.Add(peek);
+            lv.MouseMove += delegate(object s2, MouseEventArgs e2)
+            {
+                if (peek == null || !peek.Visible) return;
+                int idx = -1;
+                ListViewItem hit = lv.GetItemAt(e2.X, e2.Y);
+                if (hit != null) idx = hit.Index;
+                if (idx == peekIdx) return;                 // 同一行反复触发会一直重解开图，必须挡住
+                peekIdx = idx;
+                UpdatePeek(hit == null ? null : hit.Tag as ModGroup);
+            };
+            lv.MouseLeave += delegate
+            {
+                if (peekIdx == -1) return;
+                peekIdx = -1;
+                UpdatePeek(null);
+            };
             // 未归类页：按住一行往外拖 = 把这个 MOD 拖到左边的树上归位（拖到哪归到哪）。
             // 只有未归类页给拖；其他页的行拖出去没有意义（本来就归好了）。说明行 Tag 为空，天然拖不动。
             lv.ItemDrag += delegate(object s, ItemDragEventArgs e)
@@ -3158,6 +3180,7 @@ namespace Installer
                     lblCur.Text = Lang.S("左边点一个武器 / 药品 / 人物，这里列它的 MOD");
                     lblExtraTitle.Visible = false;
                     lvExtra.Visible = false;
+                    if (peek != null) peek.Visible = false;
                     return;
                 }
                 int n = CheckedGroups(s);
@@ -3318,8 +3341,57 @@ namespace Installer
                 }
             }
             finally { lv.EndUpdate(); lvExtra.EndUpdate(); }
+            peekIdx = -2;                 // 列表整批换过了，之前的悬停行号作废
+            UpdatePeek(null);             // 先回落到「当前启用的那个」，一进这个位置就有图看
             LayoutSelf();
             LayoutCols();
+        }
+
+        /// <summary>
+        /// 刷新候选区上方的封面预览。g 为 null 时回落到这个位置当前启用的那套，
+        /// 再没有就用第一个候选 —— 进来先看到一张图，比看到一块空白有用。
+        /// </summary>
+        private void UpdatePeek(ModGroup g)
+        {
+            if (peek == null) return;
+            Slot s = Current;
+            if (s == null)
+            {
+                peek.Visible = false;
+                return;
+            }
+            peek.Visible = lv.Visible;
+
+            if (g == null)
+            {
+                g = ChosenOf(s);
+                if (g == null && s.Items.Count > 0) g = s.Items[0];
+            }
+            if (g == null)
+            {
+                peek.Clear(s.Empty ? Lang.S("这个位置还没有 MOD") : Lang.S("没有可预览的 MOD"));
+                return;
+            }
+
+            // 组合装取主体那一片；游戏原版没有包，也就没有图
+            ModItem lead = null;
+            foreach (ModItem p in g.Parts)
+                if (p.FromGame || p.Installed) { lead = p; break; }
+            if (lead == null && g.Parts.Count > 0) lead = g.Parts[0];
+
+            string imgPath = null;
+            if (lead != null && !lead.FromGame && string.IsNullOrEmpty(lead.Container) && lead.FullPath != null)
+            {
+                try { imgPath = Cover.For(lead.FullPath); } catch { imgPath = null; }
+            }
+
+            string src;
+            if (imgPath != null) src = Lang.S("预览图：vpk 内置 / 工坊同 ID");
+            else if (lead == null || lead.FromGame) src = "";
+            else if (!string.IsNullOrEmpty(lead.Container)) src = Lang.S("预览图：在压缩包里，读不到");
+            else src = Lang.S("预览图：这个 MOD 没带");
+
+            peek.Show(g.Name, KindsOf(g) + " · " + Core.Human(g.Size), src, imgPath, null);
         }
 
         /// <summary>
@@ -3594,6 +3666,11 @@ namespace Installer
             int actH = Theme.H;
             int by = H - actH - Theme.S;                   // 底部动作行的顶边
             int top = 60;                                  // 标题两行下面是列表
+            // 封面预览条插在标题与表头之间：看图比读文件名快得多，
+            // 但也不能占太多高度，所以压成一条 16:9 的横带。
+            int peekH = Dpi.S(100);
+            int peekTop = 60;
+            top = peekTop + peekH + Theme.S;
             int bottom = by - Theme.S;                     // 列表底边，与动作行之间留一个步长
             const int headH = 26;
 
@@ -3617,6 +3694,12 @@ namespace Installer
             if (lblTitle != null) lblTitle.SetBounds(mainX + pad, 12, Math.Max(60, mainW - 2 * pad - 100), 22);
             if (lblCur != null) lblCur.SetBounds(mainX + pad, 34, Math.Max(60, mainW - 2 * pad - 130), 18);
             if (chkMulti != null) chkMulti.SetBounds(mainX + mainW - 126, 33, 110, 22);
+
+            if (peek != null)
+            {
+                peek.SetBounds(mainX + pad, peekTop, Math.Max(Dpi.S(160), mainW - 2 * pad), peekH);
+                peek.Visible = lv != null && lv.Visible;
+            }
 
             if (headMain != null)
             {

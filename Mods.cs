@@ -734,6 +734,113 @@ namespace Installer
         }
 
         /// <summary>
+        /// 读 vpk 里打包的封面图（addonimage.jpg / .png / .gif）。
+        /// 游戏自己的 addons 列表显示的就是这张图；作者打包时没放就没有，返回 null。
+        /// 有 preload 的直接从目录表取，正文在数据段的按 offset/length 读包体。
+        /// </summary>
+        public static byte[] ReadAddonImage(string file)
+        {
+            try
+            {
+                using (FileStream fs = new FileStream(file, FileMode.Open, FileAccess.Read,
+                           FileShare.Read | FileShare.Write, 64 * 1024, FileOptions.RandomAccess))
+                using (BinaryReader br = new BinaryReader(fs))
+                {
+                    if (fs.Length < 12) return null;
+                    if (br.ReadUInt32() != 0x55AA1234) return null;
+                    uint ver = br.ReadUInt32();
+                    int treeSize = (int)br.ReadUInt32();
+                    if (ver == 2) br.ReadBytes(16);
+                    if (treeSize <= 0) return null;
+                    long avail = fs.Length - fs.Position;
+                    if (treeSize > avail) treeSize = (int)avail;
+                    if (treeSize > 32 * 1024 * 1024) treeSize = 32 * 1024 * 1024;
+                    byte[] t = br.ReadBytes(treeSize);
+                    if (t == null || t.Length == 0) return null;
+                    long dataBase = fs.Position;
+
+                    int ps, pl;
+                    uint dof, dln;
+                    bool inFile;
+                    if (!FindAddonImage(t, out ps, out pl, out dof, out dln, out inFile)) return null;
+
+                    byte[] raw = null;
+                    if (pl > 0)
+                    {
+                        raw = new byte[pl];
+                        Array.Copy(t, ps, raw, 0, pl);
+                    }
+                    else if (inFile && dln > 0 && dln < 8 * 1024 * 1024)
+                    {
+                        raw = new byte[dln];
+                        fs.Seek(dataBase + dof, SeekOrigin.Begin);
+                        if (!ReadFull(fs, raw, raw.Length)) raw = null;
+                    }
+                    if (raw == null || raw.Length < 32) return null;
+
+                    // 认图片头：有作者会塞 0 字节占位或别的文件，直接交给 Image 会抛异常
+                    bool jpeg = raw[0] == 0xFF && raw[1] == 0xD8;
+                    bool png = raw[0] == 0x89 && raw[1] == 0x50 && raw[2] == 0x4E;
+                    bool gif = raw[0] == 0x47 && raw[1] == 0x49 && raw[2] == 0x46;
+                    if (!jpeg && !png && !gif) return null;
+                    return raw;
+                }
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// 在目录表里找 addonimage。路径不卡死在根目录：实测有作者把图打在 " /addonimage.jpg"
+        /// （目录名是一个空格），只认根目录会把这一批全漏掉。优先取根目录那份，没有才用按路径找到的。
+        /// </summary>
+        private static bool FindAddonImage(byte[] t, out int preStart, out int preLen,
+                                           out uint dataOff, out uint dataLen, out bool inThisFile)
+        {
+            preStart = 0; preLen = 0; dataOff = 0; dataLen = 0; inThisFile = false;
+            bool gotFallback = false;
+            int i = 0;
+            while (i < t.Length)
+            {
+                string ext = ReadStr(t, ref i);
+                if (ext.Length == 0) break;
+                while (i < t.Length)
+                {
+                    string path = ReadStr(t, ref i);
+                    if (path.Length == 0) break;
+                    while (i < t.Length)
+                    {
+                        string name = ReadStr(t, ref i);
+                        if (name.Length == 0) break;
+                        if (i + 18 > t.Length) return gotFallback;
+                        ushort pre = BitConverter.ToUInt16(t, i + 4);
+                        ushort ai = BitConverter.ToUInt16(t, i + 6);
+                        uint off = BitConverter.ToUInt32(t, i + 8);
+                        uint len = BitConverter.ToUInt32(t, i + 12);
+                        i += 18;
+                        if (pre > t.Length - i) return gotFallback;
+                        int ps = i;
+                        i += pre;
+
+                        if (!string.Equals(name, "addonimage", StringComparison.OrdinalIgnoreCase)) continue;
+                        bool isImg = string.Equals(ext, "jpg", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(ext, "jpeg", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(ext, "png", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(ext, "gif", StringComparison.OrdinalIgnoreCase);
+                        if (!isImg) continue;
+                        if (gotFallback && path.Trim().Length != 0) continue;
+
+                        preStart = ps; preLen = pre;
+                        dataOff = off; dataLen = len;
+                        inThisFile = ai == 0x7FFF;
+                        if (path.Trim().Length == 0) return true;   // 根目录那份最正，直接收工
+                        gotFallback = true;
+                    }
+                }
+            }
+            return gotFallback;
+        }
+
+        /// <summary>
         /// 只有目录表（压缩包里的 vpk 是这样读的）时用这个。
         /// preload 里的正文能直接取；正文在数据段的话，手上没有包体，只能报「找到了但读不出」。
         /// </summary>
