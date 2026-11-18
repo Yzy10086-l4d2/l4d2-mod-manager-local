@@ -51,7 +51,6 @@ namespace Installer
         public string LastRun = "";
         // 组件默认全不勾：单 exe 下载的新人只想装一个 MOD，不该一点「开始装」就顺带
         // 铺进去约 580MB 平台组件。要用的人自己勾；老配置里写过 True 的仍按配置回填。
-        public string LaunchOptions = LaunchArgs.Default;   // 默认值只在 Launch.cs 里写一次
         public bool CfgFile = false;        // 新人首装不默认写 cfg；老配置里写过 True 的照旧
         public bool Overwrite = false;      // false = 已装的跳过；true = 全部重装一遍
         public bool ReduceMotion = false;   // true = 关闭轻量过渡，直接显示最终状态
@@ -528,17 +527,6 @@ namespace Installer
                     string v = s.Substring(eq + 1).Trim();
                     if (k == "GameRoot") Cfg.GameRoot = v;
                     else if (k == "LastRun") Cfg.LastRun = v;
-                    else if (k == "LaunchOptions")
-                    {
-                        // 老配置里若还是 v1.7 的默认值，说明没人动过 —— 直接升到新默认，
-                        // 否则换了新 exe 还是按旧参数写，等于没改。
-                        if (v.Length == 0 || v == LaunchArgs.Legacy)
-                        {
-                            Cfg.LaunchOptions = LaunchArgs.Default;
-                            if (v.Length > 0) Log("INFO", "启动项是旧默认值（" + v + "），已换成新版默认参数");
-                        }
-                        else Cfg.LaunchOptions = v;
-                    }
                     else if (k == "CfgFile") Cfg.CfgFile = (v == "1");
                     else if (k == "Overwrite") Cfg.Overwrite = (v == "1");
                     else if (k == "ReduceMotion") Cfg.ReduceMotion = (v == "1");
@@ -571,7 +559,6 @@ namespace Installer
                 sb.AppendLine("GameRoot=" + Cfg.GameRoot);
                 sb.AppendLine("LastRun=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                 sb.AppendLine("[platform]");
-                sb.AppendLine("LaunchOptions=" + Cfg.LaunchOptions);
                 sb.AppendLine("CfgFile=" + (Cfg.CfgFile ? "1" : "0"));
                 sb.AppendLine("Overwrite=" + (Cfg.Overwrite ? "1" : "0"));
                 sb.AppendLine("ReduceMotion=" + (Cfg.ReduceMotion ? "1" : "0"));

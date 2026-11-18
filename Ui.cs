@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -543,7 +543,11 @@ namespace Installer
             // 先把这几项藏起来，下一步连带装机逻辑一起删。
             gp.Caption = Lang.S("推荐启动项");
             Label l4 = new Label(); l4.Text = Lang.S("推荐"); l4.SetBounds(12, 30, 44, 20); Theme.Dress(l4); gp.Controls.Add(l4);
-            txtLaunch = new TextBox(); txtLaunch.SetBounds(60, 28, 246, 24); Theme.Dress(txtLaunch); gp.Controls.Add(txtLaunch);
+            txtLaunch = new TextBox(); txtLaunch.SetBounds(60, 28, 246, 24); Theme.Dress(txtLaunch);
+            txtLaunch.ReadOnly = true;
+            txtLaunch.BackColor = Theme.Surface;
+            txtLaunch.Text = LaunchArgs.Default;
+            gp.Controls.Add(txtLaunch);
             // 一行输入框放不下 130 个字符：外面只给个预览，真正的编辑交给「…」里的放大窗口
             txtLaunch.TextChanged += delegate { UpdateLaunchTip(); };
             txtLaunch.DoubleClick += delegate { EditLaunch(); };
@@ -561,11 +565,11 @@ namespace Installer
                 if (btnLaunchCopy != null) btnLaunchCopy.Text = Lang.S("复制");
             };
 
-            btnLaunchEdit = new FlatButton(); btnLaunchEdit.Text = "…"; btnLaunchEdit.Font = Theme.UIBold;
-            btnLaunchEdit.AccessibleName = "放大编辑启动项";
+            btnLaunchEdit = new FlatButton(); btnLaunchEdit.Text = "大全"; btnLaunchEdit.Font = Theme.UIBold;
+            btnLaunchEdit.AccessibleName = "推荐启动项大全";
             btnLaunchEdit.SetBounds(358, 28, 26, 24);
             btnLaunchEdit.Click += delegate { EditLaunch(); };
-            tips.SetToolTip(btnLaunchEdit, Lang.S("放大编辑启动项（可换行、可恢复默认、可把 0/1 换成 0 或 1）。双击输入框也能打开。"));
+            tips.SetToolTip(btnLaunchEdit, Lang.S("看每个启动项干什么用的：只读表格，能复制整串或单条。双击输入框也能打开。"));
             gp.Controls.Add(btnLaunchEdit);
 
             LayoutLaunchRow(leftW);
@@ -999,7 +1003,6 @@ namespace Installer
 
         private void ApplyConfig()
         {
-            txtLaunch.Text = Core.Cfg.LaunchOptions;
             // 存过参数存档的老用户，默认勾上「写参数配置」是合理的（他存过就说明下次要用）。
             // 但全新安装的人连一个 MOD 都还没下，不该有任何默认勾选项 —— 否则 0 个 MOD
             // 点「开始装」也会顺手写 cfg。用「配置文件是否存在」区分，不靠猜。
@@ -1020,7 +1023,7 @@ namespace Installer
         /// <summary>启动项一行：输入框 + 复制 + 放大编辑。位置只在这里算，构建和重排共用。</summary>
         private void LayoutLaunchRow(int leftW)
         {
-            const int editW = 26, copyW = 44, gap = 4;
+            const int editW = 46, copyW = 44, gap = 4;
             int editX = leftW - 12 - editW;
             int copyX = editX - gap - copyW;
             if (btnLaunchEdit != null) btnLaunchEdit.Left = Dpi.S(editX);
@@ -1028,10 +1031,10 @@ namespace Installer
             if (txtLaunch != null) txtLaunch.Width = Dpi.S(Math.Max(80, copyX - gap - 60));
         }
 
-        /// <summary>一键复制启动项：复制清洗后的整段，还带 0/1 占位会额外提醒。</summary>
+        /// <summary>一键复制推荐启动项：永远复制固定的推荐串。</summary>
         private void CopyLaunch()
         {
-            string s = LaunchArgs.Clean(txtLaunch.Text);
+            string s = LaunchArgs.Default;
             if (s.Length == 0)
             {
                 FlashCopy("空");
@@ -1047,8 +1050,7 @@ namespace Installer
             }
             FlashCopy("已复制");
             Log("启动项已复制（" + LaunchArgs.CountSwitches(s) + " 个开关，" + s.Length + " 个字符）");
-            if (LaunchArgs.HasSlot(s))
-                Log("WARN", "复制的内容里还有 0/1 占位，贴到 Steam 前要改成 0 或 1");
+
         }
 
         /// <summary>按钮上的短反馈，1.4 秒后自动变回「复制」。</summary>
@@ -1060,30 +1062,17 @@ namespace Installer
             copyTimer.Start();
         }
 
-        /// <summary>启动项输入框只有 ~300px，鼠标悬停看全文，改内容进放大窗口。</summary>
+        /// <summary>只读输入框太窄，鼠标悬停看全文；要逐条看作用点「大全」。</summary>
         private void UpdateLaunchTip()
         {
             string s = LaunchArgs.Clean(txtLaunch.Text);
-            string tip;
-            if (s.Length == 0) tip = "现在是空的：不推荐任何参数。\r\n右边「复制」可整段拷到剪贴板；点「…」或双击这里编辑。";
-            else
-            {
-                tip = s + "\r\n\r\n" + (LaunchArgs.HasSlot(s)
-                        ? "注意：-skeeto_particle_platform 还是 0/1，要改成 0 或 1 才生效。"
-                        : "共 " + LaunchArgs.CountSwitches(s) + " 个开关。")
-                    + "\r\n右边「复制」可整段拷到剪贴板；点「…」或双击这里放大编辑。";
-            }
-            tips.SetToolTip(txtLaunch, tip);
+            tips.SetToolTip(txtLaunch, s + "\r\n\r\n共 " + LaunchArgs.CountSwitches(s) + " 个开关。只读；"
+                + "点右边「大全」看每个参数干什么用的，要改就在 Steam 里改。");
         }
 
         private void EditLaunch()
         {
-            using (LaunchForm f = new LaunchForm(txtLaunch.Text))
-            {
-                if (f.ShowDialog(this) != DialogResult.OK) return;
-                txtLaunch.Text = f.Result;
-                UpdateLaunchTip();
-            }
+            using (LaunchCatalogForm f = new LaunchCatalogForm()) f.ShowDialog(this);
         }
 
         private void FillProfiles(string keep)
@@ -1290,11 +1279,10 @@ namespace Installer
         /// <summary>自测用：打开「启动项」放大编辑并截图，同时核对默认值与清洗结果。</summary>
         internal void UiTestLaunch()
         {
-            Core.Log("INFO", "LAUNCHTEST 输入框里的值 = " + LaunchArgs.Clean(txtLaunch.Text)
-                + " | 默认 = " + LaunchArgs.Default
-                + " | 含 0/1 占位 = " + LaunchArgs.HasSlot(txtLaunch.Text)
-                + " | 参数个数 = " + LaunchArgs.Clean(txtLaunch.Text).Split(' ').Length);
-            using (LaunchForm lf = new LaunchForm(txtLaunch.Text))
+            Core.Log("INFO", "LAUNCHTEST 推荐串 = " + LaunchArgs.Default
+                + " | 开关数 = " + LaunchArgs.CountSwitches(LaunchArgs.Default)
+                + " | 大全条目 = " + LaunchCatalog.Items.Length);
+            using (LaunchCatalogForm lf = new LaunchCatalogForm())
             {
                 lf.StartPosition = FormStartPosition.Manual;
                 lf.Location = new System.Drawing.Point(0, 0);
@@ -3736,8 +3724,7 @@ namespace Installer
             sb.AppendLine("启动项框  : " + txtLaunch.Left + "," + txtLaunch.Top + " " + txtLaunch.Width + " x " + txtLaunch.Height
                           + "  复制按钮 " + btnLaunchCopy.Left + "," + btnLaunchCopy.Top + " " + btnLaunchCopy.Width + "x" + btnLaunchCopy.Height
                           + "  编辑按钮 " + btnLaunchEdit.Left + "," + btnLaunchEdit.Top + " " + btnLaunchEdit.Width + "x" + btnLaunchEdit.Height);
-            sb.AppendLine("启动项值  : " + LaunchArgs.Clean(txtLaunch.Text)
-                          + (LaunchArgs.HasSlot(txtLaunch.Text) ? "   [含 0/1 占位]" : ""));
+            sb.AppendLine("启动项值  : " + LaunchArgs.Clean(txtLaunch.Text));
             sb.AppendLine("启动项默认: " + LaunchArgs.Default);
             sb.AppendLine("开始装按钮: " + btnInstall.Left + "," + btnInstall.Top + " " + btnInstall.Width + " x " + btnInstall.Height);
             return sb.ToString();
@@ -4812,7 +4799,6 @@ namespace Installer
             Work.Overwrite = !rdSkip.Checked;          // 所有 Install* 都读这个开关
             Core.Cfg.GameRoot = root;
             Core.Cfg.Overwrite = !rdSkip.Checked;
-            Core.Cfg.LaunchOptions = LaunchArgs.ForWrite(txtLaunch.Text);
             Core.Cfg.Recent.RemoveAll(delegate(string s) { return string.Equals(s, root, StringComparison.OrdinalIgnoreCase); });
             Core.Cfg.Recent.Insert(0, root);
             while (Core.Cfg.Recent.Count > 6) Core.Cfg.Recent.RemoveAt(Core.Cfg.Recent.Count - 1);
