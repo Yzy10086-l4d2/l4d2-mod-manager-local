@@ -1156,6 +1156,7 @@ namespace Installer
             lblCur.ForeColor = Theme.Ink2;
             lblCur.BackColor = Color.Transparent;
             lblCur.AutoEllipsis = true;
+            lblCur.TextChanged += delegate { PlaceMulti(); };
             Controls.Add(lblCur);
 
             chkMulti = new CheckBox();
@@ -1226,6 +1227,19 @@ namespace Installer
 
             Resize += delegate { LayoutSelf(); };
             LayoutSelf();
+        }
+
+        /// <summary>「允许多选」紧跟「当前：…」的尾巴，而不是钉死在右边缘白占一条。</summary>
+        private void PlaceMulti()
+        {
+            if (chkMulti == null || lblCur == null || !chkMulti.Visible) return;
+            int tw = TextRenderer.MeasureText(lblCur.Text ?? "", lblCur.Font).Width;
+            int maxX = lblCur.Left + lblCur.Width - Dpi.S(114);
+            int x = Math.Min(lblCur.Left + tw + Dpi.S(12), maxX);
+            chkMulti.Left = Math.Max(lblCur.Left, x);
+            // 标签在后加的控件下面，不提到最前就会被「当前：…」这块透明背景盖住
+            chkMulti.BringToFront();
+            lblCur.Width = Math.Max(Dpi.S(60), chkMulti.Left - lblCur.Left - Dpi.S(8));
         }
 
         /// <summary>候选列表的共同外观：三列、圆点状态、不显示表头焦点。</summary>
@@ -3255,7 +3269,7 @@ namespace Installer
                 if (chkMulti != null)
                 {
                     applyingMulti = true;
-                    chkMulti.Visible = !s.Pile && !s.Empty && s.Items.Count >= 2;
+                    chkMulti.Visible = !s.Pile && !s.Empty;
                     chkMulti.Checked = IsMulti(s);
                     applyingMulti = false;
                 }
@@ -3741,7 +3755,7 @@ namespace Installer
             int x = treeW + 1;
             int rightW = Math.Max(120, W - x);
             // 第三列（详情）：窗口够宽才开；不够宽就退回两列，候选吃满
-            int detailW = rightW >= Dpi.S(720) ? Math.Min(Dpi.S(300), rightW / 4) : 0;
+            int detailW = rightW >= Dpi.S(700) ? Math.Min(Dpi.S(340), rightW * 32 / 100) : 0;
             int candW = rightW - (detailW > 0 ? detailW + Theme.G : 0);
             int pad = Theme.CardPad;
             int actH = Theme.H;
@@ -3772,11 +3786,9 @@ namespace Installer
             }
 
             if (lblTitle != null) lblTitle.SetBounds(mainX + pad, 12, Math.Max(60, mainW - 2 * pad - 100), 22);
-            // 「允许多选」只有一个候选时没有意义：不给它留位置，标题行就能吃满宽度
-            Slot curSlot = Current;
-            bool multiShown = chkMulti != null && curSlot != null && !curSlot.Pile && !curSlot.Empty && curSlot.Items.Count >= 2;
-            if (chkMulti != null) { chkMulti.Visible = multiShown; chkMulti.SetBounds(mainX + mainW - 126, 33, 110, 22); }
-            if (lblCur != null) lblCur.SetBounds(mainX + pad, 34, Math.Max(60, mainW - 2 * pad - (multiShown ? 130 : 0)), 18);
+            // 「当前」这行吃满宽度；「允许多选」不再钉在最右边（那会白占一条），改成紧跟在这行文字右边
+            if (lblCur != null) lblCur.SetBounds(mainX + pad, 34, Math.Max(60, mainW - 2 * pad), 18);
+            if (chkMulti != null) { chkMulti.SetBounds(mainX + pad + Dpi.S(150), 33, 110, 22); PlaceMulti(); }
 
             if (peek != null)
             {
@@ -3788,7 +3800,7 @@ namespace Installer
                         lblDetail.SetBounds(dx, 12, Math.Max(80, detailW), 18);
                         lblDetail.Visible = lv != null && lv.Visible;
                     }
-                    peek.SetBounds(dx, 34, Math.Max(Dpi.S(200), detailW), Math.Max(Dpi.S(240), H - 46));
+                    peek.SetBounds(dx, 34, Math.Max(Dpi.S(220), detailW), Math.Max(Dpi.S(240), H - 40));
                 }
                 else
                 {
