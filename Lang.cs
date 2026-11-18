@@ -275,7 +275,6 @@ namespace Installer
             Add(d, "Skeeto 素材包 177 MB", "Skeeto asset pack (177 MB)");
             Add(d, "MQCam 相机（F2 / F3 / F4 视角）", "MQCam camera (F2 / F3 / F4 views)");
             Add(d, "dxvk 防闪退（d3d9.dll）", "dxvk crash fix (d3d9.dll)");
-            Add(d, "写 Steam 启动项", "Write Steam launch options");
             Add(d, "写参数配置（L4N 按键 + Skeeto 设置）", "Write config (L4N keys + Skeeto)");
             Add(d, "启动项", "Launch options");
             Add(d, "严格校验（慢一倍，更保险）", "Strict verify (2× slower, safer)");

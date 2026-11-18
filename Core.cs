@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -51,7 +51,6 @@ namespace Installer
         public string LastRun = "";
         // 组件默认全不勾：单 exe 下载的新人只想装一个 MOD，不该一点「开始装」就顺带
         // 铺进去约 580MB 平台组件。要用的人自己勾；老配置里写过 True 的仍按配置回填。
-        public bool Launch = false;         // 默认不写 Steam 启动项：单 exe 下载的新手根本不知道这项在改他的 localconfig.vdf
         public string LaunchOptions = LaunchArgs.Default;   // 默认值只在 Launch.cs 里写一次
         public bool CfgFile = false;        // 新人首装不默认写 cfg；老配置里写过 True 的照旧
         public bool Overwrite = false;      // false = 已装的跳过；true = 全部重装一遍
@@ -529,7 +528,6 @@ namespace Installer
                     string v = s.Substring(eq + 1).Trim();
                     if (k == "GameRoot") Cfg.GameRoot = v;
                     else if (k == "LastRun") Cfg.LastRun = v;
-                    else if (k == "Launch") Cfg.Launch = (v == "1");
                     else if (k == "LaunchOptions")
                     {
                         // 老配置里若还是 v1.7 的默认值，说明没人动过 —— 直接升到新默认，
@@ -573,7 +571,6 @@ namespace Installer
                 sb.AppendLine("GameRoot=" + Cfg.GameRoot);
                 sb.AppendLine("LastRun=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                 sb.AppendLine("[platform]");
-                sb.AppendLine("Launch=" + (Cfg.Launch ? "1" : "0"));
                 sb.AppendLine("LaunchOptions=" + Cfg.LaunchOptions);
                 sb.AppendLine("CfgFile=" + (Cfg.CfgFile ? "1" : "0"));
                 sb.AppendLine("Overwrite=" + (Cfg.Overwrite ? "1" : "0"));

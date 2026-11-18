@@ -6,8 +6,8 @@ using System.Windows.Forms;
 namespace Installer
 {
     /// <summary>
-    /// Steam 启动项参数。默认值放这里，Core 和界面都引用同一份，别在两处各写一遍。
-    /// 参数串会原样写进 Steam 的 LaunchOptions，所以只做「清洗空白」，不擅自改内容。
+    /// 推荐启动项参数。默认值放这里，Core 和界面都引用同一份，别在两处各写一遍。
+    /// 参数串只给用户复制到 Steam 的「启动选项」，工具本身不写任何 Steam 配置，所以只做「清洗空白」，不擅自改内容。
     /// </summary>
     internal static class LaunchArgs
     {
@@ -39,12 +39,12 @@ namespace Installer
             return string.IsNullOrEmpty(s) ? "" : s.Replace("0/1", pick);
         }
 
-        /// <summary>装机 / 写启动项前统一走这里：清洗 + 提示占位符没落地。</summary>
+        /// <summary>存配置 / 复制前统一走这里：清洗 + 提示占位符没落地。</summary>
         public static string ForWrite(string raw)
         {
             string s = Clean(raw);
             if (HasSlot(s))
-                Core.Log("WARN", "启动项里的 -skeeto_particle_platform 还是 0/1，按原样写进去了；"
+                Core.Log("WARN", "启动项里的 -skeeto_particle_platform 还是 0/1，按原样保存了；"
                        + "要去 Steam 里改成 0 或 1 才生效（本工具的「…」按钮可以直接换）");
             return s;
         }
@@ -81,7 +81,6 @@ namespace Installer
             chk(CountSwitches(Default) == 8, "开关数 8（实际 " + CountSwitches(Default) + "）");
             chk(Clean(Default) == Default, "默认值本身是干净的");
             chk(CountSwitches("") == 0, "空串开关数 0");
-            bad += Work.SelfTestLaunchVdf();        // localconfig.vdf 改写：只碰临时文件
             return bad;
         }
     }
@@ -110,7 +109,7 @@ namespace Installer
 
         public LaunchForm(string current)
         {
-            Text = Lang.S("启动项参数");
+            Text = Lang.S("推荐启动项");
             Theme.UseDpi(this);
             ClientSize = Dpi.Sz(660, 258);
             Font = Theme.UI;
@@ -125,7 +124,7 @@ namespace Installer
             hint.SetBounds(14, 10, 632, 34);
             hint.Font = Theme.UISmall;
             hint.ForeColor = Theme.Ink2;
-            hint.Text = "这串会写进 Steam → 库 → 右键《求生之路2》→ 属性 → 启动选项。\r\n"
+            hint.Text = "这串是推荐值，复制到 Steam → 库 → 右键《求生之路2》→ 属性 → 启动选项（工具不替你写）。\r\n"
                       + "可以换行写，保存时会把换行和多余空格合成一个空格（Steam 只认单行）。";
             Controls.Add(hint);
 
@@ -184,7 +183,7 @@ namespace Installer
             string s = LaunchArgs.Clean(box.Text);
             if (s.Length == 0)
             {
-                preview.Text = Lang.S("结果：不写启动项（会清空这台机器 Steam 里的启动选项）");
+                preview.Text = Lang.S("结果：（空，不推荐任何参数）");
                 preview.ForeColor = Theme.Ink3;
             }
             else if (LaunchArgs.HasSlot(s))
@@ -197,15 +196,12 @@ namespace Installer
                 preview.Text = "结果：单行 " + s.Length + " 字符 · " + LaunchArgs.CountSwitches(s) + " 个开关 · 悬停看全文";
                 preview.ForeColor = Theme.Ink3;
             }
-            tips.SetToolTip(preview, s.Length == 0 ? "不会写入任何参数" : s);
+            tips.SetToolTip(preview, s.Length == 0 ? "空的：不给推荐参数" : s);
         }
 
         private void Accept()
         {
             Result = LaunchArgs.Clean(box.Text);
-            if (Result.Length == 0 &&
-                MessageBox.Show("参数是空的，这样会把 Steam 里的启动项清空。仍然确定？", "确认",
-                                MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK) return;
             // 占位符没落地就问一句：0/1 这种写法游戏会当成一个字符串，等于没设置。
             // 同一进程只问一次 —— 装机时反复点确定不该反复弹。
             if (LaunchArgs.HasSlot(Result) && !askedSlot)

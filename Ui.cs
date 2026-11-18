@@ -26,7 +26,7 @@ namespace Installer
         private string nowStamp = "";             // 上一次读到游戏现状的时刻
         private int nowCatRows = 6;               // 「分类分布」这一块能放几行（按卡片高度算，放不下就截断）
         private bool logOpen;                     // 日志卡片展开（默认收起：排错才看，不该常驻）
-        private CheckBox chkLaunch, chkSwap, chkStrict;
+        private CheckBox chkSwap, chkStrict;
         private RadioButton rdSkip, rdOver;
         private FlatButton btnLaunchEdit, btnLaunchCopy;
         private TextBox txtLaunch;
@@ -538,14 +538,11 @@ namespace Installer
 
             // ---- 左栏上：装什么 ----
             Section gp = new Section();
-            gp.SetBounds(Theme.M, 56, leftW, 104); Controls.Add(gp);
+            gp.SetBounds(Theme.M, 56, leftW, 66); Controls.Add(gp);
             // 本地版不装「环境组件」（那是便携版从 U 盘组件包里复制进游戏的东西）。
             // 先把这几项藏起来，下一步连带装机逻辑一起删。
-            gp.Caption = Lang.S("启动项");
-            // L4N 和 MQCam 的依赖只在这两格之间：勾相机 → 带上平台；去掉平台 → 相机也跟着去掉
-            chkLaunch = AddChk(gp, Lang.S("写 Steam 启动项"), 12, 148, true, true);
-            chkLaunch.SetBounds(12, 56, leftW - 24, 22);
-            Label l4 = new Label(); l4.Text = Lang.S("启动项"); l4.SetBounds(12, 30, 44, 20); Theme.Dress(l4); gp.Controls.Add(l4);
+            gp.Caption = Lang.S("推荐启动项");
+            Label l4 = new Label(); l4.Text = Lang.S("推荐"); l4.SetBounds(12, 30, 44, 20); Theme.Dress(l4); gp.Controls.Add(l4);
             txtLaunch = new TextBox(); txtLaunch.SetBounds(60, 28, 246, 24); Theme.Dress(txtLaunch); gp.Controls.Add(txtLaunch);
             // 一行输入框放不下 130 个字符：外面只给个预览，真正的编辑交给「…」里的放大窗口
             txtLaunch.TextChanged += delegate { UpdateLaunchTip(); };
@@ -576,7 +573,7 @@ namespace Installer
 
             // ---- 左栏中：安装选项（原来挤在 MOD 列表底部，语义上属于"怎么装"，跟"挑什么"分开）----
             gOpt = new Section();
-            gOpt.Caption = Lang.S("安装选项"); gOpt.SetBounds(Theme.M, 168, leftW, 144); Controls.Add(gOpt);
+            gOpt.Caption = Lang.S("安装选项"); gOpt.SetBounds(Theme.M, 130, leftW, 144); Controls.Add(gOpt);
             chkSwap = new CheckBox(); chkSwap.Text = Lang.S("换整套（把不在这套里的 MOD 关掉）");
             chkSwap.SetBounds(12, 28, leftW - 24, 22); Theme.Dress(chkSwap); gOpt.Controls.Add(chkSwap);
             chkSwap.Checked = true;
@@ -884,9 +881,6 @@ namespace Installer
 
             searchTimer.Interval = 250;
             searchTimer.Tick += delegate(object s2, EventArgs e2) { searchTimer.Stop(); RefreshMods(); };
-            // 任一组件勾选变化都刷新底栏校验条（只挂一次，原来的「勾相机自动勾平台」联动不受影响）
-            foreach (CheckBox cb in new CheckBox[] { chkLaunch })
-                if (cb != null) cb.CheckedChanged += delegate { QueuePrecheck(); };
             // 校验条防抖：勾选会连着变，进程枚举和路径判断不用每敲一下就做一遍
             preTimer.Interval = 220;
             preTimer.Tick += delegate { preTimer.Stop(); RefreshPrecheck(); };
@@ -930,13 +924,6 @@ namespace Installer
             th.Start();
         }
 
-        /// <summary>勾了几个环境组件（L4N / dxvk / Skeeto / 素材包 / MQCam / 参数 / 启动项）。</summary>
-        private int CheckedComponents()
-        {
-            int n = 0;
-            if (chkLaunch != null && chkLaunch.Checked) n++;
-            return n;
-        }
 
         /// <summary>
         /// 常驻校验：能提前算出来的阻塞条件直接写在界面上，主按钮跟着亮灭。
@@ -953,12 +940,11 @@ namespace Installer
             string root = txtGame == null ? "" : txtGame.Text.Trim();
             List<string> bad = new List<string>();
             int picked = Selected().Count;
-            int comps = CheckedComponents();
 
             if (!Core.TestGame(root)) bad.Add("游戏目录不对，没找到 left4dead2.exe");
             else if (GameRunning()) bad.Add("游戏正在运行，先完全退出（不是最小化）");
             else if (writeProbeFor == root && !writeProbeOk) bad.Add("游戏目录写不进去，试试以管理员身份运行");
-            if (picked == 0 && comps == 0) bad.Add("还没选任何 MOD 或组件");
+            if (picked == 0) bad.Add("还没选任何 MOD 或组件");
 
             preOk = bad.Count == 0;
             bool busy = OpGuard.Current != null;
@@ -1013,13 +999,6 @@ namespace Installer
 
         private void ApplyConfig()
         {
-            // 回填配置时别触发「勾相机自动勾平台」这类联动，否则会把存下来的组合改掉
-            applying = true;
-            try
-            {
-                chkLaunch.Checked = Core.Cfg.Launch;
-            }
-            finally { applying = false; }
             txtLaunch.Text = Core.Cfg.LaunchOptions;
             // 存过参数存档的老用户，默认勾上「写参数配置」是合理的（他存过就说明下次要用）。
             // 但全新安装的人连一个 MOD 都还没下，不该有任何默认勾选项 —— 否则 0 个 MOD
@@ -1086,7 +1065,7 @@ namespace Installer
         {
             string s = LaunchArgs.Clean(txtLaunch.Text);
             string tip;
-            if (s.Length == 0) tip = "现在是空的：不会写启动项，Steam 里已有的启动项也不会被清掉。\r\n右边「复制」可整段拷到剪贴板；点「…」或双击这里编辑。";
+            if (s.Length == 0) tip = "现在是空的：不推荐任何参数。\r\n右边「复制」可整段拷到剪贴板；点「…」或双击这里编辑。";
             else
             {
                 tip = s + "\r\n\r\n" + (LaunchArgs.HasSlot(s)
@@ -3639,11 +3618,9 @@ namespace Installer
             }
             Profile p = new Profile();
             p.Name = name;
-            p.Plat = PlatFlags();
             p.HasOpt = true;
             p.Swap = chkSwap.Checked;
             p.Overwrite = rdOver != null && rdOver.Checked;
-            p.Launch = txtLaunch == null ? "" : LaunchArgs.ForWrite(txtLaunch.Text);
             foreach (ModItem it in sel) p.Mods.Add(it.Key);
             ProfileStore.Save(p);                     // 同名就是覆盖，不留副本
             appliedProfile = p.Name;
@@ -3665,13 +3642,11 @@ namespace Installer
             }
             checkedKeys.Clear();
             foreach (string r in ok) checkedKeys.Add(r);
-            ApplyPlatFlags(p.Plat);
             if (withOptions && p.HasOpt)
             {
                 chkSwap.Checked = p.Swap;
                 if (rdOver != null) rdOver.Checked = p.Overwrite;
                 if (rdSkip != null) rdSkip.Checked = !p.Overwrite;
-                if (txtLaunch != null && !string.IsNullOrEmpty(p.Launch)) txtLaunch.Text = p.Launch;
             }
             CheckRowsByKeys();
             UpdateSel();
@@ -3743,26 +3718,6 @@ namespace Installer
         private void CheckRowsByKeys()
         {
             SyncPicks();
-        }
-
-        private string PlatFlags()
-        {
-            return ";Launch=" + (chkLaunch.Checked ? "1" : "0");
-        }
-
-        private void ApplyPlatFlags(string plat)
-        {
-            if (string.IsNullOrEmpty(plat)) return;
-            foreach (string part in plat.Split(';'))
-            {
-                string[] kv = part.Split('=');
-                if (kv.Length != 2) continue;
-                bool on = kv[1] == "1";
-                switch (kv[0])
-                {
-                    case "Launch": chkLaunch.Checked = on; break;
-                }
-            }
         }
 
         public string LayoutDump()
@@ -4730,8 +4685,7 @@ namespace Installer
             public List<ModItem> Sel = new List<ModItem>();
             /// <summary>同一位置里以前装过、这次没勾的（只翻开关写成 0，文件不动）。</summary>
             public List<ModItem> Off = new List<ModItem>();
-            public bool Launch, Swap;
-            public string LaunchVal = "";
+            public bool Swap;
             public string Tweak = "";
             public string AssetName;
             /// <summary>没做成的步骤名（给用户看的一句话）。</summary>
@@ -4778,14 +4732,10 @@ namespace Installer
             InstallJob j = new InstallJob();
             j.Root = root;
             j.Sel = Selected();
-            // 本地版不装「环境组件」：L4N / Skeeto / 素材包 / MQCam / dxvk 全是从 U 盘组件包复制进来的东西，
-            // 这个版本没有库可复制，所以这五项恒为 false（方案文件里的字段照旧读写，不破坏老方案）。
-            j.Launch = chkLaunch.Checked;
             j.Swap = chkSwap.Checked;
-            j.LaunchVal = LaunchArgs.ForWrite(txtLaunch.Text);
             Core.StrictVerify = chkStrict.Checked;
 
-            if (j.Sel.Count == 0 && !j.Launch)
+            if (j.Sel.Count == 0)
             {
                 QueuePrecheck();
                 SetStatus("还没选任何 MOD 或组件 · 左上「装什么」勾一项，或树上选个位置");
@@ -4861,9 +4811,8 @@ namespace Installer
 
             Work.Overwrite = !rdSkip.Checked;          // 所有 Install* 都读这个开关
             Core.Cfg.GameRoot = root;
-            Core.Cfg.Launch = j.Launch;
             Core.Cfg.Overwrite = !rdSkip.Checked;
-            Core.Cfg.LaunchOptions = j.LaunchVal;
+            Core.Cfg.LaunchOptions = LaunchArgs.ForWrite(txtLaunch.Text);
             Core.Cfg.Recent.RemoveAll(delegate(string s) { return string.Equals(s, root, StringComparison.OrdinalIgnoreCase); });
             Core.Cfg.Recent.Insert(0, root);
             while (Core.Cfg.Recent.Count > 6) Core.Cfg.Recent.RemoveAt(Core.Cfg.Recent.Count - 1);
@@ -4923,7 +4872,7 @@ namespace Installer
 
         private void StartInstall(InstallJob j)
         {
-            j.StepTotal = (j.Sel.Count > 0 ? 1 : 0) + (j.Launch ? 1 : 0);
+            j.StepTotal = j.Sel.Count > 0 ? 1 : 0;
             j.StepDone = 0;
             Work.CancelRequested = false;
             btnCancel.Enabled = true;
@@ -4948,16 +4897,6 @@ namespace Installer
 
                 if (!j.Canceled && (j.Sel.Count > 0 || j.Swap))
                     InstallModsStep(j);
-                if (!j.Canceled && j.Launch)
-                {
-                    Core.Log("STEP", Lang.S("写 Steam 启动项"));
-                    BeginStep(j, "正在写 Steam 启动项…");
-                    string launchMsg = Work.WriteLaunchOptions(j.LaunchVal);
-                    Core.Log("INFO", launchMsg);
-                    if (launchMsg.IndexOf("没写成功", StringComparison.Ordinal) >= 0)
-                        j.Failed.Add("Steam 启动项");
-                    if (Work.CancelRequested) j.Canceled = true;
-                }
 
                 if (j.Canceled || Work.CancelRequested) { ReportInstallCanceled(j); return; }
                 FinishInstall(j);

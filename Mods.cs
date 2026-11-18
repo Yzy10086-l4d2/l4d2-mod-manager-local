@@ -179,7 +179,6 @@ namespace Installer
         public bool Swap = false;
         public bool Overwrite = false;
         public string Tweak = "";
-        public string Launch = "";
         public string SelfTest = "";     // 空=没跑过；否则 PASS|120|时间 或 FAIL|24|时间
 
         public override string ToString()
@@ -255,7 +254,6 @@ namespace Installer
                 string s = raw.Trim();
                 if (s.StartsWith("Plat=")) p.Plat = s.Substring(5);
                 else if (s.StartsWith("Mod=")) p.Mods.Add(s.Substring(4));
-                else if (s.StartsWith("Launch=")) p.Launch = s.Substring(7);
                 else if (s.StartsWith("SelfTest=")) p.SelfTest = s.Substring(9);
                 else if (s.StartsWith("Opt="))
                 {
@@ -286,7 +284,6 @@ namespace Installer
             if (p.HasOpt)
             {
                 sb.AppendLine("Opt=Swap=" + (p.Swap ? "1" : "0") + ";Over=" + (p.Overwrite ? "1" : "0") + ";Tweak=" + (p.Tweak == null ? "" : p.Tweak));
-                if (!string.IsNullOrEmpty(p.Launch)) sb.AppendLine("Launch=" + p.Launch);
             }
             foreach (string m in p.Mods) sb.AppendLine("Mod=" + m);
             if (!string.IsNullOrEmpty(p.SelfTest)) sb.AppendLine("SelfTest=" + p.SelfTest);
