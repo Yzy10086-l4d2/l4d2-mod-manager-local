@@ -11,7 +11,7 @@ namespace Installer
     public partial class MainForm : Form
     {
         private ComboBox txtGame;
-        private FlatButton btnBrowse, btnLaunch, btnSettings, btnInstall, btnRestore, btnOpen, btnSwitch, btnCancel, btnClearSearch;
+        private FlatButton btnLaunch, btnSettings, btnInstall, btnRestore, btnOpen, btnCancel, btnClearSearch;
         private FlatButton btnView, btnPanel;     // 顶部：台面/方案树 切换、左栏抽屉
         private FlatButton btnWorkshop;           // 顶部：从创意工坊导入
         private bool drawerOpen;                  // 左栏（装什么 / 安装选项 / 日志）是否展开
@@ -474,7 +474,6 @@ namespace Installer
             txtGame = new ComboBox(); txtGame.SetBounds(80, 18, browseX - topGap - 8 - 80, 24);
             txtGame.DropDownStyle = ComboBoxStyle.DropDown; Theme.Dress(txtGame); Controls.Add(txtGame);
             txtGame.TextChanged += delegate { QueuePrecheck(); };   // 手输路径时底栏那句提示跟着变
-            btnBrowse = new FlatButton(); btnBrowse.Soft = true; btnBrowse.Text = Lang.S("浏览…"); btnBrowse.SetBounds(browseX, 16, browseW, Theme.H); btnBrowse.Click += delegate { BrowseGame(); }; Controls.Add(btnBrowse);
             btnLaunch = new FlatButton(); btnLaunch.Soft = true; btnLaunch.Text = Lang.S("启动项"); btnLaunch.SetBounds(findX, 16, findW, Theme.H);
             btnLaunch.AccessibleName = "启动项组合";
             btnLaunch.Click += delegate { using (LaunchCatalogForm f = new LaunchCatalogForm()) f.ShowDialog(this); };
@@ -733,11 +732,10 @@ namespace Installer
             // 右侧只留「次要 + 主操作」两个；破坏性的「一键还原」挪到最左下角，
             // 和主操作隔开近一个屏宽 —— 以前它跟「开始安装」同高同排只差 8px，
             // 手滑一下就得读一段四行长的确认框，读多了确认就失效。
-            const int bwRestore = 96, bwSwitch = 124, bwOpen = 112, bwInstall = 132;
+            const int bwRestore = 96, bwOpen = 112, bwInstall = 132;
             int rightEdge = W - Theme.M;
             int xOpen = rightEdge - bwOpen;
-            int xSwitch = xOpen - Theme.S - bwSwitch;
-            int xInstall = xSwitch - Theme.S - bwInstall;
+            int xInstall = xOpen - Theme.S - bwInstall;
 
             // 本地版这个按钮不「安装」任何文件：它把游戏里每个位置的开关换成当前勾选的那套。
             // 叫「开始安装」会让人以为要复制文件，语义对不上。
@@ -747,9 +745,6 @@ namespace Installer
             btnInstall.Font = new Font(Theme.UI, FontStyle.Bold);
             btnInstall.SetBounds(xInstall, CH - BottomBarH, bwInstall, Theme.HP);
             btnInstall.Click += delegate { DoInstall(); }; Controls.Add(btnInstall);
-            btnSwitch = new FlatButton(); btnSwitch.Soft = true; btnSwitch.Text = Lang.S("管理已装 MOD");
-            btnSwitch.SetBounds(xSwitch, CH - BottomBarH, bwSwitch, Theme.HP);
-            btnSwitch.Click += delegate { DoSwitch(); }; Controls.Add(btnSwitch);
             btnRestore = new FlatButton(); btnRestore.Text = Lang.S("一键还原"); btnRestore.Danger = true;
             btnRestore.SetBounds(Theme.M, CH - BottomBarH, bwRestore, Theme.HP);
             btnRestore.AccessibleName = "危险：移除本次安装写进去的文件";
@@ -793,7 +788,6 @@ namespace Installer
             Rectangle wmin = Screen.PrimaryScreen.WorkingArea;
             MinimumSize = new Size(Math.Min(1120, wmin.Width - 20), Math.Min(740, wmin.Height - 20));
             txtGame.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            btnBrowse.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnLaunch.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             gl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
             gm.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
@@ -801,7 +795,6 @@ namespace Installer
             lblConflict.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             txtLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             btnInstall.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            btnSwitch.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             btnRestore.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;    // 左下角：和右边的主操作分开
             btnOpen.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             bar.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
@@ -2829,17 +2822,10 @@ namespace Installer
             if (treeView != null) treeView.RevealGroup(g);
         }
 
-        private void BrowseGame()
-        {
-            FolderBrowserDialog d = new FolderBrowserDialog();
-            d.Description = "选游戏根目录（里面有 left4dead2.exe 的那个文件夹）";
-            if (d.ShowDialog() == DialogResult.OK) SwitchGameRoot(d.SelectedPath, "浏览选择");
-        }
-
         private void FindGame()
         {
             List<string> g = Core.FindGames();
-            if (g.Count == 0) { Log("没找到。点「浏览…」手动选。"); return; }
+            if (g.Count == 0) { Log("没找到。请在「设置 → 游戏目录」里手动选一次。"); return; }
             if (g.Count == 1) Log("找到: " + g[0]);
             else
             {
@@ -3621,7 +3607,6 @@ namespace Installer
                 // 底部动作区同理：Anchor 只在「距底多远」这一维上跟，自检里连着改几档尺寸时
                 // 会一路漂（窗口缩回 900 却还停在 200% 的位置），所以每次按设计值钉死。
                 btnInstall.Top = Dpi.S(H - BottomBarH);
-                btnSwitch.Top = Dpi.S(H - BottomBarH);
                 btnRestore.Top = Dpi.S(H - BottomBarH);
                 btnOpen.Top = Dpi.S(H - BottomBarH);
                 bar.Top = Dpi.S(H - BottomBarH + 12);
@@ -3652,9 +3637,7 @@ namespace Installer
             int panelX = wsX - topGap - panelW;
             int viewX = panelX - topGap - viewW;
             int findX = viewX - topGap - findW;
-            int browseX = findX - topGap - browseW;
-            txtGame.Width = Dpi.S(browseX - topGap - 8 - 80);
-            btnBrowse.Left = Dpi.S(browseX);
+            txtGame.Width = Dpi.S(findX - topGap - 8 - 80);
             btnLaunch.Left = Dpi.S(findX);
             btnSettings.Left = Dpi.S(settingsX);
             btnView.Left = Dpi.S(viewX);
@@ -3663,8 +3646,7 @@ namespace Installer
 
             // 底部：右边一组（工具 + 次要 + 主操作），「一键还原」单独钉在左下角
             btnOpen.Left = Dpi.S(W - Theme.M - 104);
-            btnSwitch.Left = Dpi.S(W - Theme.M - 104 - 8 - 116);
-            btnInstall.Left = Dpi.S(W - Theme.M - 104 - 8 - 116 - 8 - 112);
+            btnInstall.Left = Dpi.S(W - Theme.M - 104 - 8 - 112);
             btnRestore.Left = Dpi.S(Theme.M);
             btnRestore.Width = Dpi.S(96);
             lblStatus.Width = Dpi.S(W - 2 * Theme.M);
@@ -3672,7 +3654,7 @@ namespace Installer
             {
                 int preLeft = Theme.M + 96 + Theme.G;
                 int barW = Math.Max(160,
-                    (W - Theme.M - 104 - 8 - 116 - 8 - 112) - preLeft - 8 - 92 - 8);
+                    (W - Theme.M - 104 - 8 - 112) - preLeft - 8 - 92 - 8);
                 bar.Left = Dpi.S(preLeft);
                 bar.Width = Dpi.S(barW);
                 btnCancel.Left = Dpi.S(preLeft + barW + 8);
@@ -3709,7 +3691,7 @@ namespace Installer
                 int m = Dpi.S(Theme.M);
 
                 // 底部右侧三连从右往左排：位置必须严格递减，最左的不能压进左边距，最右的不能出窗
-                FlatButton[] bottom = new FlatButton[] { btnOpen, btnSwitch, btnInstall };
+                FlatButton[] bottom = new FlatButton[] { btnOpen, btnInstall };
                 if (btnOpen.Left + Dpi.S(104) > W - m + 1) { bad++; Core.Log("FAIL", tag + "「打开」按钮出窗"); }
                 for (int i = 1; i < bottom.Length; i++)
                     if (bottom[i].Left >= bottom[i - 1].Left) { bad++; Core.Log("FAIL", tag + "底部按钮顺序错：" + bottom[i].Text); }
@@ -3727,7 +3709,7 @@ namespace Installer
                 { bad++; Core.Log("FAIL", tag + "「停止剩余」压住了「开始安装」"); }
 
                 // 顶部：设置 ← 工坊 ← 抽屉 ← 台面 ← 启动项 ← 浏览（从左到右依次右移）
-                FlatButton[] top = new FlatButton[] { btnBrowse, btnLaunch, btnView, btnPanel, btnWorkshop, btnSettings };
+                FlatButton[] top = new FlatButton[] { btnLaunch, btnView, btnPanel, btnWorkshop, btnSettings };
                 if (btnSettings.Left + Dpi.S(60) > W - m + 1) { bad++; Core.Log("FAIL", tag + "「设置」出窗"); }
                 for (int i = 1; i < top.Length; i++)
                     if (top[i].Left <= top[i - 1].Left + Dpi.S(56)) { bad++; Core.Log("FAIL", tag + "顶部按钮叠在一起：" + top[i].Text); }
@@ -4252,9 +4234,7 @@ namespace Installer
                 // 空闲时不要无条件点亮：前置条件没满足就保持灰的（刷新校验条会按最新状态重算）
                 btnInstall.Enabled = !busy && preOk;
                 btnRestore.Enabled = !busy;
-                btnSwitch.Enabled = !busy;
                 btnLaunch.Enabled = !busy;
-                btnBrowse.Enabled = !busy;
                 // 空闲时不摆一条空进度条：深色主题下它是一道白条，看着像没画完
                 if (bar != null) bar.Visible = busy;
                 // 进度条和校验条共用这块地方：一个亮另一个就得让开
@@ -4270,23 +4250,6 @@ namespace Installer
             btnCancel.Text = Lang.S("正在停止…");
             SetStatus("正在停止 · 当前步骤结束后不再继续");
             Core.Log("WARN", "用户请求停止后续安装；已写入的文件会保留，不会自动回滚");
-        }
-
-        private void DoSwitch()
-        {
-            string root = txtGame.Text.Trim();
-            if (!Core.TestGame(root)) { MessageBox.Show("先选对游戏根目录。"); return; }
-            AddonSwitchForm f = new AddonSwitchForm(root);
-            f.ShowDialog(this);
-            // 这个窗口现在也能删 MOD（真删）：删过就重扫，列表/树跟上
-            if (f.Deleted > 0)
-            {
-                Log("OK", "已装 MOD 开关里删掉 " + f.Deleted + " 个，重新扫库");
-                Core.ScanMods();
-                RefreshMods();
-                RefreshConflicts();
-                if (treeView != null) RebuildViews();
-            }
         }
 
         private void DoRestore()
