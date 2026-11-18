@@ -73,7 +73,6 @@ namespace Installer
         private int retryPage;              // 上次搜索失败的页码，>0 表示底部提示是「重试」而不是「加载更多」
         private bool retryAppend;           // 重试的是追加页（已有卡片要留着）还是首屏
         private volatile bool busy;
-        private volatile bool cancel;
         private int detailToken;
         private bool showZh;
         private bool langTouched;             // 用户自己点过原文/译文：之后别自动替他改回来
@@ -322,7 +321,6 @@ namespace Installer
             lblJump.AutoSize = false;
             Controls.Add(lblJump);
 
-            FormClosing += delegate { cancel = true; };
             // 滚轮要能落在卡片墙上：WM_MOUSEWHEEL 只发给有焦点的控件，
             // 搜索完焦点通常在输入框里，光靠子控件的 OnMouseWheel 一辈子收不到。
             Load += delegate { Application.AddMessageFilter(this); };
@@ -944,7 +942,6 @@ namespace Installer
             catch (Exception ex) { lblState.Text = ex.Message; return; }
 
             busy = true;
-            cancel = false;
             btnGet.Enabled = false;
             lblState.Text = Lang.S("正在下载…");
             // 下载是有明确进度的，别用不确定的跑马灯：切成实进度条，百分比同时写在左边

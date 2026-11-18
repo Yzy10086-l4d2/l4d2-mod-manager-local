@@ -921,7 +921,6 @@ namespace Installer
     {
         public bool IsCat;
         public bool IsSub;       // 小分类标题：枪械 →「步枪」
-        public bool IsNote;      // 「未归类」那一行：只是个说明入口
         public string Cat;
         public string Sub;
         public Slot Slot;
@@ -2611,19 +2610,6 @@ namespace Installer
                 }
                 g = unmatchedGroups[0];
 
-                // 1) 说明行（「未归类」入口）不收落点。它可能被折叠着，先展开
-                SetFolded("未归类", false);
-                Rebuild();
-                int noteRow = -1;
-                for (int i = 0; i < body.RowCount; i++)
-                    if (body.RowIsNote(i)) { noteRow = i; break; }
-                if (noteRow < 0) Core.Log("WARN", "DND 树里没有说明行，拒绝用例跳过");
-                else
-                {
-                    string rj = body.SimulateExtDrop(noteRow, g);
-                    if (rj.StartsWith("ok")) { bad++; Core.Log("FAIL", "DND 说明行居然收了落点：" + rj); }
-                    else Core.Log("INFO", "DND 说明行拒绝落点（" + rj + "）");
-                }
 
                 // 2) 落到第一个普通位置行：必须真归类，且离开未归类列表
                 Rebuild();
@@ -4479,21 +4465,19 @@ namespace Installer
             // 以前一律 focus = -1，结果按 ← 收一段之后焦点跳回第 0 行，
             // 紧接着按 → 展开的就不是刚才那一段了 —— 键盘用户会直接迷路。
             string keepSlot = null, keepCat = null, keepSub = null;
-            bool keepNote = false;
             if (focus >= 0 && focus < rows.Count)
             {
                 TreeRow old = rows[focus];
                 if (old.Slot != null) keepSlot = old.Slot.Key;
                 else if (old.IsSub) { keepCat = old.Cat; keepSub = old.Sub; }
                 else if (old.IsCat) keepCat = old.Cat;
-                else if (old.IsNote) keepNote = true;
             }
 
             rows.Clear();
             if (r != null) rows.AddRange(r);
             tipRow = -2;
             focus = -1;
-            if (keepSlot != null || keepCat != null || keepNote)
+            if (keepSlot != null || keepCat != null)
             {
                 for (int i = 0; i < rows.Count; i++)
                 {
@@ -4502,7 +4486,6 @@ namespace Installer
                     // 混着判会先撞上大类标题，焦点就被拽到顶上了。
                     if (keepSlot != null) { if (x.Slot != null && x.Slot.Key == keepSlot) { focus = i; break; } }
                     else if (keepSub != null) { if (x.IsSub && x.Cat == keepCat && x.Sub == keepSub) { focus = i; break; } }
-                    else if (keepNote) { if (x.IsNote) { focus = i; break; } }
                     else if (keepCat != null) { if (x.IsCat && x.Cat == keepCat) { focus = i; break; } }
                 }
                 // 那一行被折叠掉了（子项全收起来），就退回它所属的大类标题，别让焦点凭空消失
@@ -4581,16 +4564,6 @@ namespace Installer
                         continue;
                     }
 
-                    if (r.IsNote)
-                    {
-                        if (i == hov) g.FillRectangle(hovBg, 0, y, W, RowH);
-                        g.DrawLine(branch, 17, y + RowH / 2, 26, y + RowH / 2);
-                        TextRenderer.DrawText(g, Lang.S("认不出改的是什么（点开看全部 · 可手动指定）"), Theme.UI,
-                            new Rectangle(33, y, W - 46, RowH), Theme.Ink3,
-                            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding
-                            | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-                        continue;
-                    }
 
                     Slot s = r.Slot;
                     if (s == null) continue;
@@ -5609,7 +5582,7 @@ namespace Installer
                 {
                     TreeRow x = rows[b0 + n];
                     if (kind == 4) break;                                   // 位置只搬一行
-                    if (x.IsCat || x.IsNote) break;
+                    if (x.IsCat) break;
                     if (kind == 3 && x.IsSub) break;
                     if (kind == 1 && !(x.Slot != null && CatTree.IsBranchSlot(x.Slot)
                         && IsDescendantBranch(x.Slot.Name, dragName))) break;
@@ -5640,7 +5613,7 @@ namespace Installer
                     while (ins < pv.Count)
                     {
                         TreeRow x = pv[ins];
-                        if (x.IsCat || x.IsNote) break;
+                        if (x.IsCat) break;
                         if (kind != 2 && x.IsSub) break;
                         if (kind == 1 && !(x.Slot != null && CatTree.IsBranchSlot(x.Slot)
                             && IsDescendantBranch(x.Slot.Name, tBr))) break;
@@ -5963,7 +5936,6 @@ namespace Installer
                 else owner.SetFolded(r.Cat, !owner.IsFolded(r.Cat));
             }
             else if (r.IsSub) owner.SetSubFolded(r.Cat, r.Sub, !owner.IsSubFolded(r.Cat, r.Sub));
-            else if (r.IsNote) owner.SelectUnmatched();
             else if (r.Slot != null) owner.SelectSlot(r.Slot.Key);
         }
 
@@ -6024,9 +5996,6 @@ namespace Installer
 
         /// <summary>第 i 行的大类名（不是大类行返回空串）。</summary>
         internal string RowCat(int i) { return RowIsCat(i) ? rows[i].Cat : ""; }
-
-        /// <summary>第 i 行是不是说明行（「未归类」的入口行）。</summary>
-        internal bool RowIsNote(int i) { return i >= 0 && i < rows.Count && rows[i].IsNote; }
 
         protected override void OnMouseWheel(MouseEventArgs e)
         {

@@ -16,24 +16,14 @@ namespace Installer
     /// </summary>
     internal sealed class SettingsForm : Form
     {
-        private sealed class DriveChoice
-        {
-            public readonly string Root;
-            public readonly string Label;
-            public DriveChoice(string root, string label) { Root = root; Label = label; }
-            public override string ToString() { return Label; }
-        }
-
         private readonly MainForm owner;
         private Segmented segAppearance, segLang;
         private Toggle tglMotion;
-        private ComboBox cboGame, cboLibDrive, cboPkg;
+        private ComboBox cboGame;
         private FlatButton btnGameBrowse, btnGameFind, btnSave;
-        private Label lblGameState, lblLibMain, lblLibExtra, lblLibHint, lblCfg, lblLog, lblPkgState;
-        private string pendingRoot;
+        private Label lblGameState, lblCfg, lblLog;
         private bool syncing = true;
 
-        internal bool WantLocal { get { return false; } }      // 本地版只有一个口径
         internal bool WantReduceMotion { get { return tglMotion != null && tglMotion.Checked; } }
         internal ThemeMode WantAppearance { get { return segAppearance == null ? Theme.Mode : (ThemeMode)segAppearance.SelectedIndex; } }
         /// <summary>自测用：模拟在设置窗口里点「外观」分段（走的是真实的点击 + SelectedIndexChanged 路径）。</summary>
@@ -43,7 +33,6 @@ namespace Installer
             segAppearance.PickIndex((int)m);
         }
 
-        internal string WantLibraryRoot { get { return WantLocal ? Core.ModRoot : pendingRoot; } }
 
         /// <summary>输入框里的游戏根目录（已去空格和尾部反斜杠）。空串表示用户没填。</summary>
         internal string WantGameRoot
@@ -59,7 +48,6 @@ namespace Installer
         public SettingsForm(MainForm owner)
         {
             this.owner = owner;
-            pendingRoot = Core.ModRoot;
 
             Text = Lang.S("设置 · L4D2 MOD 管理工具");
             Theme.UseDpi(this);
@@ -89,7 +77,6 @@ namespace Installer
 
             syncing = false;
             UpdateGameState();
-            UpdatePkgState();
 
             Load += delegate { Theme.ApplyChrome(this); };
             Shown += delegate { Theme.ApplyChrome(this); Theme.DeepNative(this); };
@@ -215,57 +202,8 @@ namespace Installer
             s.Controls.Add(segLang);
         }
 
-        /// <summary>输入框里的组件包目录（空 = 自动找）。</summary>
-        internal string WantPkgRoot
-        {
-            get
-            {
-                if (cboPkg == null) return "";
-                return cboPkg.Text.Trim().Trim('"').TrimEnd('\\');
-            }
-        }
-
         /// <summary>只读提示：留空时把「自动会用到哪个目录」写出来，填了就报里面有没有组件包。</summary>
-        private void UpdatePkgState()
-        {
-            if (cboPkg == null) return;   // 本地版没有这一栏
-            if (lblPkgState == null) return;
-            string want = WantPkgRoot;
-            string dir = want;
-            if (dir.Length == 0)
-            {
-                dir = Core.ResolvePkgRoot();
-                lblPkgState.Text = Lang.F("留空 = 自动找 → {0}", dir);
-            }
-            else if (!Directory.Exists(dir))
-            {
-                lblPkgState.ForeColor = Theme.Accent;
-                lblPkgState.Text = Lang.S("这个目录不存在，保存会被拦下；留空则自动查找");
-                return;
-            }
-            else lblPkgState.Text = Lang.F("使用：{0}", dir);
 
-            bool hasPkg = Directory.Exists(Path.Combine(dir, "L4N平台"))
-                       || Directory.Exists(Path.Combine(dir, "防闪退"))
-                       || Directory.Exists(Path.Combine(dir, "Skeeto"))
-                       || Directory.Exists(Path.Combine(dir, "MQCam"));
-            lblPkgState.ForeColor = hasPkg ? Theme.Ink3 : Theme.Accent;
-            if (!hasPkg) lblPkgState.Text += Lang.S("（没看到 L4N平台 / Skeeto / MQCam / 防闪退）");
-        }
-
-        private void BrowsePkgRoot()
-        {
-            if (cboPkg == null) return;   // 本地版没有这一栏
-            using (FolderBrowserDialog d = new FolderBrowserDialog())
-            {
-                d.Description = "选择组件包目录（里面有 L4N平台 / Skeeto / MQCam / 防闪退 的那一层）";
-                string cur = WantPkgRoot;
-                if (cur.Length == 0) cur = Core.ResolvePkgRoot();
-                if (Directory.Exists(cur)) d.SelectedPath = cur;
-                if (d.ShowDialog(this) != DialogResult.OK) return;
-                cboPkg.Text = d.SelectedPath.TrimEnd('\\');
-            }
-        }
 
         /// <summary>
         /// 游戏目录：两种模式共用。U 盘模式决定装到哪，本地模式还额外决定扫哪里，
@@ -384,20 +322,10 @@ namespace Installer
         /// <summary>保存前就地校验：返回 null = 可以存；否则是要弹给用户的提示。</summary>
         private string ValidateBeforeSave()
         {
-            if (!WantLocal)
-            {
-                string root = WantLibraryRoot;
-                if (string.IsNullOrEmpty(root) || !Directory.Exists(root))
-                    return "没有找到可用的 MOD 主库，请重新选盘或指定文件夹。";
-            }
             // 留空 = 不改：没填就保存不该把原来能用的游戏目录清掉
             string game = WantGameRoot;
             if (game.Length > 0 && !Core.TestGame(game))
                 return "这个目录里没有 left4dead2.exe，设置没有保存：\r\n" + game;
-            string pkg = WantPkgRoot;
-            if (pkg.Length > 0 && !Directory.Exists(pkg))
-                return "组件包目录不存在，设置没有保存：\r\n" + pkg
-                     + "\r\n\r\n留空表示自动查找。";
             return null;
         }
 
@@ -425,7 +353,6 @@ namespace Installer
                 lblGameState.ForeColor = Theme.Accent;
                 lblGameState.Text = Lang.S("没认出：这一层找不到 left4dead2.exe");
             }
-            UpdateLibraryState();
         }
 
         private void BrowseGameRoot()
@@ -459,192 +386,15 @@ namespace Installer
             }
         }
 
-        private void FillDrives()
-        {
-            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
-            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
-            if (lblLibMain == null) return;
 
-            cboLibDrive.Items.Clear();
-            cboLibDrive.Items.Add(new DriveChoice("", "跟随程序所在盘（推荐）"));
 
-            DriveInfo[] drives = null;
-            try { drives = DriveInfo.GetDrives(); }
-            catch { }
 
-            int selected = 0;
-            string currentDrive = "";
-            try { currentDrive = Path.GetPathRoot(Core.ModRoot).TrimEnd('\\'); }
-            catch { }
-
-            if (drives != null)
-            {
-                foreach (DriveInfo d in drives)
-                {
-                    try
-                    {
-                        if (!d.IsReady || d.DriveType == DriveType.CDRom || d.DriveType == DriveType.NoRootDirectory) continue;
-                        string root = d.Name.TrimEnd('\\');
-                        string type = DriveTypeText(d.DriveType);
-                        string free = "";
-                        try { free = " · " + FormatSize(d.AvailableFreeSpace) + " 可用"; }
-                        catch { }
-                        cboLibDrive.Items.Add(new DriveChoice(root, root + "  " + type + free));
-                        if (string.Equals(root, currentDrive, StringComparison.OrdinalIgnoreCase))
-                            selected = cboLibDrive.Items.Count - 1;
-                    }
-                    catch { }
-                }
-            }
-
-            // 空配置 = 跟随程序；有自定义主库就落在那块盘上，主库路径本身仍按 pendingRoot 显示
-            if (string.IsNullOrEmpty(Core.Cfg.LibraryRoot)) selected = 0;
-            syncing = true;
-            cboLibDrive.SelectedIndex = selected;
-            syncing = false;
-        }
-
-        private static string DriveTypeText(DriveType t)
-        {
-            if (t == DriveType.Removable) return "可移动磁盘";
-            if (t == DriveType.Fixed) return "本地磁盘";
-            if (t == DriveType.Network) return "网络盘";
-            if (t == DriveType.Ram) return "内存盘";
-            return "磁盘";
-        }
-
-        private static string FormatSize(long b)
-        {
-            if (b >= 1073741824L) return (b / 1073741824.0).ToString("N1") + " GB";
-            if (b >= 1048576L) return (b / 1048576.0).ToString("N0") + " MB";
-            return (b / 1024.0).ToString("N0") + " KB";
-        }
-
-        private void OnDriveChanged()
-        {
-            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
-            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
-            if (lblLibMain == null) return;
-
-            DriveChoice c = cboLibDrive.SelectedItem as DriveChoice;
-            if (c == null) return;
-            pendingRoot = string.IsNullOrEmpty(c.Root) ? Core.DefaultModRoot : FindKnownRoot(c.Root);
-            UpdateLibraryState();
-        }
 
         /// <summary>选盘时只认常见的库目录，不整盘递归；找不到就让用户明确选文件夹。</summary>
-        private static string FindKnownRoot(string drive)
-        {
-            string[] candidates = new string[]
-            {
-                Path.Combine(Path.Combine(drive, "游戏内容"), "求生之路2各项MOD"),
-                Path.Combine(drive, "求生之路2各项MOD"),
-                Path.Combine(drive, "addons")
-            };
-            foreach (string p in candidates)
-                if (Directory.Exists(p)) return p;
-            return "";
-        }
 
-        private void BrowseLibrary()
-        {
-            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
-            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
-            if (lblLibMain == null) return;
 
-            using (FolderBrowserDialog d = new FolderBrowserDialog())
-            {
-                d.Description = "选择 MOD 主库根目录（里面按分类放 vpk / zip / rar）";
-                if (Directory.Exists(pendingRoot)) d.SelectedPath = pendingRoot;
-                if (d.ShowDialog(this) != DialogResult.OK) return;
-                pendingRoot = d.SelectedPath.TrimEnd('\\');
-                SelectDriveFor(pendingRoot);
-                UpdateLibraryState();
-            }
-        }
 
-        private void SelectDriveFor(string path)
-        {
-            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
-            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
-            if (lblLibMain == null) return;
 
-            string drive = "";
-            try { drive = Path.GetPathRoot(path).TrimEnd('\\'); }
-            catch { }
-            syncing = true;
-            for (int i = 0; i < cboLibDrive.Items.Count; i++)
-            {
-                DriveChoice c = cboLibDrive.Items[i] as DriveChoice;
-                if (c != null && !string.IsNullOrEmpty(c.Root)
-                    && string.Equals(c.Root, drive, StringComparison.OrdinalIgnoreCase))
-                { cboLibDrive.SelectedIndex = i; break; }
-            }
-            syncing = false;
-        }
-
-        private void UpdateLibraryState()
-        {
-            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
-            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
-            if (lblLibMain == null) return;
-
-            if (WantLocal)
-            {
-                string addons = null;
-                try
-                {
-                    string g = WantGameRoot;
-                    if (g.Length > 0 && Core.TestGame(g))
-                        addons = Path.Combine(Path.Combine(g, "left4dead2"), "addons");
-                }
-                catch { }
-
-                lblLibMain.ForeColor = Theme.Ink2;
-                lblLibMain.Text = addons != null
-                    ? "本地模式：只扫描 " + addons
-                    : "本地模式：只扫描游戏目录 addons（先在上方指定游戏目录）";
-                lblLibExtra.ForeColor = Theme.Ink3;
-                lblLibExtra.Text = Lang.S("主库和附加目录都不参与扫描");
-                lblLibHint.Text = Lang.S("游戏目录在上方改；切回 U 盘模式后原来的库仍保留。");
-                if (btnSave != null) btnSave.Enabled = true;
-                return;
-            }
-
-            bool valid = !string.IsNullOrEmpty(pendingRoot) && Directory.Exists(pendingRoot);
-            lblLibMain.ForeColor = valid ? Theme.Ink2 : Theme.Accent;
-            lblLibMain.Text = valid ? Lang.F("主库：{0}", pendingRoot) : Lang.S("主库：未找到有效目录，请重新选盘或选择文件夹");
-            if (btnSave != null) btnSave.Enabled = valid;
-
-            int n = Core.Cfg.ModDirs == null ? 0 : Core.Cfg.ModDirs.Count;
-            lblLibExtra.ForeColor = Theme.Ink2;
-            if (n == 0)
-            {
-                lblLibExtra.Text = Lang.S("附加目录：无");
-            }
-            else
-            {
-                string sample = "";
-                for (int i = 0; i < Core.Cfg.ModDirs.Count && i < 2; i++)
-                {
-                    if (sample.Length > 0) sample += "；";
-                    sample += Core.Cfg.ModDirs[i];
-                }
-                lblLibExtra.Text = Lang.F("附加目录：{0} 个 · {1}{2}", n, sample, n > 2 ? Lang.S(" 等") : "");
-            }
-            lblLibHint.Text = Lang.S("主库和附加目录都会扫描；只读，不复制、不移动。");
-        }
-
-        private void ManageLibrary()
-        {
-            // 本地版没有「MOD 主库」这张卡（BuildLibrary 已删），这些控件一律是 null：
-            // 这里直接返回，别再往下碰 —— 以前少了这层判断，打开设置就弹「未将对象引用…」。
-            if (lblLibMain == null) return;
-
-            if (owner == null || WantLocal) return;
-            owner.ManageModDirs();
-            UpdateLibraryState();
-        }
 
         private void OpenConfigFolder()
         {
@@ -677,8 +427,6 @@ namespace Installer
             sb.AppendLine("本地版：只看游戏目录 addons，没有主库");
             sb.AppendLine("游戏目录: " + (WantGameRoot.Length == 0 ? "(未填)" : WantGameRoot));
             sb.AppendLine("游戏目录有效: " + Core.TestGame(WantGameRoot));
-            if (cboLibDrive != null)
-                sb.AppendLine("主库选择: " + (cboLibDrive.SelectedItem == null ? "(无)" : cboLibDrive.SelectedItem.ToString()));
             sb.AppendLine("减少动效: " + (WantReduceMotion ? "开" : "关"));
             sb.AppendLine("外观: " + Theme.ModeLabel + "（当前渲染: " + (Theme.IsDark ? "深色" : "浅色") + "）");
             sb.AppendLine("附加库目录: " + (Core.Cfg.ModDirs == null ? 0 : Core.Cfg.ModDirs.Count) + " 个");
@@ -771,26 +519,15 @@ namespace Installer
 
         private void ShowSettings()
         {
-            bool oldLocal = Core.IsLocal;
             bool oldMotion = Core.Cfg.ReduceMotion;
-            string oldRoot = Core.ModRoot;
             string oldGame = Core.Cfg.GameRoot ?? "";
 
             using (SettingsForm f = new SettingsForm(this))
             {
                 if (f.ShowDialog(this) != DialogResult.OK) return;
 
-                bool newLocal = f.WantLocal;
                 bool newMotion = f.WantReduceMotion;
-                string newRoot = f.WantLibraryRoot;
                 string newGame = f.WantGameRoot;
-
-                if (!newLocal && (string.IsNullOrEmpty(newRoot) || !Directory.Exists(newRoot)))
-                {
-                    MessageBox.Show("没有找到可用的 MOD 主库，请重新选盘或指定文件夹。", "设置",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
 
                 // 留空 = 不改：避免没填就点保存，把原来能用的游戏目录清掉
                 if (newGame.Length > 0 && !Core.TestGame(newGame))
@@ -803,9 +540,6 @@ namespace Installer
                 bool gameChanged = newGame.Length > 0
                     && !string.Equals(newGame.TrimEnd('\\'), oldGame.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
 
-                bool rootChanged = !newLocal
-                    && !string.Equals(newRoot.TrimEnd('\\'), oldRoot.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
-
                 if (gameChanged)
                 {
                     Core.Cfg.GameRoot = newGame;
@@ -814,30 +548,7 @@ namespace Installer
                     Core.Log("OK", "设置：游戏目录→" + newGame);
                 }
 
-                if (rootChanged)
-                {
-                    if (!Core.SetLibraryRoot(newRoot, true))
-                    {
-                        MessageBox.Show("这个主库目录不可用，设置没有保存。", "设置",
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                    }
-                    Core.Log("OK", "MOD 主库改为：" + Core.ModRoot);
-                }
-
                 // 安装选项整块已经删掉，这里不再有要写的开关
-
-                // 组件包目录：改了要立刻重查一遍，否则左栏还按旧目录判「缺」
-                string newPkg = f.WantPkgRoot;
-                string oldPkg = Core.Cfg.PkgRoot ?? "";
-                if (!string.Equals(newPkg, oldPkg, StringComparison.OrdinalIgnoreCase))
-                {
-                    Core.Cfg.PkgRoot = newPkg;
-                    Core.SaveConfig();
-                    Core.PkgRoot = Core.ResolvePkgRoot();
-                    Core.Log("OK", "组件包目录改为：" + Core.PkgRoot);
-                    RefreshPackStatus();
-                }
 
                 if (newMotion != oldMotion)
                 {
@@ -854,10 +565,7 @@ namespace Installer
                     Core.Log("INFO", "设置：外观→" + Theme.ModeLabel);
                 }
 
-                if (gameChanged || rootChanged)
-                {
-                    ReloadLibrary(gameChanged && !rootChanged ? "正在按新的游戏目录重扫…" : null);
-                }
+                if (gameChanged) ReloadLibrary("正在按新的游戏目录重扫…");
             }
         }
 

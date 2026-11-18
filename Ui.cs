@@ -62,7 +62,6 @@ namespace Installer
         private readonly HashSet<string> expanded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private List<string> conflictMsgs = new List<string>();
         private bool bulk;                       // 批量勾选时先别逐项刷新
-        private bool applying;                   // 正在回填配置：这时的勾选变化不要触发联动
         private int logLines;                    // 日志行数，超了就截断，避免文本框越用越慢
         private readonly System.Windows.Forms.Timer searchTimer = new System.Windows.Forms.Timer();
         private volatile bool bgDone;            // RunBusy 的完成标志
@@ -325,16 +324,11 @@ namespace Installer
                 // 只还原「当初是程序取消的」，用户手动取消的不动。
                 if (autoUnchecked.Count > 0)
                 {
-                    applying = true;
-                    try
+                    foreach (string name in autoUnchecked)
                     {
-                        foreach (string name in autoUnchecked)
-                        {
-                            CheckBox c = ComponentBox(name);
-                            if (c != null) c.Checked = true;
-                        }
+                        CheckBox c = ComponentBox(name);
+                        if (c != null) c.Checked = true;
                     }
-                    finally { applying = false; }
                     Core.Log("INFO", "组件包已补齐，恢复勾选：" + string.Join("、", new List<string>(autoUnchecked).ToArray()));
                     autoUnchecked.Clear();
                 }
@@ -346,19 +340,14 @@ namespace Installer
             // 关键不是那句警告，是左栏那些勾：包根本没附带时，勾着它们 = 告诉新手「这些是必须装的」，
             // 他一点「开始装」就换来一片 FAIL，然后认定软件坏了。缺的组件自动取消勾选，
             // 但不置灰 —— 用户自己补齐包之后还能手动勾回来。
-            applying = true;
-            try
+            foreach (string l in packs)
             {
-                foreach (string l in packs)
-                {
-                    int cut = l.IndexOf("缺", StringComparison.Ordinal);
-                    if (cut < 0) continue;
-                    string name = l.Substring(0, cut).Trim();
-                    CheckBox c = ComponentBox(name);
-                    if (c != null && c.Checked) { c.Checked = false; autoUnchecked.Add(name); }
-                }
+                int cut = l.IndexOf("缺", StringComparison.Ordinal);
+                if (cut < 0) continue;
+                string name = l.Substring(0, cut).Trim();
+                CheckBox c = ComponentBox(name);
+                if (c != null && c.Checked) { c.Checked = false; autoUnchecked.Add(name); }
             }
-            finally { applying = false; }
 
             List<string> miss = new List<string>();
             foreach (string l in packs)
@@ -4368,8 +4357,7 @@ namespace Installer
             /// <summary>同一位置里以前装过、这次没勾的（只翻开关写成 0，文件不动）。</summary>
             public List<ModItem> Off = new List<ModItem>();
                 public string Tweak = "";
-            public string AssetName;
-            /// <summary>没做成的步骤名（给用户看的一句话）。</summary>
+                /// <summary>没做成的步骤名（给用户看的一句话）。</summary>
             public List<string> Failed = new List<string>();
             /// <summary>这次新写进 addons 的文件名，最后写还原清单用。</summary>
             public List<string> Added = new List<string>();
