@@ -2379,8 +2379,9 @@ namespace Installer
                     if (pool.Count >= 3) break;
                 }
                 // 干净 runner / 刚装完的机器上库里没有 MOD：这是环境不足，不是功能坏了。
-                // 跟 tripane 一样明确跳过（返回 0），否则这条自检永远只能挂着，当不了门禁。
-                if (pool.Count < 3) { Console.WriteLine("addonself skipped: 库里不到 3 个 MOD"); return 0; }
+                // 跟 tripane 一样明确跳过 —— 但要把已经跑出来的失败带出去：
+                // 以前这里写死 return 0，前面守门那组真挂了也会被这里吃掉，CI 照样绿。
+                if (pool.Count < 3) { Console.WriteLine("addonself skipped: 库里不到 3 个 MOD（守门那组已跑）"); return bad; }
 
                 foreach (ModItem m in pool) File.WriteAllText(Path.Combine(addons, m.Name), "x");
                 string mine = "我自己放的.vpk";

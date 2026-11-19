@@ -117,8 +117,8 @@ namespace Installer
                         continue;
                     }
                     int tab = raw.IndexOf('\t');
-                    if (tab != 2) continue;
-                    d[raw.Substring(3)] = raw[0] == '1';
+                    if (tab < 0 || tab > 1) continue;      // 只认「0/1 + TAB + 文件名」，别的行跳过
+                    d[raw.Substring(tab + 1)] = raw[0] == '1';
                 }
                 return mine ? d : null;
             }
