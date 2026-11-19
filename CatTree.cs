@@ -6570,6 +6570,42 @@ namespace Installer
         /// <summary>自测：把「设置 MOD 分类」窗口拉起来截一张，人眼过一遍排版。</summary>
         internal void UiTestCatForm()
         {
+            // 候选提示也要验：造一个认不出位置、但名字里带玩家叫法（佐伊 / 止痛药）的假 MOD
+            ModGroup fake = new ModGroup();
+            fake.Key = "#catself";
+            fake.Name = "测试_佐伊和止痛药.vpk";
+            fake.Cat = "其他";
+            fake.Sub = "其他";
+            ModItem fi = new ModItem();
+            fi.Key = "#catself#1";
+            fi.Name = fake.Name;
+            fi.Cat = "其他";
+            fi.Sub = "其他";
+            fi.Subject = "";
+            fake.Parts.Add(fi);
+            using (ModCatForm ff = new ModCatForm(fake))
+            {
+                ff.Show();
+                Application.DoEvents();
+                ff.PerformLayout();
+                Application.DoEvents();
+                List<string> sugNames = new List<string>();
+                foreach (Positions.Row r in Positions.Suggest("测试_佐伊和止痛药.vpk", 3)) sugNames.Add(r.Name);
+                if (sugNames.Count == 0) Core.Log("FAIL", "CATFORM 候选没猜出来（测试_佐伊和止痛药.vpk）");
+                else Core.Log("INFO", "CATFORM 候选: " + string.Join(" / ", sugNames.ToArray())
+                    + "（对话框预选: " + (ff.lblSuggested.Length > 0 ? ff.lblSuggested : "无") + "）");
+                try
+                {
+                    using (System.Drawing.Bitmap fb = new System.Drawing.Bitmap(ff.Width, ff.Height))
+                    {
+                        ff.DrawToBitmap(fb, new System.Drawing.Rectangle(0, 0, ff.Width, ff.Height));
+                        fb.Save(System.IO.Path.Combine(Core.LogDir, "modcat-suggest.png"), System.Drawing.Imaging.ImageFormat.Png);
+                    }
+                }
+                catch { }
+                ff.Close();
+            }
+
             ModGroup g = null;
             foreach (ModGroup x in Catalog.Groups)
                 if (x.Cat != "地图" && x.Cat != "喷漆" && x.Main != null) { g = x; break; }
@@ -6586,7 +6622,8 @@ namespace Installer
                     bmp.Save(System.IO.Path.Combine(Core.LogDir, "modcat.png"),
                              System.Drawing.Imaging.ImageFormat.Png);
                 }
-                Core.Log("INFO", "CATFORM " + g.Name + "（" + g.Cat + "）截图已存 modcat.png");
+                Core.Log("INFO", "CATFORM " + g.Name + "（" + g.Cat + "）截图已存 modcat.png"
+                    + (f.lblSuggested.Length > 0 ? "｜候选: " + f.lblSuggested : "｜无候选"));
                 f.Close();
             }
         }

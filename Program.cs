@@ -150,7 +150,7 @@ namespace Installer
                 else if (a.StartsWith("--uidragreal=", StringComparison.OrdinalIgnoreCase)) uiDragReal = a.Substring(13);
                 else if (a.StartsWith("--mousedrag=", StringComparison.OrdinalIgnoreCase)) mouseDrag = a.Substring(12);
                 else if (string.Equals(a, "--uisetcat", StringComparison.OrdinalIgnoreCase)) uiSetCat = true;
-                else if (string.Equals(a, "--uicatform", StringComparison.OrdinalIgnoreCase)) uiCatForm = true;
+                else if (string.Equals(a, "--uicatform", StringComparison.OrdinalIgnoreCase)) { uiCatForm = true; uiTest = true; }
                 else if (string.Equals(a, "--uiaddons", StringComparison.OrdinalIgnoreCase)) uiAddons = true;
                 else if (string.Equals(a, "--uikeys", StringComparison.OrdinalIgnoreCase)) { uiKeys = true; uiTest = true; }
                 // 工坊自检：只测解析/文件名/JSON，不联网
