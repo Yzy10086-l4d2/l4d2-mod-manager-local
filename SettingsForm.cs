@@ -17,7 +17,7 @@ namespace Installer
     internal sealed class SettingsForm : Form
     {
         private readonly MainForm owner;
-        private Segmented segAppearance, segLang;
+        private Segmented segAppearance, segLang, segName;
         private Toggle tglMotion;
         private ComboBox cboGame;
         private FlatButton btnGameBrowse, btnGameFind, btnSave;
@@ -26,6 +26,8 @@ namespace Installer
         private bool syncing = true;
 
         internal bool WantReduceMotion { get { return tglMotion != null && tglMotion.Checked; } }
+        /// <summary>true = 用包内 addoninfo 的标题当显示名；false = 用 vpk 文件名。</summary>
+        internal bool WantNameByTitle { get { return segName != null && segName.SelectedIndex == 1; } }
         internal ThemeMode WantAppearance { get { return segAppearance == null ? Theme.Mode : (ThemeMode)segAppearance.SelectedIndex; } }
         /// <summary>自测用：模拟在设置窗口里点「外观」分段（走的是真实的点击 + SelectedIndexChanged 路径）。</summary>
         internal void PreviewAppearance(ThemeMode m)
@@ -52,7 +54,7 @@ namespace Installer
 
             Text = Lang.S("设置 · L4D2 MOD 管理工具");
             Theme.UseDpi(this);
-            ClientSize = Dpi.Sz(620, 676);
+            ClientSize = Dpi.Sz(620, 726);
             Font = Theme.UI;
             BackColor = Theme.Bg;
             ForeColor = Theme.Ink;
@@ -142,7 +144,7 @@ namespace Installer
 
         private void BuildGeneral()
         {
-            Card s = AddGroup(Lang.S("常规"), 56, 200);
+            Card s = AddGroup(Lang.S("常规"), 56, 246);
 
             RowTitle(s, Lang.S("减少动态效果"), 16, 7, 220);
             RowNote(s, Lang.S("关掉按钮与状态切换的过渡，低配机器更轻快"), 16, 25, 320);
@@ -201,6 +203,19 @@ namespace Installer
                 if (owner != null) owner.RequestLangRestart();
             };
             s.Controls.Add(segLang);
+
+            s.Separate(200);
+
+            // MOD 名称：只影响显示和搜索，一个文件都不动。两种来源库里都现成：
+            //   文件名 = vpk 原名；标题 = 包内 addoninfo 的 AddonTitle（工坊名那种）。
+            RowTitle(s, Lang.S("MOD 名称"), 16, 207, 220);
+            RowNote(s, Lang.S("文件名 = vpk 原名；标题 = 包内 addoninfo 的名字"), 16, 225, 320);
+
+            segName = new Segmented();
+            segName.Items = new string[] { Lang.S("文件名"), Lang.S("标题") };
+            segName.SetBounds(332, 206, 232, 30);
+            segName.SelectedIndex = Core.Cfg.NameByTitle ? 1 : 0;
+            s.Controls.Add(segName);
         }
 
         /// <summary>只读提示：留空时把「自动会用到哪个目录」写出来，填了就报里面有没有组件包。</summary>
@@ -212,7 +227,7 @@ namespace Installer
         /// </summary>
         private void BuildGameDir()
         {
-            Card s = AddGroup(Lang.S("游戏目录"), 298, 104);
+            Card s = AddGroup(Lang.S("游戏目录"), 346, 104);
 
             RowTitle(s, Lang.S("游戏根目录"), 16, 6, 200);
 
@@ -243,7 +258,7 @@ namespace Installer
 
         private void BuildDiagnostics()
         {
-            Card s = AddGroup(Lang.S("位置与诊断"), 458, 118);
+            Card s = AddGroup(Lang.S("位置与诊断"), 506, 118);
 
             lblCfg = new Label();
             lblCfg.SetBounds(16, 8, 548, 16);
@@ -321,13 +336,13 @@ namespace Installer
             FlatButton cancel = new FlatButton();
             cancel.Text = Lang.S("取消");
             cancel.Plain = true;
-            cancel.SetBounds(408, 624, 88, 32);
+            cancel.SetBounds(408, 674, 88, 32);
             cancel.DialogResult = DialogResult.Cancel;
             Controls.Add(cancel);
 
             btnSave = new FlatButton();
             btnSave.Text = Lang.S("保存设置");
-            btnSave.SetBounds(504, 624, 96, 32);
+            btnSave.SetBounds(504, 674, 96, 32);
             btnSave.Primary = true;
             btnSave.DialogResult = DialogResult.OK;
             // 校验放进点击里：以前是「先关窗、再在 ShowSettings 里发现路径不对」，
@@ -454,6 +469,7 @@ namespace Installer
             sb.AppendLine("游戏目录: " + (WantGameRoot.Length == 0 ? "(未填)" : WantGameRoot));
             sb.AppendLine("游戏目录有效: " + Core.TestGame(WantGameRoot));
             sb.AppendLine("减少动效: " + (WantReduceMotion ? "开" : "关"));
+            sb.AppendLine("MOD 名称: " + (WantNameByTitle ? "包内标题" : "文件名"));
             sb.AppendLine("外观: " + Theme.ModeLabel + "（当前渲染: " + (Theme.IsDark ? "深色" : "浅色") + "）");
             sb.AppendLine("附加库目录: " + (Core.Cfg.ModDirs == null ? 0 : Core.Cfg.ModDirs.Count) + " 个");
             sb.AppendLine("配置路径: " + Core.CfgPath);
@@ -581,6 +597,15 @@ namespace Installer
                     Core.Cfg.ReduceMotion = newMotion;
                     Core.SaveConfig();
                     Core.Log("INFO", newMotion ? "设置：已关闭轻量动效" : "设置：已开启轻量动效");
+                }
+
+                // MOD 名称：显示名是渲染时现取的，所以改完只重建视图，不重扫库
+                if (f.WantNameByTitle != Core.Cfg.NameByTitle)
+                {
+                    Core.Cfg.NameByTitle = f.WantNameByTitle;
+                    Core.SaveConfig();
+                    Core.Log("INFO", "设置：MOD 名称→" + (Core.Cfg.NameByTitle ? "包内标题" : "文件名"));
+                    RebuildViews();
                 }
 
                 // 外观在对话框里已经实时套上去了，这里只负责落配置

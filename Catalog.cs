@@ -47,6 +47,21 @@ namespace Installer
         }
 
         public string Where { get { return Cat + " · " + Sub; } }
+
+        /// <summary>
+        /// 界面上显示的名字：设置里选「VPK 文件名」就照原名，选「包内标题」就用 addoninfo 的 AddonTitle。
+        /// 只管显示和搜索 —— Key 是登记键、Name 是文件名，绝不能拿它们换显示值，否则开关和方案全对不上。
+        /// </summary>
+        public string Show
+        {
+            get
+            {
+                if (Core.Cfg == null || !Core.Cfg.NameByTitle) return Name ?? "";
+                ModItem m = Main;
+                string t = m == null ? "" : (m.AddonTitle ?? "").Trim();
+                return t.Length > 0 ? t : (Name ?? "");
+            }
+        }
     }
 
     /// <summary>

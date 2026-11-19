@@ -358,6 +358,10 @@ namespace Installer
             Add(d, "中文", "中文 (Chinese)");
             Add(d, "English", "English");
             Add(d, "减少动效", "Reduce motion");
+        Add(d, "MOD 名称", "MOD name");
+        Add(d, "文件名", "File name");
+        Add(d, "标题", "Title");
+        Add(d, "文件名 = vpk 原名；标题 = 包内 addoninfo 的名字", "File name = the vpk name; Title = the name inside addoninfo");
             Add(d, "工作模式", "Mode");
             Add(d, "本地模式", "Local mode");
             Add(d, "U 盘模式", "USB drive mode");

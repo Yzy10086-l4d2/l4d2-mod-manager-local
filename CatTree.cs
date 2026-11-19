@@ -3361,7 +3361,7 @@ namespace Installer
                 foreach (ModGroup g in s.Items)
                 {
                     bool on = mf.CountChecked(g) > 0;
-                    ListViewItem li = new ListViewItem(g.Name);
+                    ListViewItem li = new ListViewItem(g.Show);
                     li.SubItems.Add(KindsOf(g));
                     li.SubItems.Add(Core.Human(g.Size));
                     AddStateCells(li, g);
@@ -3438,7 +3438,7 @@ namespace Installer
                             lastCat = cat;
                         }
                         bool on = mf.CountChecked(g) > 0;
-                        ListViewItem li = new ListViewItem(g.Name);
+                        ListViewItem li = new ListViewItem(g.Show);
                         li.SubItems.Add(KindsOf(g));
                         li.SubItems.Add(Core.Human(g.Size));
                         AddStateCells(li, g);
@@ -3525,7 +3525,7 @@ namespace Installer
 
             string meta = KindsOf(g) + " · " + Core.Human(g.Size);
             if (g.Parts.Count > 1) meta += " · " + g.Parts.Count + " 件";
-            peek.Show(g.Name, meta, src, imgPath, null, info);
+            peek.Show(g.Show, meta, src, imgPath, null, info);
         }
 
         /// <summary>
@@ -3546,7 +3546,7 @@ namespace Installer
                 foreach (ModGroup g in Catalog.Groups)
                 {
                     if (string.IsNullOrEmpty(g.Name) || !mf.MatchGroup(g, kw)) continue;
-                    ListViewItem li = new ListViewItem(g.Name);
+                    ListViewItem li = new ListViewItem(g.Show);
                     ModItem mi = g.Main;
                     li.SubItems.Add(g.Cat + (mi == null || string.IsNullOrEmpty(mi.Sub) ? "" : " · " + mi.Sub));
                     li.SubItems.Add(Core.Human(g.Size));
@@ -3630,7 +3630,7 @@ namespace Installer
         private void AddUnmatchedRow(ModGroup g, bool inClan)
         {
             bool on = mf.CountChecked(g) > 0;
-            ListViewItem li = new ListViewItem((inClan ? "└ " : "") + g.Name);
+            ListViewItem li = new ListViewItem((inClan ? "└ " : "") + g.Show);
             li.SubItems.Add(KindsOf(g));
             li.SubItems.Add(Core.Human(g.Size));
             AddStateCells(li, g);
