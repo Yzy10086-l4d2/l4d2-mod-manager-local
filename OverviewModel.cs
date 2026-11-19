@@ -109,9 +109,7 @@ namespace Installer
                 o.Pile = s.Pile;
 
                 foreach (ModGroup g in s.Items) if (counted(g) > 0) o.On.Add(g);
-                foreach (ModGroup g in s.Extras) if (counted(g) > 0) o.Extra.Add(g);
                 foreach (ModGroup g in o.On) AddParts(o, g, counted, partOn);
-                foreach (ModGroup g in o.Extra) AddParts(o, g, counted, partOn);
                 o.ModText = ModTextOf(o);
 
                 oc.Slots.Add(o);

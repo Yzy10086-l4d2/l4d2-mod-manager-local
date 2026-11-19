@@ -2093,10 +2093,7 @@ namespace Installer
                 // 2026-11-20 定：不再把 MOD 判成「扩展」。以前按 Kinds 猜（音效 / HUD / 特效 / 脚本 /
                 // 只改第一人称）算不算叠加件，猜错就是装进去了却不在该在的那一栏；现在一律当候选。
                 // 要同时开走「允许多选」那个用户开关（平台恒多选）。
-                bad += RecogCheck(!ExtraOf("音效", false) && !ExtraOf("HUD", false) && !ExtraOf("特效", false)
-                    && !ExtraOf("脚本", false) && !ExtraOf("模型", true) && !ExtraOf("模型,音效", false)
-                    && !ExtraOf("材质", false) && !ExtraOf("地图", false) && !ExtraOf("", false),
-                    "任何 kinds 都不再判成扩展");
+                // 「是不是扩展」这条判据整块删了（2026-11-20）：不再区分本体与扩展，所以没有可测的断言。
 
                 // 内容分类：只喂路径表，不碰真 vpk。
                 // 「一把枪的 HUD 图标」必须归到那把枪，不能算整套界面 —— 否则它会跑进
@@ -2153,12 +2150,6 @@ namespace Installer
             return ok ? 0 : 1;
         }
 
-        static bool ExtraOf(string kinds, bool only1P)
-        {
-            ModGroup g = new ModGroup();
-            g.Parts.Add(new ModItem { Kinds = kinds, Only1P = only1P, Role = "必装" });
-            return SlotIndex.IsExtra(g);
-        }
 
         /// <summary>自检用：给一份 vpk 目录表，看内容分类判成什么。</summary>
         static bool Classified(string[] paths, string cat, string sub)

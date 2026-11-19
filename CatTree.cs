@@ -28,15 +28,13 @@ namespace Installer
         // 点一行是开 / 关，不是把别的替换掉。Items 里装的就是这一堆的全部候选。
         public bool Pile;
         // 库里还没有 MOD 的「标准位置」：照常占一行，让人看出还缺什么。
-        // 它没有任何候选（Items / Extras 都空着），点开只有「留原版」。
+        // 它没有任何候选（Items 空着），点开只有「留原版」。
         public bool Empty;
         // 同一大类同一小分类里的排序权重（小的在前）。目前只有「我的分支」用它按父子顺序排，
         // 别的槽位都是 0，照旧按 PosOrder / 名字排。
         public int Rank;
         // 换本体的：一个位置只能有一个（同一把枪两套模型会打架）
         public readonly List<ModGroup> Items = new List<ModGroup>();
-        // 叠加的扩展：开火音效 / 只改第一人称模型 / HUD 图标 —— 不换本体，可以和上面的同时装
-        public readonly List<ModGroup> Extras = new List<ModGroup>();
     }
 
     /// <summary>把 MOD 库按「改的是什么」聚成槽位。认不出改什么的，不进树。</summary>
@@ -150,7 +148,7 @@ namespace Installer
                     s.Name = nm;                               // 「步枪」这种泛称，换成更具体的名字
                     s.Sub = SubOf(cat, s.Name, key, hint, g.Sub);
                 }
-                if (IsExtra(g)) s.Extras.Add(g); else s.Items.Add(g);
+                s.Items.Add(g);
             }
             MergeManual(list);
             MergeSame(list);
@@ -182,7 +180,6 @@ namespace Installer
                     if (b.Cat != a.Cat || b.Name != a.Name) continue;
                     if (b.Manual) continue;                   // 两个都是人工的：key 相同，不会发生
                     foreach (ModGroup g in a.Items) if (!b.Items.Contains(g)) b.Items.Add(g);
-                    foreach (ModGroup g in a.Extras) if (!b.Extras.Contains(g)) b.Extras.Add(g);
                     list.RemoveAt(i);
                     break;
                 }
@@ -203,7 +200,6 @@ namespace Installer
                     Slot b = list[j];
                     if (b.Cat != a.Cat || b.Sub != a.Sub || b.Name != a.Name) continue;
                     foreach (ModGroup g in a.Items) if (!b.Items.Contains(g)) b.Items.Add(g);
-                    foreach (ModGroup g in a.Extras) if (!b.Extras.Contains(g)) b.Extras.Add(g);
                     if (a.Manual) b.Manual = true;
                     list.RemoveAt(i);
                     break;
@@ -673,46 +669,7 @@ namespace Installer
                 || s == "其他" || s.Length == 0;
         }
 
-        /// <summary>
-        /// 这件东西是「叠加的扩展」还是「换本体的」。
-        /// 依据是识别出来的「改了什么」，外加两条事实：
-        ///   Only1P = 包里的模型全是第一人称（v_），没动世界模型；
-        ///   AnimOnly = 包里的模型全是 anim_/gestures_ 表情骨架（KSEP 表情平台这类陪套）。
-        ///   只换第一人称模型、表情动画、音效、HUD、特效、脚本 = 不和模型本体抢位置，可以作为扩展；
-        ///   完整模型、材质、地图 = 换本体，一个位置只能有一套，两套会互相覆盖。
-        /// </summary>
-        public static bool IsExtra(ModGroup g)
-        {
-            // 2026-11-20 用户定：不再把 MOD 判断成「扩展」。
-            // 判得准要维护一堆依据（只改第一人称 / 表情骨架 / 音效 HUD 特效脚本……），
-            // 判错一次就是「装进去了却不在该在的那一栏」。现在一律当普通候选，
-            // 要同时开就按位置开「允许多选」——那是个用户说了算的开关，不是程序猜的。
-            return false;
-#pragma warning disable 0162
-            if (g == null) return false;
-            ModItem m = g.Main;
-            if (m == null) return false;
-            // 整套替换的三栏不叠加：一套 HUD / 特效 / 音效本身就是完整替换，
-            // 两套同时开只会互相覆盖，必须走 Items 单选（和 AK-47 一个道理）。
-            // 它们的 Kinds 天然带 HUD / 音效 / 特效，不在这里拦住就会被判成叠加栏。
-            // （只改一把枪的 HUD 图标不在此列：它的 Cat 是枪械，本来就该当那把枪的叠加载荷。）
-            // 平台是独立一栏，不是某个位置的扩展：它得能像别的包一样被点选、也有封面预览。
-            // 「换方案时不许关」由 Work.SwitchAddons 单独保证，不靠这一条。
-            if (g.Cat == "平台") return false;
-            if (g.Cat == "杂项" && (g.Sub == "UI 界面" || g.Sub == "特效" || g.Sub == "音效"))
-                return false;
-            if (m.Only1P) return true;                                         // 只动了第一人称，和整套模型不抢
-            if (m.AnimOnly) return true;                                       // 表情平台：不换人，谁都能叠
-            string k = (m.Kinds ?? "").Trim();
-            if (k.Length == 0) return false;                                   // 什么都读不出来：当本体，别乱叠
-            if (k.IndexOf("模型", StringComparison.Ordinal) >= 0) return false;
-            if (k.IndexOf("材质", StringComparison.Ordinal) >= 0) return false;  // 贴图替换也是换外观
-            if (k.IndexOf("地图", StringComparison.Ordinal) >= 0) return false;
-            return k.IndexOf("音效", StringComparison.Ordinal) >= 0
-                || k.IndexOf("HUD", StringComparison.Ordinal) >= 0
-                || k.IndexOf("特效", StringComparison.Ordinal) >= 0
-                || k.IndexOf("脚本", StringComparison.Ordinal) >= 0;
-        }
+
 
         // 泛称补全用：关键词 → 标准位置名。长的排前面，免得 "M4" 抢走 "M4A1"。
         private static readonly string[,] GunPairs = new string[,]
@@ -844,8 +801,7 @@ namespace Installer
                 foreach (Slot s in inCat)
                 {
                     if (showSub && s.Sub != lastSub) { sb.AppendLine("  〈" + s.Sub + "〉"); lastSub = s.Sub; }
-                    sb.AppendLine("    " + s.Name + "  (" + s.Items.Count + " 个"
-                        + (s.Extras.Count > 0 ? " + 扩展 " + s.Extras.Count : "") + ")"
+                    sb.AppendLine("    " + s.Name + "  (" + s.Items.Count + " 个)"
                         + (s.Manual ? " [人工]" : ""));
                 }
             }
@@ -1188,29 +1144,19 @@ namespace Installer
             headMain = new ColHead(lv);
             Controls.Add(headMain);
 
-            // ---- 右下：可叠加的扩展（开火音效 / 只改第一人称模型 / HUD）----
+            // 扩展栏已移除（2026-11-20）：这几个控件只留空壳，永远不显示、也不填内容，
+            // 免得旧布局代码踩空（它们以前的创建代码整块删掉了）。
             lvExtra = NewCandList("扩展");
-            lvExtra.MouseClick += delegate(object s, MouseEventArgs e)
-            {
-                if (e.Button != MouseButtons.Left) return;
-                ListViewItem li = lvExtra.GetItemAt(e.X, e.Y);
-                if (li == null) return;
-                if (ColAt(lvExtra, e.X) == 4) { ToggleSwitch(li.Tag as ModGroup); return; }   // 开关列：只翻开关
-                ToggleExtra(li.Tag as ModGroup);
-            };
-            lvExtra.Resize += delegate { LayoutCols(); };
-            lvExtra.AccessibleName = "可叠加扩展";
-            lvExtra.KeyDown += delegate(object s, KeyEventArgs e)
-            {
-                if (e.KeyCode != Keys.Enter && e.KeyCode != Keys.Space) return;
-                if (lvExtra.SelectedItems.Count == 0) return;
-                ToggleExtra(lvExtra.SelectedItems[0].Tag as ModGroup);
-                e.Handled = true;
-                e.SuppressKeyPress = true;
-            };
+            lvExtra.Visible = false;
             Controls.Add(lvExtra);
             headExtra = new ColHead(lvExtra);
+            headExtra.Visible = false;
             Controls.Add(headExtra);
+            lblExtraTitle = new Label();
+            lblExtraTitle.Visible = false;
+            Controls.Add(lblExtraTitle);
+
+
 
             lblTitle = new Label();
             lblTitle.Font = Theme.UIBold;
@@ -1458,7 +1404,6 @@ namespace Installer
             foreach (Slot s0 in slots)
             {
                 foreach (ModGroup g0 in s0.Items) placed.Add(g0);
-                foreach (ModGroup g0 in s0.Extras) placed.Add(g0);
             }
             unmatchedGroups.Clear();
             foreach (ModGroup g in Catalog.Groups)
@@ -1643,51 +1588,7 @@ namespace Installer
             return n;
         }
 
-        /// <summary>这个位置勾了几个可叠加的扩展（音效 / 只改第一人称模型 / HUD），可以和模型同时生效。</summary>
-        internal int CheckedExtras(Slot s)
-        {
-            int n = 0;
-            foreach (ModGroup g in s.Extras) if (mf.CountChecked(g) > 0) n++;
-            return n;
-        }
 
-        /// <summary>
-        /// 扩展分小类用：直接用识别出来的属性名（模型/音效/HUD/特效/脚本）当组名。
-        /// 新加的 MOD 属性是什么就自动进什么组，不用再加分类规则。
-        /// 多属性的取排序靠前的那个；扩展里带「模型」的必然是只改第一人称的（完整模型当不了扩展）。
-        /// </summary>
-        internal static string ExtraCat(ModGroup g)
-        {
-            if (g == null || g.Main == null) return "其他";
-            if (g.Main.AnimOnly) return "表情";                                 // KSEP 这类表情平台
-            string k = (g.Main.Kinds ?? "").Trim();
-            if (g.Main.Only1P && k.IndexOf("模型", StringComparison.Ordinal) >= 0) return "模型";
-            if (k.IndexOf("音效", StringComparison.Ordinal) >= 0) return "音效";
-            if (k.IndexOf("HUD", StringComparison.Ordinal) >= 0) return "HUD";
-            if (k.IndexOf("特效", StringComparison.Ordinal) >= 0) return "特效";
-            if (k.IndexOf("脚本", StringComparison.Ordinal) >= 0) return "脚本";
-            return k.Length > 0 ? k.Replace(",", "·") : "其他";
-        }
-
-        /// <summary>扩展小类的固定排序（就是属性顺序），界面上从上到下按这个出。</summary>
-        private static readonly string[] ExtraCatOrder = { "模型", "表情", "音效", "HUD", "特效", "脚本" };
-        private static int ExtraCatRank(string cat)
-        {
-            for (int i = 0; i < ExtraCatOrder.Length; i++)
-                if (cat == ExtraCatOrder[i]) return i;
-            return ExtraCatOrder.Length;
-        }
-
-        /// <summary>点扩展行：开着的关掉，关着的打开 —— 和模型不是二选一，各管各的。</summary>
-        internal void ToggleExtra(ModGroup g)
-        {
-            if (g == null || Current == null) return;
-            mf.ApplyGroupPick(g, mf.CountChecked(g) == 0);   // 勾选和 addonlist 一起动
-            mf.AfterTreePick();
-            FillDetail();
-        }
-
-        /// <summary>这个位置当前用了哪个 MOD（多件时取第一件）。</summary>
         /// <summary>
         /// 多选模式下点一行：开着的关掉、关着的打开，同位置别的**不动**。
         /// 只写这一个 MOD 的开关，不复制文件。
@@ -1745,7 +1646,7 @@ namespace Installer
             foreach (Slot s in slots)
             {
                 if (s.Pile) continue;
-                if (s.Items.Contains(g) || s.Extras.Contains(g)) return GoSlot(s.Key);
+                if (s.Items.Contains(g)) return GoSlot(s.Key);
             }
             foreach (Slot s in slots)
                 if (s.Pile && s.Items.Contains(g)) return GoSlot(s.Key);
@@ -2305,7 +2206,6 @@ namespace Installer
             foreach (Slot s in slots)
             {
                 if (s.Items.Count > 0) { probe = s.Items[0]; break; }
-                if (s.Extras.Count > 0) { probe = s.Extras[0]; break; }
             }
             if (probe != null && Catalog.Groups.IndexOf(probe) < 0) { Rebuild(); return; }
             Sync();
@@ -2375,7 +2275,7 @@ namespace Installer
 
             // 0) 空位：库里没有 MOD 的标准位置也要占一行（「每种物品都显示」）
             int empty = SlotIndex.EmptyCount(slots), dirty = 0;
-            foreach (Slot s in slots) if (s.Empty && (s.Items.Count > 0 || s.Extras.Count > 0)) dirty++;
+            foreach (Slot s in slots) if (s.Empty && s.Items.Count > 0) dirty++;
             int missing = SlotIndex.MissingStandard();
             Core.Log(empty > 0 && missing == 0 && dirty == 0 ? "INFO" : (dirty == 0 && missing == 0 ? "WARN" : "FAIL"),
                 "KEY 空位置 " + empty + " 个，标准位置漏掉的 " + missing + " 个，空位里混进候选的 " + dirty + " 个");
@@ -3309,7 +3209,6 @@ namespace Installer
                     return;
                 }
                 int n = CheckedGroups(s);
-                int ne = CheckedExtras(s);
                 // 「允许多选」只对单选的常规位置出现（地图/喷漆那种「一堆」天然就是多选）
                 if (chkMulti != null)
                 {
@@ -3346,16 +3245,10 @@ namespace Installer
                     foreach (ModGroup g in s.Items)
                         foreach (ModItem p in g.Parts)
                             if ((p.Installed || p.FromGame) && p.AddonOn) { live.Add(g); break; }
-                    int liveEx = 0;
-                    foreach (ModGroup g in s.Extras)
-                        foreach (ModItem p in g.Parts)
-                            if ((p.Installed || p.FromGame) && p.AddonOn) { liveEx++; break; }
-
                     if (live.Count == 0) lblCur.Text = Lang.S("游戏里还是原版（这个位置没有开着的 MOD）");
                     else if (live.Count == 1)
                     {
                         string txt = Lang.F("当前：{0}", live[0].Name);
-                        if (liveEx > 0) txt += Lang.F("　+ {0} 个扩展", liveEx);
                         ModGroup pick = ChosenOf(s);
                         if (pick != null && pick != live[0]) txt += "　（已选：" + pick.Name + "，未启用）";
                         lblCur.Text = txt;
@@ -3407,71 +3300,14 @@ namespace Installer
                     lblFoot.Text = Lang.S("还没有这个位置的 MOD");
                 }
                 else lblFoot.Text = s.Items.Count == 0
-                    ? "这个位置没有换模型的包，只有下面那些扩展"
+                    ? "这个位置还没有换模型的包"
                     : Lang.F("{0} 个模型候选 · 点一个就换掉原来的", s.Items.Count)
                       + (HasSet(s) ? " · 组合装双击可挑部件" : "")
                       + " · 「开关 ⇄」列点一下=把这个 MOD 开 / 关";
 
-                // ---- 下半：可叠加的扩展 ----
-                // 2026-11-20 起不再把 MOD 判成扩展，这一栏永远是空的：连标题一起藏掉，别白占一行。
-                if (s.Extras.Count == 0)
-                {
-                    lvExtra.Visible = false;
-                    lblExtraTitle.Visible = false;
-                }
-                else
-                {
-                    lvExtra.Visible = true;
-                    lblExtraTitle.Text = "可叠加的扩展 · " + s.Extras.Count
-                                       + " 个（不换模型，点一下开 / 关，可多选）";
-                    // 按小类排：第一人称模型 / 音效 / HUD / 特效 / 脚本，组与组之间插一行灰色标题
-                    List<ModGroup> ex = new List<ModGroup>(s.Extras);
-                    ex.Sort(delegate(ModGroup a, ModGroup b)
-                    {
-                        int ra = ExtraCatRank(ExtraCat(a)), rb = ExtraCatRank(ExtraCat(b));
-                        if (ra != rb) return ra.CompareTo(rb);
-                        return string.Compare(a.Name, b.Name, StringComparison.CurrentCulture);
-                    });
-                    string lastCat = null;
-                    foreach (ModGroup g in ex)
-                    {
-                        string cat = ExtraCat(g);
-                        if (cat != lastCat)
-                        {
-                            ListViewItem head = new ListViewItem("── " + cat + " ──");
-                            head.SubItems.Add("");
-                            head.SubItems.Add("");
-                            head.ForeColor = Theme.Ink3;
-                            head.Font = Theme.UISmall;
-                            head.UseItemStyleForSubItems = false;
-                            head.Tag = "header";                 // 不是 MOD：点击进来 as ModGroup 得 null，直接返回
-                            head.StateImageIndex = -1;           // 标题行不显示圆点复选框
-                            lvExtra.Items.Add(head);
-                            lastCat = cat;
-                        }
-                        bool on = mf.CountChecked(g) > 0;
-                        ListViewItem li = new ListViewItem(g.Show);
-                        li.SubItems.Add(KindsOf(g));
-                        li.SubItems.Add(Core.Human(g.Size));
-                        AddStateCells(li, g);
-                        li.StateImageIndex = on ? 1 : 0;
-                        if (on) li.Font = Theme.UIBold;
-                        li.Tag = g;
-                        if (g.IsSet)
-                        {
-                            li.UseItemStyleForSubItems = false;
-                            li.SubItems[1].Text = KindsOf(g) + "·组合装" + g.Parts.Count + "件";
-                            li.SubItems[1].ForeColor = Theme.Info;
-                            li.SubItems[1].Font = Theme.UIBold;
-                            li.ToolTipText = FullNameOf(g) + "\r\n\r\n" + PartsTip(g);
-                        }
-                        else li.ToolTipText = "和上面的模型同时生效，互不影响";
-                        AppendPluginTip(li, g);
-                        lvExtra.Items.Add(li);
-                    }
-                }
+
             }
-            finally { lv.EndUpdate(); lvExtra.EndUpdate(); }
+            finally { lv.EndUpdate(); }
             peekIdx = -2;                 // 列表整批换过了，之前的悬停行号作废
             UpdatePeek(null);             // 先回落到「当前启用的那个」，一进这个位置就有图看
             LayoutSelf();
@@ -4142,7 +3978,7 @@ namespace Installer
             string saved = selKey;
             Slot target = null;
             foreach (Slot s in slots)
-                if (s != null && s.Extras.Count > 0) { target = s; break; }
+                if (s != null && s.Items.Count > 1) { target = s; break; }
             if (target == null) return "库里没有带扩展的位置";
             measurable = true;
 
@@ -4155,7 +3991,7 @@ namespace Installer
             bool both = lv != null && lvExtra != null && lvExtra.Width > 0
                      && headExtra != null && headExtra.Width > 0 && lvExtra.Left >= lv.Right;
             side = both;
-            string r = target.Name + "（" + target.Extras.Count + " 个扩展）：候选 x" + lv.Left + "–" + lv.Right
+            string r = target.Name + "：候选 x" + lv.Left + "–" + lv.Right
                      + "（宽 " + lv.Width + "），扩展 x" + lvExtra.Left + "–" + lvExtra.Right
                      + "（宽 " + lvExtra.Width + "），" + (side ? "并排" : "上下堆叠")
                      + "；动作行 y" + lblFoot.Top + "，列表底 y" + (lv.Top + lv.Height);
@@ -4618,13 +4454,12 @@ namespace Installer
                     // 状态点：绿=选了本体，橙=叠了好几件本体，蓝=只有扩展（音效/只改第一人称模型），灰=空
                     // 「一堆」（地图 / 我的分支）里勾好几个是正常事，别用橙色报警
                     int cnt = owner.CheckedGroups(s);
-                    int ecnt = owner.CheckedExtras(s);
+                    int ecnt = 0;   // 扩展已移除：这里恒 0，下面几处判断自然走不到
                     // 「允许多选」的位置叠着是正常的：用蓝色（信息色）而不是黄色，免得看着像警告
                     bool multiSlot = Core.Cfg.MultiSlots.Contains(s.Key);
                     Color dot = s.Pile ? (cnt > 0 ? Theme.Ok : Theme.TreeBranch)
                               : cnt > 1 ? (multiSlot ? Theme.Info : Theme.Warn)
                               : cnt == 1 ? Theme.Ok
-                              : ecnt > 0 ? Theme.Info
                               : Theme.TreeBranch;
                     using (SolidBrush b = new SolidBrush(dot)) g.FillEllipse(b, bx + 17, y + RowH / 2 - 3, 6, 6);
 
@@ -4632,7 +4467,8 @@ namespace Installer
                     int nameW = 86;
                     // 「步枪」小分类下又有个位置叫「步枪」= 认不出具体型号的那一堆，改个说法免得看着像重复。
                     // 空位不套这条：空位本来就叫得准（手枪 / 近战武器），改成「未分型号」反而看不懂。
-                    string showName = (s.Name == s.Sub && !s.Empty) ? Lang.S("未分型号") : Lang.S(s.Name);
+                    // 平台那一栏只有一个位置，名字本来就叫「平台」：别套「未分型号」，那是给枪种泛称用的。
+                    string showName = (s.Name == s.Sub && !s.Empty && s.Cat != "平台") ? Lang.S("未分型号") : Lang.S(s.Name);
                     // 空位的名字压暗一档：一眼分得出「这里还缺 MOD」和「这里有包没选」
                     TextRenderer.DrawText(g, showName, sel ? Theme.UIBold : Theme.UI,
                         new Rectangle(nx, y, nameW, RowH), s.Empty ? Theme.Ink3 : Theme.Ink,
@@ -4640,7 +4476,6 @@ namespace Installer
                         | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
                     // 「扩」角标：名字后面挂一个蓝底小图标，有可叠扩展的位置不用看数字就能扫出来
-                    if (s.Extras.Count > 0) DrawTag(g, nx + nameW + 4, y);
 
                     ModGroup chosen = owner.ChosenOf(s);
                     string sub = chosen == null ? (ecnt > 0 ? "原版" : "未选") : chosen.Name;
@@ -4652,12 +4487,10 @@ namespace Installer
                     else
                     {
                         if (cnt > 1) sub = "叠了 " + cnt + " 件";
-                        if (ecnt > 0) sub += "  +" + ecnt + " 扩展";
-                        else if (s.Extras.Count > 0) sub += "  ·" + s.Extras.Count + " 扩展待选";
                     }
 
                     // 右端数字：本体候选数；有扩展时「+N」单独用信息蓝 —— 扫一眼，带蓝色 +N 的就是有扩展可叠
-                    string plus = s.Extras.Count > 0 ? "+" + s.Extras.Count : "";
+                    string plus = "";
                     int pw = 0;
                     if (plus.Length > 0)
                     {
@@ -5384,14 +5217,6 @@ namespace Installer
                 else if (s != null)
                 {
                     t = "本体候选 " + s.Items.Count + " 个";
-                    if (s.Extras.Count > 0)
-                    {
-                        string names = "";
-                        foreach (ModGroup g in s.Extras)
-                            names += (names.Length > 0 ? "、" : "") + g.Name;
-                        t += "，可叠扩展 " + s.Extras.Count + " 个（开火音效 / 只改第一人称模型这类，不换本体，可多开）\r\n扩展：" + names;
-                    }
-                    else t += "，没有可叠的扩展";
                     bool hasSet = false;
                     foreach (ModGroup g in s.Items) if (g.IsSet) { hasSet = true; break; }
                     if (hasSet) t += "\r\n候选里有组合装：双击那行可挑部件（材质 / 颜色）";
@@ -6313,8 +6138,7 @@ namespace Installer
                 bySub.TryGetValue(sk, out n);
                 bySub[sk] = n + 1;
                 Core.Log("INFO", "TREE  " + s.Cat + " / " + s.Sub + " / " + s.Name + "  候选 " + s.Items.Count
-                                            + (s.Extras.Count > 0 ? "  扩展 " + ExtrasText(s) : "")
-                                            + (s.Empty ? "  [空位]" : "")
+                                                                        + (s.Empty ? "  [空位]" : "")
                                             + "  已选 " + (treeView.HasChecked(s) ? "是" : "否"));
             }
             foreach (KeyValuePair<string, int> kv in byCat)
@@ -6440,42 +6264,7 @@ namespace Installer
 
             // 扩展（音效 / 只改第一人称模型 / HUD）是叠上去的：自己能开关，换模型时不该被一起关掉
             int exIdx = -1;
-            for (int i = 0; i < slots; i++)
-            {
-                Slot sx = treeView.SlotAt(i);
-                if (sx != null && sx.Extras.Count > 0 && sx.Items.Count > 1) { exIdx = i; break; }
-            }
-            if (exIdx < 0) Core.Log("INFO", "TREE 没有「有扩展且有多个模型」的位置，跳过扩展测试");
-            else
-            {
-                Slot sx = treeView.SlotAt(exIdx);
-                ModGroup eg = sx.Extras[0];
-                treeView.SelectSlot(sx.Key);
-                Application.DoEvents();
-                if (CountChecked(eg) == 0) { treeView.ToggleExtra(eg); Application.DoEvents(); }
-                int on0 = CountChecked(eg);                         // 先确保是开着的
-                treeView.ToggleExtra(eg);
-                Application.DoEvents();
-                int off1 = CountChecked(eg);
-                treeView.ToggleExtra(eg);                           // 再开回来
-                Application.DoEvents();
-                int on1 = CountChecked(eg);
-                Core.Log("INFO", "TREE 扩展「" + eg.Name + "」开关：" + on0 + " → " + off1 + " → " + on1);
-                if (off1 != 0 || on1 != on0) Core.Log("FAIL", "TREE 扩展开关不对");
-
-                treeView.ChooseAt(exIdx, 0);                        // 换一个模型
-                Application.DoEvents();
-                int kept = CountChecked(eg);
-                Core.Log("INFO", "TREE 换模型后扩展「" + eg.Name + "」勾选：" + on1 + " → " + kept
-                                + "（必须不变）");
-                if (kept != on1) Core.Log("FAIL", "TREE 换模型把扩展一起关了");
-
-                treeView.ChooseAt(exIdx, -1);                       // 点「留原版」
-                Application.DoEvents();
-                int kept2 = CountChecked(eg);
-                Core.Log("INFO", "TREE 留原版后扩展还在：" + kept2 + "（必须不变）");
-                if (kept2 != on1) Core.Log("FAIL", "TREE 留原版把扩展一起关了");
-            }
+            // 扩展功能已移除（2026-11-20）：这一段「扩展开关 / 换模型不关扩展」的自测一起删掉。
 
             // 原样放回：按备份逐条还原，不是「再点一下」—— 点一下只会换成另一个候选
             checkedKeys.Clear();
@@ -6492,7 +6281,7 @@ namespace Installer
             for (int i = 0; i < slots; i++)
             {
                 Slot sx = treeView.SlotAt(i);
-                if (sx != null && sx.Extras.Count > 0 && sx.Items.Count > 0) { shot = sx; break; }
+                if (sx != null && sx.Items.Count > 0 && sx.Items.Count > 1) { shot = sx; break; }
             }
             if (shot == null) shot = treeView.SlotAt(0);
             if (shot != null) treeView.SelectSlot(shot.Key);
@@ -6506,14 +6295,6 @@ namespace Installer
             Core.Cfg.Mods = new List<string>(checkedKeys);
             Core.SaveConfig();
             Core.Log("INFO", "FIX 已按方案「" + name + "」恢复勾选，共 " + checkedKeys.Count + " 个文件");
-        }
-
-        /// <summary>自测日志用：把一个位置的扩展名字串起来。</summary>
-        private static string ExtrasText(Slot s)
-        {
-            string t = "";
-            foreach (ModGroup g in s.Extras) t += (t.Length > 0 ? "、" : "") + g.Name;
-            return t;
         }
 
         private int TotalCheckedParts()        {
@@ -6548,7 +6329,7 @@ namespace Installer
                 if (g.Cat == "地图" || g.Cat == "喷漆" || g.Main == null) continue;
                 bool inTree = false;
                 // 扩展也算进树：Extras 里的（音效 / 只改第一人称）不缺位置
-                foreach (Slot s in now) if (s.Items.Contains(g) || s.Extras.Contains(g)) { inTree = true; break; }
+                foreach (Slot s in now) if (s.Items.Contains(g)) { inTree = true; break; }
                 if (!inTree) { if (miss == null) miss = g; }
                 else if (known == null && (g.Main.Subject ?? "").Trim().Length > 0) known = g;
             }
@@ -6562,7 +6343,7 @@ namespace Installer
             treeView.Rebuild();
             bool inSlot = false, catOk = false;
             foreach (Slot s in SlotIndex.Build())
-                if (s.Name == "测试位置" && (s.Items.Contains(t1) || s.Extras.Contains(t1)))
+                if (s.Name == "测试位置" && s.Items.Contains(t1))
                 { inSlot = true; catOk = s.Cat == "测试分类"; }
             Core.Log(inSlot && catOk ? "OK" : "FAIL", "SETCAT 全人工：" + t1.Name + " → 测试分类 / 测试位置，进树=" + inSlot + " 归类=" + catOk);
             Core.Log(t1.Cat == "测试分类" ? "OK" : "FAIL",
@@ -6582,7 +6363,7 @@ namespace Installer
             treeView.Rebuild();
             bool moved = false;
             foreach (Slot s in SlotIndex.Build())
-                if (s.Items.Contains(known) || s.Extras.Contains(known))
+                if (s.Items.Contains(known))
                     moved = s.Cat == "测试分类";   // 位置名可能带后缀，只认「这个 MOD 在哪一类的槽里」
             Core.Log(moved ? "OK" : "FAIL", "SETCAT 只改归类：" + known.Name + " → 测试分类（位置仍是 " + autoName + "）");
 
