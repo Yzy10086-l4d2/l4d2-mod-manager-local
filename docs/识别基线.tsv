@@ -1,61 +1,152 @@
 ﻿路径	大类	小分类	识别结果	键	候选
+@游戏\addons\(15连) 卡提加兰德.vpk	枪械	狙击枪	15发木狙	huntingrifle	
 @游戏\addons\1 Scattershot 散射步枪（SPAS 二代连喷）.vpk	枪械	霰弹枪	木喷		
+@游戏\addons\1 [東方Project]⑨琪露诺⑨主题铁喷.vpk	枪械	霰弹枪	铁喷		
 @游戏\addons\2 Scattershot 散射步枪（SPAS 二代连喷）2.vpk	枪械	霰弹枪	二代连喷	shotgun_spas	
+@游戏\addons\2 [東方Project]⑨琪露诺⑨主题铁喷.vpk	枪械	霰弹枪	铁喷		
 @游戏\addons\3 Scattershot 散射步枪（SPAS 二代连喷）3.vpk	枪械	霰弹枪	一代连喷		
+@游戏\addons\3 [東方Project]⑨琪露诺⑨主题铁喷.vpk	枪械	霰弹枪	木喷	pumpshotgun	
+@游戏\addons\30发自定义模块 米塔屏幕.vpk	杂项	其他			
 @游戏\addons\30连 FN LICC IWS）.vpk	枪械	狙击枪	30发军用狙	sniper_military	
+@游戏\addons\30连 强袭-自由替换军用.vpk	枪械	狙击枪	30发军用狙	sniper_military	
+@游戏\addons\30连 战双帕弥什 时隧之钥—斯托克斯.vpk	枪械	狙击枪	30发军用狙	sniper_military	
+@游戏\addons\30连 星野.vpk	枪械	狙击枪	30发军用狙	sniper_military	
+@游戏\addons\30连【蔚蓝档案Blue Archive】自定义枪械主体 女仆 爱丽丝 主题.vpk	枪械	狙击枪	30发军用狙	sniper_military	
 @游戏\addons\4 Scattershot 散射步枪（SPAS 二代连喷）4.vpk	枪械	狙击枪	鸟狙		
+@游戏\addons\AK47 CODMW22 RPK毛骨悚然替换(RPK Macabre).vpk	枪械	步枪	AK-47	rifle_ak47	
+@游戏\addons\AK47 卡提西亚主题共鸣 -.vpk	枪械	步枪	AK-47	rifle_ak47	
+@游戏\addons\AWP 可畏 主题 CSGO.vpk	枪械	狙击枪	AWP	sniper_awp	
+@游戏\addons\AWP【蔚蓝档案Blue Archive】圣园未花主题.vpk	枪械	狙击枪	AWP	sniper_awp	
 @游戏\addons\Azur Lane 碧蓝航线 R18 肾上腺素 adrenaline.vpk	药品	暂时增益	肾上腺素	adrenaline	
+@游戏\addons\Azur lane 碧蓝航线 R18 喷漆 Spray paint.vpk	喷漆	喷漆			
+@游戏\addons\CODMW2026 .50 GS APEX SD(MAC10).vpk	枪械	冲锋枪	MAC-10	smg_a	
 @游戏\addons\CODMWII Expedite 12 替换 一代连喷.vpk	枪械	霰弹枪	一代连喷	autoshotgun	
 @游戏\addons\Chiffon x Frill Marine Bikini (Nick) [KSEP].vpk	人物	二代	尼克	survivor_gambler	
+@游戏\addons\DOOM Chaingun{M60}.vpk	枪械	特殊武器	M60	m60	
+@游戏\addons\Deep Seek蓝色大肥鱼主题15连狙 替换猎枪.vpk	枪械	狙击枪	15发木狙	huntingrifle	
+@游戏\addons\KSEP 人物静态表情平台 1.4.vpk	杂项	其他			
 @游戏\addons\Kokkorylien 的静态表情平台 (KSEP 1.4).vpk	杂项	其他			
+@游戏\addons\M16 CODMW2022 M4 HELIOTROPE 天芹菜.vpk	枪械	步枪	M16	rifle	
+@游戏\addons\MW22 维克多（MAC-10).vpk	枪械	冲锋枪	MAC-10	smg_a	
 @游戏\addons\Mp5 白虎.vpk	枪械	冲锋枪	MP5	smg_mp5	
+@游戏\addons\SMG改视角.vpk	枪械	冲锋枪	MAC-10	silenced_smg	
 @游戏\addons\Skeeto_Preset_Asset_Pack.vpk	杂项	特效	特效套装		
+@游戏\addons\UZI改视角.vpk	枪械	冲锋枪	UZI	smg	
+@游戏\addons\Uzi开火和换弹音效.vpk	枪械	冲锋枪	UZI	smg	
 @游戏\addons\Vtuber 噶呜·古拉（猫鲨）替换比尔.vpk	人物	一代	比尔	survivor_namvet	
+@游戏\addons\[Apex]三重击 超级引擎(鸟狙).vpk	枪械	狙击枪	鸟狙	sniper_scout	
 @游戏\addons\[MWIII]98K黑色组织 化武威胁 (SCOUT).vpk	枪械	狙击枪	鸟狙	sniper_scout	
-@游戏\addons\eku 水手服 1.4 全生还者.vpk	人物	八人包	幸存者	幸存者	
+@游戏\addons\[MWIII]WSP-9 远古化石 (uzi).vpk	枪械	冲锋枪	UZI	smg	
+@游戏\addons\[碧蓝档案Blue Archive]铁道双子动态弹药堆-Ammo pile.vpk	弹药升级	弹药升级	弹药	ammo	
+@游戏\addons\eku 水手服 附加材质a 兽耳关.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质b 发箍关.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质c 发卡关.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质d 猫咪胡须关.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质e 名牌关.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质f 上衣领带关.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质g 上衣领子关.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质h 上衣关.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质i 裙子关.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质j 尾巴关.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质k 乐福鞋关.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质l 腿部开.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质α1 服装-白浅蓝色.vpk	杂项	其他			
 @游戏\addons\eku 水手服 附加材质α10 服装-黑红色.vpk	杂项	其他			
-@游戏\addons\eku 水手服 预设材质 1.4.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质α2 服装-白黑色.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质α3 服装-白黑粉色.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质α4 服装-白深蓝色（其一）.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质α5 服装-白深蓝色（其二）.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质α6 服装-白灰色.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质α7 服装-浅紫色.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质α8 服装-黑浅蓝色.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质α9 服装-黑粉色.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质β 裤袜-白色.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质γ1 内衣-蓝白色.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质γ2 内衣-蕾丝白色.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质γ3 内衣-蕾丝黑色.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质δ1 乐福鞋-棕色.vpk	杂项	其他			
+@游戏\addons\eku 水手服 附加材质δ2 乐福鞋-白色.vpk	杂项	其他			
 @游戏\addons\m3 bo7龙喷【替换一代连喷】.vpk	枪械	霰弹枪	一代连喷	autoshotgun	
+@游戏\addons\mg42永别（原版速度）.vpk	枪械	特殊武器	M60	m60	
 @游戏\addons\mod测试地图.vpk	特感	特感	Witch	skybox	
+@游戏\addons\sg552 ar15-sot 专武版.vpk	枪械	步枪	sg552	rifle_sg552	
 @游戏\addons\shu_weapon_ram7_starlit_audio.vpk	杂项	音效	音效套装		
+@游戏\addons\shu_weapon_ram7_starlit_m16.vpk	枪械	步枪	M16	rifle	
 @游戏\addons\shu_weapon_ram7_starlit_mac10.vpk	枪械	冲锋枪	MAC-10	silenced_smg	
 @游戏\addons\shu_weapon_uss9.vpk	枪械	冲锋枪	UZI	smg	
 @游戏\addons\shu_weapon_uss9_audio.vpk	杂项	音效	音效套装		
+@游戏\addons\sweet_bunny_sk30.vpk	枪械	狙击枪	30发军用狙	sniper_military	
+@游戏\addons\《三角洲》P90-医生(UZI).vpk	枪械	冲锋枪	UZI	smg	
 @游戏\addons\「skeeto」卡拉彼丘星绘连杀语音 蔷薇骑士击杀图标.vpk	杂项	特效	特效套装		
+@游戏\addons\【CODOL】天命 （SMG_SILENCE）.vpk	枪械	冲锋枪	MAC-10	smg_a	
 @游戏\addons\【Left 4 Dead 2】钉宫妮妮Ninico 替换 帽子(Eills).vpk	人物	二代	埃利斯	survivor_mechanic	
+@游戏\addons\【MWIII】带折叠枪托替换 (Mac-10).vpk	枪械	冲锋枪	MAC-10	smg_a	
 @游戏\addons\【Miku主题】官模木喷替换.vpk	枪械	霰弹枪	木喷	shotgun	
 @游戏\addons\【初音未来Hatsune Miku】替换scar.vpk	枪械	步枪	SCAR-L	desert_rifle	
 @游戏\addons\【卡拉彼丘】C酱联动动态喷漆 果咩内.vpk	喷漆	喷漆			
 @游戏\addons\【改模】【重投】RGB-AK_2025 科幻黑.vpk	枪械	步枪	AK-47	rifle_ak47	
+@游戏\addons\【明日~1.VPK	枪械	狙击枪	15发木狙	huntingrifle	
+@游戏\addons\【明日方舟】蕾缪安 bo7 m34加兰德改件.vpk	枪械	狙击枪	15发木狙	huntingrifle	
 @游戏\addons\【星穹铁道】知更鸟4渐变三角洲-暗星.vpk	近战	近战	电吉他	electric_guitar	
 @游戏\addons\【特感】大肥鱼token替换石头.vpk	杂项	其他	石头	concrete_spawnchunk	
+@游戏\addons\【绝区零】安比·德玛拉主题sg552 codbo6 ames85-瘟疫医生 替换sg552.vpk	枪械	步枪	sg552	rifle_sg552	
+@游戏\addons\【芙宁娜】速帕里46主题替换(uzi).vpk	枪械	冲锋枪	UZI	smg	
+@游戏\addons\【蔚蓝档案Blue Archive】浅黄 睦月（礼服） 主题 =替换scar.vpk	枪械	步枪	SCAR-L	desert_rifle	
 @游戏\addons\【魔女之旅魔女の旅々】伊蕾娜 替换 弗朗西斯.vpk	人物	一代	弗朗西斯	survivor_biker	
 @游戏\addons\不良人唐刀.vpk	近战	近战	武士刀	katana	
 @游戏\addons\二阶堂希罗 替换Zoey.vpk	人物	一代	佐伊	survivor_teenangst	
 @游戏\addons\初音未来AWP Miku AWP (AWP).vpk	枪械	狙击枪	AWP	sniper_awp	
+@游戏\addons\协星调律 肾上腺素.vpk	药品	暂时增益	肾上腺素	adrenaline	
 @游戏\addons\印花风格sg552.vpk	枪械	步枪	sg552	rifle_sg552	
-@游戏\addons\塑水宗.1.vpk	枪械	狙击枪	鸟狙	sniper_scout	
-@游戏\addons\威斯敏斯特.vpk	地图	单张地图			
-@游戏\addons\广西灵山31.vpk	枪械	冲锋枪	UZI	uzi	
+@游戏\addons\周防パトラgame over ak47.vpk	枪械	步枪	AK-47	rifle_ak47	
+@游戏\addons\圣帕特里克节 草地细节贴图.vpk	场景	地面细节			
+@游戏\addons\坦克砸地.vpk	杂项	其他			Tank
+@游戏\addons\夏装来雪铁喷(replace chrome shotgun).vpk	枪械	霰弹枪	木喷		
+@游戏\addons\官模铁喷塞西莉亚（铁喷）.vpk	枪械	霰弹枪	木喷		
 @游戏\addons\弱音 猫耳 贰 替换路易斯 R18.vpk	人物	一代	路易斯	survivor_manager	
+@游戏\addons\彩色血液.vpk	杂项	特效	特效套装		
+@游戏\addons\彩色高亮特感.vpk	特感	特感	通用	c:通用	
 @游戏\addons\彩虹药丸.vpk	药品	暂时增益	止痛药		
+@游戏\addons\战痕印花集自由替换木喷.vpk	枪械	霰弹枪	木喷	shotgun	
 @游戏\addons\提弗洛斯mk4替换m16.vpk	枪械	步枪	M16	rifle	
+@游戏\addons\春日野穹mac-10.vpk	枪械	冲锋枪	MAC-10	smg_a	
+@游戏\addons\暗物质 MAC-10.vpk	枪械	冲锋枪	MAC-10		
 @游戏\addons\替换coach【动态头像】.vpk	人物	二代	教练	survivor_coach	
 @游戏\addons\替换rochelle【动态头像】.vpk	人物	二代	罗谢尔	survivor_producer	
-@游戏\addons\极光魅影替换ak4771.vpk	枪械	步枪	AK-47	rifle_ak47	
 @游戏\addons\格挡声音替换cnm.vpk	杂项	音效	音效套装		
+@游戏\addons\桃夭灼灼sg552.vpk	枪械	步枪	sg552	rifle_sg552	
+@游戏\addons\洛可可mac-10.vpk	枪械	冲锋枪	MAC-10	smg_a	
 @游戏\addons\火光消除手电HUB1.vpk	杂项	特效	特效套装		
 @游戏\addons\火光消除手电HUB2.vpk	杂项	特效	特效套装		
 @游戏\addons\火光消除手电HUB3.vpk	杂项	UI 界面	UI 界面套装		
 @游戏\addons\火花铁喷半官方动作.vpk	枪械	霰弹枪	木喷	pumpshotgun	
+@游戏\addons\物品悬浮.vpk	杂项	其他			
 @游戏\addons\特感圣诞帽.vpk	特感	特感	通用	c:通用	
+@游戏\addons\特感红帽子.vpk	特感	特感	通用	c:通用	
 @游戏\addons\特感高亮.vpk	特感	特感	通用	c:通用	
+@游戏\addons\猫医疗包.vpk	药品	治疗与复活	医疗包	medkit	
+@游戏\addons\生化危机雪景材质包.vpk	特感	特感	Tank		
+@游戏\addons\瞄准镜开镜标记.vpk	杂项	其他			
+@游戏\addons\科技之光SD 替换M16.vpk	枪械	步枪	M16	rifle	
 @游戏\addons\绫地宁宁mg3替换M60.vpk	枪械	特殊武器	M60	m60	
-@游戏\addons\蓝光子弹.vpk	杂项	特效	特效套装		
+@游戏\addons\芹娜sg552.vpk	枪械	步枪	sg552	rifle_sg552	
+@游戏\addons\药丸 [RNG] 15+ Painkiller Pill Bottles.vpk	药品	暂时增益	止痛药		
+@游戏\addons\菲比m16.vpk	枪械	步枪	M16	rifle	
+@游戏\addons\蓝光子弹.vpk	杂项	弹道			
+@游戏\addons\蓝光子弹小型.vpk	杂项	弹道			
+@游戏\addons\蓝色夜光 UZI.vpk	枪械	冲锋枪	UZI		
+@游戏\addons\蓝色大肥鱼(tank).vpk	特感	特感	Tank	hulk	
+@游戏\addons\超绝和平精英死亡音响.vpk	杂项	音效	音效套装		
+@游戏\addons\铁盆Sshu Chrome shotgun.vpk	枪械	霰弹枪	木喷		
 @游戏\addons\铁盆改视角.vpk	枪械	霰弹枪	铁喷	shotgun_chrome	
 @游戏\addons\铃兰scarh ak.vpk	枪械	步枪	AK-47	rifle_ak47	
 @游戏\addons\防线 v1.01.vpk	特感	特感	Witch		
+@游戏\addons\雪纺荷叶边海洋比基尼 尼克 KSEP.vpk	人物	二代	尼克	survivor_gambler	
 @游戏\addons\霓虹天使 neon ange 医疗包 基础材质.vpk	药品	治疗与复活	医疗包		
 @游戏\addons\霓虹天使 neon ange 医疗包 模型主体.vpk	药品	治疗与复活	医疗包	medkit	
 @游戏\addons\霓虹天使 neon ange 医疗包 附加材质α1 颜色-白色.vpk	药品	治疗与复活	医疗包		
+@游戏\addons\霓虹天使 neon ange 医疗包 附加材质α2 颜色-橙色.vpk	药品	治疗与复活	医疗包		
+@游戏\addons\霓虹天使 neon ange 医疗包 附加材质α3 颜色-粉色.vpk	药品	治疗与复活	医疗包		
+@游戏\addons\霓虹天使 neon ange 医疗包 附加材质α4 颜色-金色.vpk	药品	治疗与复活	医疗包		
+@游戏\addons\霓虹天使 neon ange 医疗包 附加材质α5 颜色-绿色.vpk	药品	治疗与复活	医疗包		
 @游戏\addons\（15连） 美游athena.vpk	枪械	狙击枪	15发木狙	huntingrifle	

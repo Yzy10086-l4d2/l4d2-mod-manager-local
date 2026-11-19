@@ -1083,6 +1083,12 @@ namespace Installer
                     if (p.IndexOf("materials/vgui/", StringComparison.Ordinal) >= 0)
                     { cat = "杂项"; sub = "UI 界面"; return true; }
 
+                // 弹道（子弹色 / 曳光）只改 materials/effects/spark，和「枪口火光、手电」不是一回事；
+                // 单独一栏，免得它去跟特效套装抢同一个单选槽。
+                foreach (string p in ps)
+                    if (p.IndexOf("materials/effects/spark", StringComparison.Ordinal) >= 0)
+                    { cat = "杂项"; sub = "弹道"; return true; }
+
                 foreach (string p in ps)
                     if (p.IndexOf("particles/", StringComparison.Ordinal) >= 0
                         || p.IndexOf("materials/effects/", StringComparison.Ordinal) >= 0)

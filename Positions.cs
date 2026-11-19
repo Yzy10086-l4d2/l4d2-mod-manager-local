@@ -63,6 +63,7 @@ namespace Installer
             new Row { Sub = "弹药升级", Name = "爆破弹药包", En = "Explosive Ammo", Aliases = new string[] { "爆破弹药", "高爆" } },
             new Row { Sub = "弹药升级", Name = "激光瞄准", En = "Laser Sight", Aliases = new string[] { "激光" } },
             new Row { Sub = "弹药升级", Name = "弹药", En = "Ammo", Aliases = new string[0] },
+            new Row { Sub = "弹道", Name = "弹道", En = "Bullet Tracer", Aliases = new string[] { "曳光", "曳光弹", "tracer", "trajectory" } },
             new Row { Sub = "治疗与复活", Name = "医疗包", En = "Medkit", Aliases = new string[0] },
             new Row { Sub = "治疗与复活", Name = "电击器", En = "Defibrillator", Aliases = new string[0] },
             new Row { Sub = "暂时增益", Name = "肾上腺素", En = "Adrenaline", Aliases = new string[0] },
