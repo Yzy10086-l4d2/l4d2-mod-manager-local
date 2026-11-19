@@ -97,9 +97,9 @@ namespace Installer
             {"smg_a",            "MAC-10"},        // w_smg_a / v_smg_a 是 MAC-10 的模型，必须先于泛称 smg
             {"smg",              "UZI"},           // 裸 smg = v_smg = UZI
             {"uzi",              "UZI"},
-            {"sniper_military",  "30发连狙"},
-            {"huntingrifle",     "15发连狙"},
-            {"hunting_rifle",    "15发连狙"},
+            {"sniper_military",  "30发军用狙"},
+            {"huntingrifle",     "15发木狙"},
+            {"hunting_rifle",    "15发木狙"},
             {"sniper_scout",     "鸟狙"},
             {"sniper_awp",       "AWP"},
             {"snip_awp",         "AWP"},
@@ -147,7 +147,7 @@ namespace Installer
             {"concrete_spawnchunk", "石头"},
             {"ammo",             "弹药"},
             {"gascan",           "油桶"},
-            {"pills",            "药丸"},
+            {"pills",            "止痛药"},
             // ---- 天空盒：改的是 materials/skybox/*.vmt，没有模型文件，只能靠材质路径认。
             //      "skybox" 只出现在这一个目录，不会误伤别的包。
             {"skybox",           "天空盒"},
@@ -454,6 +454,9 @@ namespace Installer
         private static void FillAddonInfo(Result r, string vpkFile)
         {
             if (r == null) return;
+            // 文件名先当线索：作者常把「（15连）」「30连」写进文件名，标题却是英文
+            // （实测：`（15连） 美游athena.vpk` 标题是 Athena…(huntingrifle)，只认标题就漏了）
+            try { GuessFromText(r, System.IO.Path.GetFileNameWithoutExtension(vpkFile)); } catch { }
             try
             {
                 Vpk.AddonMeta m = Vpk.ReadAddonInfo(vpkFile);
@@ -729,7 +732,7 @@ namespace Installer
             // 文件名带版本号：改了识别规则就把版本 +1，旧缓存自动作废，不会读到过时的结论
             // 7z 补上目录表识别（v2.45）时刻意没有升版本：升一次要让整个库的 rar 重新解一遍
             // （几百个包、每个条目一次 Rar.exe），代价太大。改成在 LoadCache 里只丢掉 7z 的旧结论。
-            get { return Path.Combine(Core.LogDir, "identify-cache-v22.tsv"); }
+            get { return Path.Combine(Core.LogDir, "identify-cache-v23.tsv"); }
         }
 
         private static string PackAssets(string assets)
@@ -811,8 +814,13 @@ namespace Installer
             {"铁喷","铁喷","枪械","霰弹枪"},{"铬制","铁喷","枪械","霰弹枪"},
             {"木喷","木喷","枪械","霰弹枪"},{"泵动","木喷","枪械","霰弹枪"},
             {"连喷","一代连喷","枪械","霰弹枪"},{"spas","二代连喷","枪械","霰弹枪"},
-            {"连狙","30发连狙","枪械","狙击枪"},{"军用狙","30发连狙","枪械","狙击枪"},
-            {"猎鹿","15发连狙","枪械","狙击枪"},{"鸟狙","鸟狙","枪械","狙击枪"},{"侦察步","鸟狙","枪械","狙击枪"},
+            {"连狙","30发军用狙","枪械","狙击枪"},{"军用狙","30发军用狙","枪械","狙击枪"},
+            {"猎鹿","15发木狙","枪械","狙击枪"},{"鸟狙","鸟狙","枪械","狙击枪"},{"侦察步","鸟狙","枪械","狙击枪"},
+            {"15连","15发木狙","枪械","狙击枪"},{"30连","30发军用狙","枪械","狙击枪"},
+            {"15连狙","15发木狙","枪械","狙击枪"},{"30连狙","30发军用狙","枪械","狙击枪"},
+            {"木狙","15发木狙","枪械","狙击枪"},{"军用狙","30发军用狙","枪械","狙击枪"},
+            {"huntingrifle","15发木狙","枪械","狙击枪"},{"hunting rifle","15发木狙","枪械","狙击枪"},
+            {"hunting_rifle","15发木狙","枪械","狙击枪"},{"military sniper","30发军用狙","枪械","狙击枪"},
             {"马格南","马格南","枪械","手枪"},{"沙鹰","马格南","枪械","手枪"},
             {"ak","AK-47","枪械","步枪"},{"m16","M16","枪械","步枪"},{"sg552","sg552","枪械","步枪"},
             {"scar","SCAR-L","枪械","步枪"},{"awp","AWP","枪械","狙击枪"},{"mp5","MP5","枪械","冲锋枪"},
@@ -836,8 +844,8 @@ namespace Installer
             {"m60","M60"},{"machinegun","M60"},
             {"sniper_awp","AWP"},{"awp","AWP"},
             {"sniper_scout","鸟狙"},{"scout","鸟狙"},
-            {"sniper_military","30发连狙"},{"military","30发连狙"},
-            {"huntingrifle","15发连狙"},
+            {"sniper_military","30发军用狙"},{"military","30发军用狙"},
+            {"huntingrifle","15发木狙"},
             {"pumpshotgun","木喷"},{"shotgun_pump","木喷"},
             {"shotgun_chrome","铁喷"},
             {"autoshotgun","一代连喷"},{"shotgun_spas","二代连喷"},{"shotgun","木喷"},
