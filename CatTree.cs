@@ -683,6 +683,12 @@ namespace Installer
         /// </summary>
         public static bool IsExtra(ModGroup g)
         {
+            // 2026-11-20 用户定：不再把 MOD 判断成「扩展」。
+            // 判得准要维护一堆依据（只改第一人称 / 表情骨架 / 音效 HUD 特效脚本……），
+            // 判错一次就是「装进去了却不在该在的那一栏」。现在一律当普通候选，
+            // 要同时开就按位置开「允许多选」——那是个用户说了算的开关，不是程序猜的。
+            return false;
+#pragma warning disable 0162
             if (g == null) return false;
             ModItem m = g.Main;
             if (m == null) return false;
@@ -1704,6 +1710,8 @@ namespace Installer
         /// <summary>这个位置是不是「允许多选」：状态存配置里，按位置 key 记。</summary>
         private static bool IsMulti(Slot s)
         {
+            // 平台是底座：KSEP / VRD / ADS 这类本来就该一起开着，默认就多选，不用用户先去找开关。
+            if (s != null && s.Cat == "平台") return true;
             return s != null && Core.Cfg.MultiSlots.Contains(s.Key);
         }
 
@@ -3306,7 +3314,7 @@ namespace Installer
                 if (chkMulti != null)
                 {
                     applyingMulti = true;
-                    chkMulti.Visible = !s.Pile && !s.Empty;
+                    chkMulti.Visible = !s.Pile && !s.Empty && s.Cat != "平台";   // 平台恒多选，不给这个开关
                     chkMulti.Checked = IsMulti(s);
                     applyingMulti = false;
                 }
@@ -3315,6 +3323,12 @@ namespace Installer
                 {
                     // 空位：不是「忘了选」，是这个位置压根还没有包 —— 话说清楚，别让人以为坏了
                     lblCur.Text = Lang.S("这个位置还没有 MOD · 游戏里就是原版");
+                }
+                else if (s.Cat == "平台")
+                {
+                    lblCur.Text = n == 0
+                        ? "平台可以同时开好几个 · 共 " + s.Items.Count + " 个"
+                        : "已开 " + n + " 个平台 · 多个平台能一起用（它们是底座，不抢位置）";
                 }
                 else if (s.Pile)
                 {
@@ -3399,13 +3413,11 @@ namespace Installer
                       + " · 「开关 ⇄」列点一下=把这个 MOD 开 / 关";
 
                 // ---- 下半：可叠加的扩展 ----
-                lblExtraTitle.Visible = true;
+                // 2026-11-20 起不再把 MOD 判成扩展，这一栏永远是空的：连标题一起藏掉，别白占一行。
                 if (s.Extras.Count == 0)
                 {
                     lvExtra.Visible = false;
-                    // 窄窗口下这一行只有 330px 左右，写太长会被省略号切掉；
-                    // 完整的说法放在悬停提示里（见 lblExtraTitle 的 ToolTip）。
-                    lblExtraTitle.Text = Lang.S("可叠加的扩展：这个位置没有（音效 / 第一人称 / HUD）");
+                    lblExtraTitle.Visible = false;
                 }
                 else
                 {

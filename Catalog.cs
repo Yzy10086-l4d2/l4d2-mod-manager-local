@@ -2090,15 +2090,13 @@ namespace Installer
                 bad += RecogCheck(sharedGroups == 2, "共享附件资源的不同皮肤不误合并");
                 bad += RecogCheck(nameGroups == 1, "无资源证据时保留旧名称兼容兜底");
 
-                bad += RecogCheck(ExtraOf("音效", false), "纯音效可叠加");
-                bad += RecogCheck(ExtraOf("HUD", false), "纯 HUD 可叠加");
-                bad += RecogCheck(ExtraOf("特效", false), "纯特效可叠加");
-                bad += RecogCheck(ExtraOf("脚本", false), "纯脚本可叠加");
-                bad += RecogCheck(ExtraOf("模型", true), "只改第一人称模型可叠加");
-                bad += RecogCheck(!ExtraOf("模型,音效", false), "完整模型即使带音效仍是本体");
-                bad += RecogCheck(!ExtraOf("材质", false), "材质替换不是可叠加扩展");
-                bad += RecogCheck(!ExtraOf("地图", false), "地图不是扩展");
-                bad += RecogCheck(!ExtraOf("", false), "读不出内容时不乱当扩展");
+                // 2026-11-20 定：不再把 MOD 判成「扩展」。以前按 Kinds 猜（音效 / HUD / 特效 / 脚本 /
+                // 只改第一人称）算不算叠加件，猜错就是装进去了却不在该在的那一栏；现在一律当候选。
+                // 要同时开走「允许多选」那个用户开关（平台恒多选）。
+                bad += RecogCheck(!ExtraOf("音效", false) && !ExtraOf("HUD", false) && !ExtraOf("特效", false)
+                    && !ExtraOf("脚本", false) && !ExtraOf("模型", true) && !ExtraOf("模型,音效", false)
+                    && !ExtraOf("材质", false) && !ExtraOf("地图", false) && !ExtraOf("", false),
+                    "任何 kinds 都不再判成扩展");
 
                 // 内容分类：只喂路径表，不碰真 vpk。
                 // 「一把枪的 HUD 图标」必须归到那把枪，不能算整套界面 —— 否则它会跑进
