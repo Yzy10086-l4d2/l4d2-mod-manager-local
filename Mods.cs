@@ -14,15 +14,16 @@ namespace Installer
     {
         private static Regex LineRe = new Regex("^\\s*\"([^\"]+)\"\\s+\"([01])\"\\s*$", RegexOptions.Compiled);
 
-        // ---------- 写之前先问一句：游戏在不在跑 ----------
-        // 游戏退出时会把内存里的开关整份写回 addonlist，我们在它运行期间改的内容会被无声覆盖 ——
-        // 「工具说改好了、重进又是旧状态」多半就是这么来的。所以在唯一的落盘口 WriteKeepEol 上拦一道。
+        // ---------- 写的时候游戏可能在跑 ----------
+        // 游戏自己也会读写 addonlist（加载附加内容时、你在游戏内菜单里改开关时），
+        // 所以我们不再硬拦：大厅里调整开关是正常操作，想改就让它写下去，
+        // 写完回读一次，对不上就说清楚「可能是游戏把它盖回去了」，不装作成功。
 
         /// <summary>自检用：置 true / false 假装游戏在跑或没跑。null = 真去查进程（自检没法真起游戏）。</summary>
         internal static bool? ForceGameRunning;
 
-        /// <summary>上一次写是不是被「游戏正在运行」挡下的。界面靠它决定该说「游戏开着」还是「写失败」。</summary>
-        public static bool LastBlocked { get; private set; }
+        /// <summary>上一次写入时游戏是否正在运行。界面靠它决定要不要提醒「游戏开着，可能被它自己的状态覆盖」。</summary>
+        public static bool LastWroteWhileRunning { get; private set; }
 
         public static bool GameIsRunning()
         {
@@ -216,13 +217,9 @@ namespace Installer
         /// </summary>
         private static bool WriteKeepEol(string path, List<string> lines)
         {
-            LastBlocked = false;
-            if (GameIsRunning())
-            {
-                LastBlocked = true;
-                Core.Log("WARN", "游戏正在运行，addonlist 没写：游戏退出时会把内存里的开关整份写回，这时候写进去会被覆盖。先完全退出游戏（不是最小化）再改。");
-                return false;
-            }
+            LastWroteWhileRunning = GameIsRunning();
+            if (LastWroteWhileRunning)
+                Core.Log("INFO", "游戏正在运行，照写；写完回读确认，如果对不上多半是游戏用自己的内存状态盖回去了");
             string nl = "\r\n", tail = "";
             try
             {
@@ -1348,7 +1345,8 @@ namespace Installer
             if (AddonList.GameIsRunning())
             {
                 MessageBox.Show("游戏正在运行，先完全退出再删。\r\n\r\n"
-                    + "正在被游戏读着的 vpk 删到一半可能留下残文件，删了也不一定真删干净。",
+                    + "正在被游戏读着的 vpk 删到一半容易报错或留下残文件。\r\n"
+                    + "（只改开关不受这个限制，大厅里照样能调）",
                     "游戏正在运行");
                 return;
             }
@@ -1541,18 +1539,39 @@ namespace Installer
                 bool reordered = orderDirty;
                 if (!WriteSwitches(gameRoot, order, changes, reordered))
                 {
-                    // 被拦下只有一种原因：游戏开着。别装作保存成功，也别关窗口。
-                    Core.Log("WARN", "开关没写进去：游戏正在运行");
-                    MessageBox.Show("游戏正在运行，开关没写进去。\r\n\r\n"
-                        + "游戏退出时会把内存里的开关整份写回 addonlist，这时候写进去会被覆盖掉。\r\n"
-                        + "先完全退出游戏（不是最小化），再点一次「写入并关闭」。", "游戏正在运行");
+                    Core.Log("WARN", "开关没写进去");
+                    MessageBox.Show("开关没写进去（addonlist.txt 写不动，可能被占用或权限不足）。\r\n\r\n窗口不会关闭，避免看起来已经保存成功。", "没写进去");
                     return false;
                 }
                 orderDirty = false;
                 int on = 0;
                 foreach (KeyValuePair<string, bool> kv in changes) if (kv.Value) on++;
                 Core.Log("OK", "addonlist 已更新：" + on + " 个启用 / " + (changes.Count - on) + " 个关闭"
-                    + (reordered ? "（顺序按窗口里的排列重写）" : "（顺序没动）"));
+                    + (reordered ? "（顺序按窗口里的排列重写）" : "（顺序没动）")
+                    + (AddonList.LastWroteWhileRunning ? "（写入时游戏正在运行）" : ""));
+
+                // 回读确认：游戏开着的时候写得进去，但它也可能用自己的内存状态盖回来。
+                // 对不上就把话说明白，不给「保存成功」的错觉。
+                int mism = 0;
+                try
+                {
+                    Dictionary<string, bool> after = AddonList.Read(gameRoot);
+                    foreach (KeyValuePair<string, bool> kv in changes)
+                    {
+                        bool v;
+                        if (!after.TryGetValue(kv.Key, out v) || v != kv.Value) mism++;
+                    }
+                }
+                catch { }
+                if (mism > 0)
+                {
+                    Core.Log("WARN", "回读不符 " + mism + " 条" + (AddonList.LastWroteWhileRunning ? "（写入时游戏正在运行）" : ""));
+                    MessageBox.Show("写进去了，但回读有 " + mism + " 条对不上。\r\n\r\n"
+                        + (AddonList.LastWroteWhileRunning
+                            ? "写入时游戏正在运行，它可能用自己的开关状态把文件盖了回去。\r\n退出游戏后再改一次就稳了。"
+                            : "可以试试以管理员身份运行，或先退出占用这个文件的程序。"),
+                        "回读不一致", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
                 return true;
             }
             catch (Exception ex)

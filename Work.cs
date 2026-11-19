@@ -2285,10 +2285,10 @@ namespace Installer
             return all.ToArray();
         }
 
-        // ---------- 自测：addonlist 守门 + 外部改动（不依赖库） ----------
+        // ---------- 自测：addonlist 写入策略 + 外部改动（不依赖库） ----------
         /// <summary>
         /// 干净机器上也要真跑，所以不放在 SelfTestAddons 的库检查后面：
-        ///   1) 游戏在跑 → 拒写，文件一个字节都不变，并打上 LastBlocked 供界面提示
+        ///   1) 游戏在跑时照写（大厅里改开关是正常操作），写完读得回来、并打上 LastWroteWhileRunning
         ///   2) 写完留快照；外部（Steam 更新 / 游戏内改开关）改了能报出来，且同一处只报一次
         /// </summary>
         public static int SelfTestAddonGate()
@@ -2308,24 +2308,30 @@ namespace Installer
                 a["beta.vpk"] = false;
                 if (!AddonList.Write(root, a)) { bad++; Console.WriteLine("[FAIL] 正常写入被拒了"); }
 
-                // 1) 假装游戏在跑 → 拒写、文件不变、打标记
+                // 1) 假装游戏在跑 → 照写，写得进去，且打上「写入时游戏在跑」的标记
                 string before = File.Exists(file) ? File.ReadAllText(file, Encoding.Default) : "";
                 Dictionary<string, bool> b = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
                 b["alpha.vpk"] = false;
                 b["beta.vpk"] = true;
                 AddonList.ForceGameRunning = true;
                 bool wrote = AddonList.Write(root, b);
-                bool flagged = AddonList.LastBlocked;
+                bool flagged = AddonList.LastWroteWhileRunning;
                 AddonList.ForceGameRunning = false;
                 string after = File.Exists(file) ? File.ReadAllText(file, Encoding.Default) : "";
                 Dictionary<string, bool> now = AddonList.Read(root);
-                bool alphaStillOn = now.ContainsKey("alpha.vpk") && now["alpha.vpk"];
+                bool alphaOff = now.ContainsKey("alpha.vpk") && !now["alpha.vpk"];
+                bool betaOn = now.ContainsKey("beta.vpk") && now["beta.vpk"];
 
-                if (wrote) { bad++; Console.WriteLine("[FAIL] 游戏在跑还是把 addonlist 写了"); }
-                if (!flagged) { bad++; Console.WriteLine("[FAIL] 拦下时没打 LastBlocked，界面没法说清原因"); }
-                if (before != after) { bad++; Console.WriteLine("[FAIL] 被拦下之后文件还是变了"); }
-                if (!alphaStillOn) { bad++; Console.WriteLine("[FAIL] 被拦下时把 alpha 的开关改了"); }
-                Console.WriteLine("ADDON 守门：游戏在跑 → 拒写=" + (!wrote) + "、打过标记=" + flagged + "、文件未变=" + (before == after));
+                if (!wrote) { bad++; Console.WriteLine("[FAIL] 游戏在跑时写不进去了（应该照写）"); }
+                if (!flagged) { bad++; Console.WriteLine("[FAIL] 游戏在跑时没打标记，界面就不知道该提醒"); }
+                if (before == after) { bad++; Console.WriteLine("[FAIL] 说要写，文件却没变"); }
+                if (!alphaOff || !betaOn) { bad++; Console.WriteLine("[FAIL] 写进去的值不对：alpha关=" + alphaOff + "，beta开=" + betaOn); }
+                Console.WriteLine("ADDON 写入策略：游戏在跑 → 照写=" + wrote + "、打过标记=" + flagged
+                    + "、文件已变=" + (before != after) + "、回读一致=" + (alphaOff && betaOn));
+
+                // 游戏不在跑时，标记应当归位
+                AddonList.Write(root, b);
+                if (AddonList.LastWroteWhileRunning) { bad++; Console.WriteLine("[FAIL] 游戏没跑却打上了「正在运行」的标记"); }
 
                 // 2) 外部改动：直接改文件（模拟 Steam 更新 / 游戏内开关）
                 StringBuilder sb = new StringBuilder();
