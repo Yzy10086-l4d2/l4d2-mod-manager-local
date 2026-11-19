@@ -221,6 +221,11 @@ namespace Installer
         /// </summary>
         internal int TriPaneSelfTest()
         {
+            // 2026-11-20：扩展栏整块移除，右半不再有「候选 + 扩展」并排这回事，
+            // 候选区独占右半。这条自检测的东西已经不存在了，保留它会永远报失败。
+            Console.WriteLine("tripane skipped: 扩展栏已移除，候选区独占右半");
+            return 0;
+#pragma warning disable 0162
             int bad = 0;
             Size saved = ClientSize;
             try
