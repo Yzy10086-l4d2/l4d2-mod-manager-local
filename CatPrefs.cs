@@ -20,7 +20,7 @@ namespace Installer
     internal static class CatPrefs
     {
         // 默认顺序：树里看得见的四类在前，地图/喷漆不进树、排最后
-        public static readonly string[] DefaultCats = { "枪械", "近战", "投掷物", "弹药升级", "人物", "特感", "药品", "杂项", "地图", "喷漆" };
+        public static readonly string[] DefaultCats = { "枪械", "近战", "投掷物", "弹药升级", "人物", "场景", "特感", "药品", "杂项", "地图", "喷漆" };
 
         private static bool loaded;
         private static int ver;                    // 每次改都 +1，Catalog.Cats 的缓存靠它失效

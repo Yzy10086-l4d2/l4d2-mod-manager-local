@@ -60,7 +60,7 @@ namespace Installer
                 case "二代": return "survivor2";
                 case "特感": return "claw";
                 case "普通感染者": return "horde";
-                case "其他人物": return "person";
+                case "八人包": return "person";
                 case "治疗与复活": return "medkit";
                 case "暂时增益": return "syringe";
                 case "其他药品": return "pills";

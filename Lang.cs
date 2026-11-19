@@ -208,7 +208,7 @@ namespace Installer
             Add(d, "其他杂项", "Other misc");
             Add(d, "一代", "L4D1");
             Add(d, "二代", "L4D2");
-            Add(d, "其他人物", "Other survivors");
+            Add(d, "八人包", "All-survivor pack");
             Add(d, "普通感染者", "Common infected");
             Add(d, "其他", "Other");
             Add(d, "弹药", "Ammo");

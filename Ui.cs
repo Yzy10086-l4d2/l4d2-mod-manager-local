@@ -4349,6 +4349,39 @@ namespace Installer
                         if (seen.Add(part.Name)) off.Add(part);
                     }
             }
+            // 八人包 和 一代 / 二代 是跨位置互斥（用户 2026-11-19 定）：
+            // 八人包换的是全部 8 个生还者，此时再开着某一个人的单独模型只会互相盖；
+            // 反过来勾了某个人，八人包也得关。两边都按「这次没勾的旧东西」处理：只翻开关，文件不动。
+            HashSet<string> pickedSub = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Slot s2 in treeView.Slots)
+            {
+                if (s2.Pile) continue;
+                foreach (ModGroup g2 in s2.Items)
+                {
+                    bool hit2 = false;
+                    foreach (ModItem p2 in g2.Parts) if (selKey.Contains(p2.Key)) { hit2 = true; break; }
+                    if (hit2) { pickedSub.Add(s2.Sub); break; }
+                }
+            }
+            bool pickEight = pickedSub.Contains("八人包");
+            bool pickSolo = pickedSub.Contains("一代") || pickedSub.Contains("二代");
+            if (pickEight || pickSolo)
+            {
+                foreach (Slot s3 in treeView.Slots)
+                {
+                    if (s3.Pile) continue;
+                    bool clash = (pickEight && (s3.Sub == "一代" || s3.Sub == "二代"))
+                              || (pickSolo && s3.Sub == "八人包");
+                    if (!clash) continue;
+                    foreach (ModGroup g3 in s3.Items)
+                        foreach (ModItem p3 in g3.Parts)
+                        {
+                            if (selKey.Contains(p3.Key) || selName.Contains(p3.Name)) continue;
+                            if (!p3.Installed && !p3.FromGame) continue;
+                            if (seen.Add(p3.Name)) off.Add(p3);
+                        }
+                }
+            }
             return off;
         }
 
