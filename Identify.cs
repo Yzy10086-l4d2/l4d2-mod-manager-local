@@ -734,12 +734,48 @@ namespace Installer
         internal static int NewEntries = 0;       // 本次运行新识别的条数：每次启动都很大 = 有东西反复弄脏缓存
         internal static readonly List<string> NewPaths = new List<string>();   // 新识别的路径（前几条），用来抓「每次都重识别」的钉子户
 
+        private static string _ruleFp;
+
+        /// <summary>
+        /// 识别规则指纹：把几张规则表（型号表 / 标题叫法 / 路径关键词 / 位置表）拼起来算哈希。
+        /// 缓存文件名带上它 —— 改任何一条规则指纹就变，旧结论自动作废。
+        /// 以前是手写版本号（v23），改了规则忘了 +1 就等于没改（2026-11-19 真栽过一次）。
+        /// </summary>
+        internal static string RuleFingerprint()
+        {
+            if (_ruleFp != null) return _ruleFp;
+            StringBuilder sb = new StringBuilder();
+            AppendTable(sb, Dict);
+            AppendTable(sb, AliasKeys);
+            AppendTable(sb, GunKeys);
+            AppendTable(sb, ThrowKeys);
+            AppendTable(sb, InfectKeys);
+            foreach (Positions.Row p in Positions.All)
+            {
+                sb.Append(p.Sub).Append('|').Append(p.Name).Append('|').Append(p.En).Append('|');
+                if (p.Aliases != null) foreach (string a in p.Aliases) sb.Append(a).Append(',');
+                sb.Append(';');
+            }
+            using (System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create())
+            {
+                byte[] h = sha.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString()));
+                StringBuilder hex = new StringBuilder();
+                for (int i = 0; i < 6; i++) hex.Append(h[i].ToString("x2"));
+                _ruleFp = hex.ToString();
+            }
+            return _ruleFp;
+        }
+
+        private static void AppendTable(StringBuilder sb, string[,] t)
+        {
+            for (int i = 0; i < t.GetLength(0); i++)
+                for (int j = 0; j < t.GetLength(1); j++) sb.Append(t[i, j]).Append('\u0001');
+        }
+
         private static string CacheFile
         {
-            // 文件名带版本号：改了识别规则就把版本 +1，旧缓存自动作废，不会读到过时的结论
-            // 7z 补上目录表识别（v2.45）时刻意没有升版本：升一次要让整个库的 rar 重新解一遍
-            // （几百个包、每个条目一次 Rar.exe），代价太大。改成在 LoadCache 里只丢掉 7z 的旧结论。
-            get { return Path.Combine(Core.LogDir, "identify-cache-v23.tsv"); }
+            // 文件名带「识别规则指纹」：改规则表或位置表，指纹就变，旧缓存自动作废，不用人记得改版本号。
+            get { return Path.Combine(Core.LogDir, "identify-cache-" + RuleFingerprint() + ".tsv"); }
         }
 
         private static string PackAssets(string assets)
@@ -1269,6 +1305,14 @@ namespace Installer
                 // 以前是「先写 .tmp，删掉旧缓存，再改名」：删完还没改名时被打断（拔 U 盘 / 关窗），
                 // 旧缓存已经没了、新的还没落地，整个库下次要重识别一遍。改成一次换名，旧的要么在、要么被整份替换。
                 Core.WriteAllTextAtomic(CacheFile, sb.ToString(), Encoding.UTF8);
+                // 指纹变了以后旧缓存文件没用了：只留当前这份，别让记录目录攒一堆 recognize-cache
+                try
+                {
+                    foreach (string f in Directory.GetFiles(Core.LogDir, "identify-cache-*.tsv"))
+                        if (!string.Equals(Path.GetFileName(f), Path.GetFileName(CacheFile), StringComparison.OrdinalIgnoreCase))
+                            try { File.Delete(f); } catch { }
+                }
+                catch { }
             }
             catch (Exception ex)
             {
