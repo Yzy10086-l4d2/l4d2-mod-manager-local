@@ -1069,6 +1069,7 @@ namespace Installer
             it.Kinds = ir.Kinds;
             it.Only1P = ir.Only1P;
             it.AnimOnly = ir.AnimOnly;
+            it.Entries = ir.Entries;
             it.AssetPaths = ir.Assets;
             it.AddonTitle = ir.Title;
             it.AddonAuthor = ir.Author;
@@ -2197,15 +2198,19 @@ namespace Installer
         {
             List<string> names = new List<string>();
             int n = 0;
+            int ws = 0;
             foreach (ModItem it in Core.ModList)
             {
                 if (it.IsArchive) continue;
+                // Steam 创意工坊的 .vpk 是加密包装，任何工具都读不出目录表 —— 这是格式，不是坏包
+                if ((it.RelPath ?? "").IndexOf("workshop", StringComparison.OrdinalIgnoreCase) >= 0) { ws++; continue; }
                 if (it.Entries > 0) continue;
                 if (it.Name == null || !it.Name.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase)) continue;
                 n++;
                 if (names.Count < 5) names.Add(it.Name);
             }
             BrokenCount = n;
+            if (ws > 0) Core.Log("INFO", "有 " + ws + " 个创意工坊包读不出内容（Steam 加密格式，只按文件名认）");
             if (n == 0) return;
             Core.Log("WARN", "有 " + n + " 个 vpk 读不出内容（目录表 0 条，多半是下载不完整）："
                 + string.Join("、", names.ToArray()) + (n > names.Count ? " 等" : ""));
