@@ -54,7 +54,7 @@ namespace Installer
 
             Text = Lang.S("设置 · L4D2 MOD 管理工具");
             Theme.UseDpi(this);
-            ClientSize = Dpi.Sz(620, 726);
+            ClientSize = Dpi.Sz(620, 728);
             Font = Theme.UI;
             BackColor = Theme.Bg;
             ForeColor = Theme.Ink;
@@ -144,7 +144,7 @@ namespace Installer
 
         private void BuildGeneral()
         {
-            Card s = AddGroup(Lang.S("常规"), 56, 246);
+            Card s = AddGroup(Lang.S("常规"), 56, 248);
 
             RowTitle(s, Lang.S("减少动态效果"), 16, 7, 220);
             RowNote(s, Lang.S("关掉按钮与状态切换的过渡，低配机器更轻快"), 16, 25, 320);
@@ -227,7 +227,7 @@ namespace Installer
         /// </summary>
         private void BuildGameDir()
         {
-            Card s = AddGroup(Lang.S("游戏目录"), 346, 104);
+            Card s = AddGroup(Lang.S("游戏目录"), 344, 104);
 
             RowTitle(s, Lang.S("游戏根目录"), 16, 6, 200);
 
@@ -258,7 +258,7 @@ namespace Installer
 
         private void BuildDiagnostics()
         {
-            Card s = AddGroup(Lang.S("位置与诊断"), 506, 118);
+            Card s = AddGroup(Lang.S("位置与诊断"), 504, 120);
 
             lblCfg = new Label();
             lblCfg.SetBounds(16, 8, 548, 16);
@@ -336,13 +336,13 @@ namespace Installer
             FlatButton cancel = new FlatButton();
             cancel.Text = Lang.S("取消");
             cancel.Plain = true;
-            cancel.SetBounds(408, 674, 88, 32);
+            cancel.SetBounds(408, 672, 88, 32);
             cancel.DialogResult = DialogResult.Cancel;
             Controls.Add(cancel);
 
             btnSave = new FlatButton();
             btnSave.Text = Lang.S("保存设置");
-            btnSave.SetBounds(504, 674, 96, 32);
+            btnSave.SetBounds(504, 672, 96, 32);
             btnSave.Primary = true;
             btnSave.DialogResult = DialogResult.OK;
             // 校验放进点击里：以前是「先关窗、再在 ShowSettings 里发现路径不对」，
