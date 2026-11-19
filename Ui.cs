@@ -4283,63 +4283,101 @@ namespace Installer
         /// </summary>
         /// <summary>
         /// 八人包 ↔ 一代 / 二代：开关级互斥（本地版没有「安装」，只有 addonlist 的 1/0）。
-        /// 这次要打开八人包，就把一/二代里开着的压成 0；反过来开了某个人，八人包的压成 0。
-        /// 只改开关值，不碰文件；两边同一次都被打开时以八人包为准。
+        /// 打开八人包 → 人物里其他全关（只碰一代 / 二代，枪械 / 特感 / 场景一律不动）。
+        /// 反向不是「开一个人就关八人包」，而要一代 4 个 + 二代 4 个位置都被单独 MOD 占满才关；
+        /// 没占满时八人包留着，可以「八人包打底 + 单个人覆盖」。只改开关值，不碰文件。
         /// </summary>
         private Dictionary<string, bool> EnforceEightPack(Dictionary<string, bool> st)
         {
             if (treeView == null) return st;
-            Dictionary<string, string> map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (Slot s in treeView.Slots)
-            {
-                if (s.Pile) continue;
-                foreach (ModGroup g in s.Items)
-                    foreach (ModItem p in g.Parts)
-                        if (!string.IsNullOrEmpty(p.Name)) map[p.Name] = s.Sub;
-            }
+            Dictionary<string, string> nameToSub = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, string> nameToPos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            List<string> soloPos = new List<string>();
             Dictionary<string, bool> on = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (Slot s in treeView.Slots)
             {
                 if (s.Pile) continue;
+                bool solo = s.Sub == "一代" || s.Sub == "二代";
+                if (solo) soloPos.Add(s.Key);      // 八个单独人物的位置，全占满才关八人包
                 foreach (ModGroup g in s.Items)
                     foreach (ModItem p in g.Parts)
-                        if (!string.IsNullOrEmpty(p.Name) && p.AddonOn) on[p.Name] = true;
+                    {
+                        if (string.IsNullOrEmpty(p.Name)) continue;
+                        nameToSub[p.Name] = s.Sub;
+                        if (solo) nameToPos[p.Name] = s.Key;
+                        if (p.AddonOn) on[p.Name] = true;
+                    }
             }
-            return ApplyEightPackRule(st, map, delegate(string n) { bool v; return on.TryGetValue(n, out v) && v; });
+            return ApplyEightPackRule(st, nameToSub, nameToPos, soloPos,
+                delegate(string n) { bool v; return on.TryGetValue(n, out v) && v; });
         }
 
         /// <summary>
         /// 八人包 ↔ 一代 / 二代：纯规则，不碰界面（自检直接喂假数据）。
         /// nameToSub：文件名 → 小分类（一代 / 二代 / 八人包 …）。
+        /// nameToPos：文件名 → 位置 Key，只收一代 / 二代。
+        /// soloPos：一代 4 + 二代 4 这 8 个位置的 Key —— 全被单独 MOD 占满才关八人包。
         /// </summary>
-        internal static Dictionary<string, bool> ApplyEightPackRule(Dictionary<string, bool> st, Dictionary<string, string> nameToSub, Func<string, bool> isOn)
+        internal static Dictionary<string, bool> ApplyEightPackRule(Dictionary<string, bool> st,
+            Dictionary<string, string> nameToSub, Dictionary<string, string> nameToPos,
+            IList<string> soloPos, Func<string, bool> isOn)
         {
             if (st == null || nameToSub == null) return st;
-            bool eightOn = false, soloOn = false;
+
+            // 一、这批里正在打开八人包 → 人物里其他全关。
+            //     只认「这次点开了」：点关闭八人包不会反过来去开别人。
+            bool eightTurningOn = false;
             foreach (KeyValuePair<string, bool> kv in st)
             {
                 if (!kv.Value) continue;
                 string sub;
-                if (!nameToSub.TryGetValue(kv.Key, out sub)) continue;
-                if (sub == "八人包") eightOn = true;
-                else if (sub == "一代" || sub == "二代") soloOn = true;
+                if (nameToSub.TryGetValue(kv.Key, out sub) && sub == "八人包") { eightTurningOn = true; break; }
             }
-            if (!eightOn && !soloOn) return st;
+            if (eightTurningOn)
+            {
+                int flipped = 0;
+                foreach (KeyValuePair<string, string> kv in nameToSub)
+                {
+                    if (kv.Value != "一代" && kv.Value != "二代") continue;
+                    bool cur;
+                    if (st.TryGetValue(kv.Key, out cur))
+                    {
+                        if (!cur) continue;      // 已经是关的，不用再翻
+                        st[kv.Key] = false; flipped++; continue;
+                    }
+                    // 这次没点名、但现在是开着的：也要压成关（互斥的另一半常不在这批里）
+                    if (isOn != null && isOn(kv.Key)) { st[kv.Key] = false; flipped++; }
+                }
+                if (flipped > 0) Core.Log("INFO", "八人包开着 → 关掉人物里其他 " + flipped + " 个开关（互斥）");
+                return st;
+            }
 
-            int flipped = 0;
+            // 二、反向：一代 4 + 二代 4 全被单独人物占满，才关八人包。
+            //     只开一两个人时八人包留着 —— 那是「打底 + 单人覆盖」，不是冲突。
+            if (nameToPos == null || soloPos == null || soloPos.Count == 0) return st;
+            Dictionary<string, bool> covered = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, string> kv in nameToPos)
+            {
+                bool v, cur = false;
+                if (st.TryGetValue(kv.Key, out v)) cur = v;
+                else if (isOn != null && isOn(kv.Key)) cur = true;
+                if (cur) covered[kv.Value] = true;
+            }
+            foreach (string pos in soloPos) if (!covered.ContainsKey(pos)) return st;      // 还有位置空着
+
+            int off = 0;
             foreach (KeyValuePair<string, string> kv in nameToSub)
             {
-                string nm = kv.Key, sub = kv.Value;
-                bool clash = eightOn ? (sub == "一代" || sub == "二代") : (sub == "八人包");
-                if (!clash) continue;
+                if (kv.Value != "八人包") continue;
                 bool cur;
-                if (st.TryGetValue(nm, out cur) && !cur) continue;      // 已经是关的，不用再翻
-                if (st.TryGetValue(nm, out cur) && cur) { st[nm] = false; flipped++; continue; }
-                // 这次没点名、但现在是开着的：也要压成关（互斥的另一半常不在这批里）
-                if (isOn != null && isOn(nm)) { st[nm] = false; flipped++; }
+                if (st.TryGetValue(kv.Key, out cur))
+                {
+                    if (!cur) continue;
+                    st[kv.Key] = false; off++; continue;
+                }
+                if (isOn != null && isOn(kv.Key)) { st[kv.Key] = false; off++; }
             }
-            if (flipped > 0)
-                Core.Log("INFO", (eightOn ? "八人包开着" : "一条人物开着") + " → 关掉对面 " + flipped + " 个开关（互斥）");
+            if (off > 0) Core.Log("INFO", "一代+二代 8 个位置全占满 → 关掉八人包 " + off + " 个开关（互斥）");
             return st;
         }
 
