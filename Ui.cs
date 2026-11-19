@@ -44,6 +44,8 @@ namespace Installer
         private Label lblStatus, lblConflict;
         // 底栏总高（设计值）：按钮行 36 + 间距 12 + 状态栏 20 + 触底 8。
         // 原来是 116，按钮下面空出 68px，「下巴」明显偏厚；收到 76 之后按钮行和状态栏只隔 12px。
+        // 底部动作区高度。曾经试过「没有一键还原就收到 56」——实测按钮被挤到窗口边缘、
+        // 状态字被切掉，比原来更糟，已回退（2026-11-19）。要动这块得整块重排，不是改一个数。
         private const int BottomBarH = 76;
         // 方案标记：当前下拉里那套方案包含哪些文件，用来在列表里一眼看出「这条属不属于方案」
         private Label lblScheme;
@@ -3454,9 +3456,24 @@ namespace Installer
             return sb.ToString();
         }
 
+        /// <summary>底部那排（状态条 / 进度条 / 停止 / 替换此方案）钉在客户区底边，按物理高度算，不信锚点。</summary>
+        private void PinBottomRow(int physH)
+        {
+            int top = physH - Dpi.S(BottomBarH);
+            if (btnInstall != null) btnInstall.Top = top;
+            if (btnRestore != null) btnRestore.Top = top;
+            if (bar != null) bar.Top = top + Dpi.S(12);
+            if (btnCancel != null) btnCancel.Top = top + Dpi.S(6);
+            if (lblStatus != null) lblStatus.Top = physH - Dpi.S(28);
+        }
+
         private void ApplyResponsive()
         {
             int physW = ClientSize.Width, physH = ClientSize.Height;
+            // 底部那排先无条件钉到客户区底边：以前这段在下面的 early-return 之后，
+            // 尺寸判定「没变」就整段跳过，而锚点已经先把按钮挪到了旧位置 ——
+            // 结果底下空出一大块、按钮还贴着窗口外面（2026-11-19 实测 1431×737 整排掉下去）。
+            PinBottomRow(physH);
             if (physW == lastRespW && physH == lastRespH) return;
             lastRespW = physW;
             lastRespH = physH;
