@@ -887,13 +887,28 @@ namespace Installer
                 { cat = "地图"; sub = "单张地图"; return true; }
 
             // 2) 人物：幸存者模型
-            foreach (string p in ps)
+            //    按「这个包一共换了几个人」判，而不是遇到第一个就收：Eku 水手服「全生还者」
+            //    那种包里有 8 个人的模型，只挑第一个会把整包算成「佐伊」（用户 2026-11-19 指出）。
+            //    ≥3 人 → 八人包位置；1 人 → 那个人；2 人 → 其他（双人包不该占八人包）。
             {
-                if (p.IndexOf("survivor_", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                for (int i = 0; i < CharKeys.GetLength(0); i++)
-                    if (p.IndexOf(CharKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
-                    { cat = "人物"; sub = CharKeys[i, 1]; return true; }
-                cat = "人物"; sub = "其他"; return true;
+                HashSet<string> who = new HashSet<string>(StringComparer.Ordinal);
+                bool anySurv = false;
+                foreach (string p in ps)
+                {
+                    if (p.IndexOf("survivor_", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    anySurv = true;
+                    for (int i = 0; i < CharKeys.GetLength(0); i++)
+                        if (p.IndexOf(CharKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
+                        { if (CharKeys[i, 1] != "幸存者") who.Add(CharKeys[i, 1]); break; }
+                }
+                if (anySurv)
+                {
+                    cat = "人物";
+                    if (who.Count == 1) foreach (string w in who) sub = w;
+                    else if (who.Count >= 3) sub = "幸存者";
+                    else sub = "其他";
+                    return true;
+                }
             }
 
             // 2.5) 作用于多个特感（或只改材质、没有模型）的包 → 「特感 / 通用」。
