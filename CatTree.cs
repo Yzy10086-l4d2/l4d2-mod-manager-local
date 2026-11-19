@@ -3699,17 +3699,26 @@ namespace Installer
             p.MouseMove += delegate(object s, MouseEventArgs e2)
             {
                 if (!p.Capture || splitMode == 0) return;
+                // 基准必须固定成「按下那一刻的宽度」：以前这里读的是已经被改过的 treeWpx/detailWpx，
+                // 每动一次就把累计位移再加一遍 —— 越拖越快，轻轻一划就冲过头。
                 int dx = Cursor.Position.X - splitStartCursor;
+                // 按 8px 一档推进：鼠标一像素的抖动不再触发整窗重排，拖起来稳，重排次数也少八倍。
+                dx = (int)Math.Round(dx / 8.0) * 8;
+                int v;
                 if (splitMode == 'A')
                 {
-                    int v = Math.Max(Dpi.S(200), Math.Min(ClientSize.Width / 2, (treeWpx > 0 ? treeWpx : curTreeW) + dx));
+                    v = Math.Max(Dpi.S(200), Math.Min(ClientSize.Width / 2, splitStartVal + dx));
+                    v = (v / 8) * 8;
+                    if (v == treeWpx) return;
                     treeWpx = v;
                 }
                 else
                 {
-                    int cur = detailWpx > 0 ? detailWpx : curDetailW;
-                    int v = Math.Max(Dpi.S(260), cur - dx);
-                    detailWpx = Math.Min(v, Math.Max(Dpi.S(300), ClientSize.Width - curTreeW - Dpi.S(360)));
+                    v = Math.Max(Dpi.S(260), splitStartVal - dx);
+                    v = Math.Min(v, Math.Max(Dpi.S(300), ClientSize.Width - curTreeW - Dpi.S(360)));
+                    v = (v / 8) * 8;
+                    if (v == detailWpx) return;
+                    detailWpx = v;
                 }
                 LayoutSelf();
             };
