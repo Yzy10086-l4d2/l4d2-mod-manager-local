@@ -2,7 +2,9 @@
 
 > **状态：研发中** —— 本仓库（本地版）与便携版仓库 l4d2-mod-manager-portable 均处于研发阶段，功能持续迭代中，欢迎反馈问题与建议。
 
-树状管理**本机**已装的求生之路 2 MOD：一眼看清每个位置当前用的是哪个，随时整套切换风格；不复制、不搬动 vpk，唯一的写操作是 `left4dead2\addonlist.txt` 里的 1/0。
+树状管理**本机**已装的求生之路 2 MOD：一眼看清每个位置当前用的是哪个，随时整套切换风格。
+**不复制、不改名、不搬动任何已有 vpk** —— 除了你自己点的「下载」和「删除」，程序不碰你的文件；
+换风格只写 `left4dead2\addonlist.txt` 里的 1/0，进游戏就生效。
 
 > 跟**便携版**（另一个仓库）同一套界面与识别引擎。区别只有一条：便携版从 U 盘库复制文件进游戏，本地版直接管游戏目录里现有的东西。
 
@@ -11,8 +13,10 @@
 - **树状位置**：枪械 / 近战 / 投掷物 / 人物 / 特感 / 药品 / 杂项 / 地图 / 喷漆，每个位置当前装了哪个一目了然
 - **多风格切换**：同一位置多套候选，点一下换；整套替换的三栏（UI 界面 / 特效 / 音效）按单选处理
 - **识别归类**：只读 vpk 目录表，判断改的是枪、人物、HUD 图标还是音效，认不出就明确放「未归类」，不硬猜
+- **封面预览**：读 vpk 包内的 `addonimage`（jpg / png / gif），没有就取工坊同 ID 配图，16:9 缩略图缓存
 - **创意工坊**：浏览、下载、自动按游戏内标题改名，落地到 `left4dead2\addons`
 - **详情与翻译**：MOD 介绍页 + 中文翻译（走 MyMemory 公共接口，不需要密钥；微软 Edge 那个端点 2026-11 已下线）
+- **启动项清单**：18 条按本机游戏 exe/dll 实测过是否有效，按「推荐 / 可选 / 多余 / 别加」分组，**只复制、不替你改 Steam 配置**
 - **开关即生效**：写 addonlist，下次进游戏就是改后的样子
 
 ## 与便携版的差别
@@ -22,9 +26,23 @@
 | 扫描 U 盘主库、从库复制、装机流程 | 没有 |
 | 组件包（L4N / Skeeto / dxvk / MQCam / 素材包） | 没有（本地版不复制任何东西进来） |
 | 回收 MOD、装机清单还原 | 没有 |
-| 其余（树、识别、工坊、翻译、多风格、开关） | 一样 |
+| 写 Steam 启动项（`localconfig.vdf`） | 没有（v0.5.0 起改为只读推荐清单 + 复制） |
+| 其余（树、识别、封面、工坊、翻译、多风格、开关） | 一样 |
 
-详细用法见 [docs/使用说明.md](docs/使用说明.md)。
+详细用法见 [docs/使用说明.md](docs/使用说明.md)，逐版改动见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 本工具会改哪些文件
+
+「不搬动 vpk」的准确含义是：**除了下面这几处，程序不写任何别人的文件。**
+
+| 位置 | 什么时候写 | 写什么 |
+|---|---|---|
+| `left4dead2\addonlist.txt` | 每次换风格 / 开关 | 只改 `{ }` 里对应条目的 `1` / `0`；文件头和认不出的行原样保留 |
+| `left4dead2\addons\*.vpk` | 你主动「下载」时 | 新建文件（不覆盖同名已有文件） |
+| `left4dead2\addons\*.vpk` | 你主动「删除」时 | 真删，不进回收站 |
+| exe 旁边的配置 / `_本地版记录\` | 平时 | 候选项、封面缩略图缓存、日志、自检截图 |
+
+不写注册表，不写 Steam 的 `localconfig.vdf`，不动创意工坊目录里已订阅的文件。
 
 ## 环境与编译
 
@@ -39,12 +57,17 @@ build.bat
 ## 自检
 
 ```
-L4D2LocalSetup.exe --treeself --layoutself --addonself --workshopself ...
+L4D2LocalSetup.exe --treeself --layoutself --recogself --addonself --dupself \
+                   --safeself --workshopself --launchself --gallerself --deskself --imgself
 ```
 
 加环境变量 `L4D2_LOG_CONSOLE=1` 可以把日志同时打到控制台，排查用。
+CI（`.github/workflows/build.yml`）在 push 到 main 时跑前 10 组，任一组非 0 直接 fail。
 
 ## 已验证（2026-11-15，真实网络 + 真实游戏目录）
+
+> 下表是 **v0.4.8 及之前**的实测记录。v0.5.0 的界面重做（三列布局、可拖分栏、封面预览、
+> 启动项窗口）尚未重新逐项验证，发版前应重跑一遍自检并更新此表。
 
 | 能力 | 结果 |
 |---|---|
@@ -55,16 +78,17 @@ L4D2LocalSetup.exe --treeself --layoutself --addonself --workshopself ...
 | 工坊详情 | 标题/大小/直链/正文清洗（1744 字 → 1280 字） |
 | 中文翻译 | MyMemory 分块翻，实测输出 471 字中文 |
 | 下载 + 自动改名 | 9,391,149 B 下载完整、VPK 魔数对、按 addoninfo 改名 |
-| 离线自检 | 11 组全绿（treeself / layoutself / recogself / addonself / dupself / safeself / workshopself / launchself / tweakself / gallerself / deskself） |
+| 离线自检 | 11 组全绿（treeself / layoutself / recogself / addonself / dupself / safeself / workshopself / launchself / gallerself / deskself / imgself） |
 
 ## 已知限制
 
 - 翻译走 MyMemory 公共接口，匿名每天约 5000 字符；长文只翻前面若干段，其余提示「看原文」
 - 工坊里「文件夹式」的物品没有直链，只能走 Steam 客户端订阅
 - 组件包（L4N / Skeeto / dxvk）不提供——那是便携版的事
+- 只写 `addonlist.txt` 的机制决定了：**Steam 更新 / 你在游戏内改开关之后，程序里的状态可能与实际不一致**，遇到「明明开了却没生效」请先重扫一次
+- 不做 mod 内部裁剪（那是 NekoVpk 那类工具的活），也不解决 precache 上限导致的闪退
 
 ## 版本
 
-- 0.3.2 — 修翻译缓存把报错文案当译文存下来的问题
-- 0.3.1 — 接 MyMemory 兜底
-- 0.3.0 — 首个可下载版本：无模式切换、无组件包、无主库
+见 [CHANGELOG.md](CHANGELOG.md)。
+v0.3.0 ~ v0.4.8 的改动见 [Releases](https://github.com/Yzy10086-l4d2/l4d2-mod-manager-local/releases)。
