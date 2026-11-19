@@ -3,6 +3,30 @@
 > 本文件从 v0.5.0 起维护。更早的版本（v0.3.0 ~ v0.4.8）请见
 > [Releases](https://github.com/Yzy10086-l4d2/l4d2-mod-manager-local/releases)。
 
+## v0.5.1
+
+### 行为变更
+
+- **游戏运行时不再改 `addonlist.txt`**：游戏退出时会把内存里的开关整份写回，运行期间改的会被无声覆盖
+  （「工具说改好了、重进又是旧状态」多来自这里）。现在会弹一句「游戏正在运行」并说清原因，
+  覆盖：位置候选的「开启」列、已装 MOD 窗口的写入、安装后写开关。
+- **批量删除 MOD 前也先看游戏在不在跑**：正在被游戏读着的 vpk 删到一半可能留下残文件。
+- `--addonself` 在「库里不到 3 个 MOD」的跳过分支不再吞掉已累计的失败（以前守门组真挂了 CI 也绿）。
+
+### 新功能
+
+- **外部改动检测**：每次写完 addonlist 存一份快照（`_本地版记录\addonlist.snapshot`，按 addonlist 绝对路径认）。
+  切回窗口重读时比一次：Steam 更新订阅把 MOD 重新置为启用、或玩家在游戏里改过开关，
+  状态栏会报一句「检测到 addonlist 被外部改过：开启 N 个 / 关闭 N 个 / 新增 N 个 / 消失 N 个（举例三个）」，
+  报过就刷新快照，同一处只报一次。
+- **自检新增一组不依赖库的断言**（`SelfTestAddonGate`，干净机器/CI 上也会真跑）：
+  假装游戏在跑 → 拒写、文件一个字节不变、打上 `LastBlocked`；外部改一行 → 报得出来且只报一次。
+
+### 内部
+
+- `AddonList.Write` / `WriteOrdered` 返回成败，`Remove` 被拦下返回 0；新增 `GameIsRunning()`、
+  `LastBlocked`、`ReadAll()`、`CheckExternal()`、`ForceGameRunning`（自检用）。
+
 ## v0.5.0
 
 > **有行为变更，先读「行为变更」这一节。**
