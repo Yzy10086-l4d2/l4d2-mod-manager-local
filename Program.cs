@@ -108,6 +108,7 @@ namespace Installer
             string plugTry = null;
             bool layoutSelf = false;
             bool importSelf = false;
+            bool exclSelf = false;
             bool imgSelf = false;
             bool noDpi = false;
             string vpkFile = null;
@@ -182,6 +183,7 @@ namespace Installer
                 else if (string.Equals(a, "--nodpi", StringComparison.OrdinalIgnoreCase)) noDpi = true;
                 else if (string.Equals(a, "--layoutself", StringComparison.OrdinalIgnoreCase)) layoutSelf = true;
                 else if (string.Equals(a, "--importself", StringComparison.OrdinalIgnoreCase)) importSelf = true;
+                else if (string.Equals(a, "--excluself", StringComparison.OrdinalIgnoreCase)) exclSelf = true;
                 else if (string.Equals(a, "--imgself", StringComparison.OrdinalIgnoreCase)) imgSelf = true;
                 else if (a.StartsWith("--vpk=", StringComparison.OrdinalIgnoreCase)) vpkFile = a.Substring(6).Trim('"');
 
@@ -281,6 +283,64 @@ namespace Installer
                 Catalog.ImportTo(new string[] { zip, lone }, dst, out added, out skipped, out errs);
                 if (added != 0 || skipped != 3) { bad++; Console.WriteLine("IMPORTSELF 重复导入应全跳过，实际 added=" + added + " skipped=" + skipped); }
                 Console.WriteLine("importself failures = " + bad);
+                return bad == 0 ? 0 : 1;
+            }
+            if (exclSelf)
+            {
+                // 八人包 ↔ 一代 / 二代 互斥：纯规则自检，不碰界面、不写 addonlist。
+                int bad = 0;
+                System.Collections.Generic.Dictionary<string, string> sub =
+                    new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                sub["八人.vpk"] = "八人包";
+                sub["比尔.vpk"] = "一代";
+                sub["佐伊.vpk"] = "一代";
+                sub["教练.vpk"] = "二代";
+                sub["枪.vpk"] = "步枪";
+                sub["双人.vpk"] = "其他";
+                System.Collections.Generic.Dictionary<string, bool> on =
+                    new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                on["比尔.vpk"] = true; on["佐伊.vpk"] = true; on["教练.vpk"] = true;
+                System.Func<string, bool> isOn = delegate(string n) { bool v; return on.TryGetValue(n, out v) && v; };
+
+                // 1) 打开八人包 → 一/二代里开着的全部压成关，别的类不动
+                System.Collections.Generic.Dictionary<string, bool> st1 =
+                    new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                st1["八人.vpk"] = true;
+                MainForm.ApplyEightPackRule(st1, sub, isOn);
+                if (!(st1.ContainsKey("比尔.vpk") && !st1["比尔.vpk"])) { bad++; Console.WriteLine("EXCL 八人包没关掉比尔"); }
+                if (!(st1.ContainsKey("教练.vpk") && !st1["教练.vpk"])) { bad++; Console.WriteLine("EXCL 八人包没关掉教练"); }
+                if (st1.ContainsKey("枪.vpk")) { bad++; Console.WriteLine("EXCL 误动了非人物"); }
+
+                // 2) 打开某个人 → 开着的八人包压成关
+                System.Collections.Generic.Dictionary<string, bool> on2 =
+                    new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                on2["八人.vpk"] = true;
+                System.Func<string, bool> isOn2 = delegate(string n) { bool v; return on2.TryGetValue(n, out v) && v; };
+                System.Collections.Generic.Dictionary<string, bool> st2 =
+                    new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                st2["比尔.vpk"] = true;
+                MainForm.ApplyEightPackRule(st2, sub, isOn2);
+                if (!(st2.ContainsKey("八人.vpk") && !st2["八人.vpk"])) { bad++; Console.WriteLine("EXCL 单人没关掉八人包"); }
+
+                // 3) 同阵营（一代 ↔ 一代）不互斥
+                System.Collections.Generic.Dictionary<string, bool> on3 =
+                    new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                on3["佐伊.vpk"] = true;
+                System.Func<string, bool> isOn3 = delegate(string n) { bool v; return on3.TryGetValue(n, out v) && v; };
+                System.Collections.Generic.Dictionary<string, bool> st3 =
+                    new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                st3["比尔.vpk"] = true;
+                MainForm.ApplyEightPackRule(st3, sub, isOn3);
+                if (st3.ContainsKey("佐伊.vpk")) { bad++; Console.WriteLine("EXCL 误伤了同阵营的一代"); }
+
+                // 4) 双人包（小分类=其他）不触发互斥
+                System.Collections.Generic.Dictionary<string, bool> st4 =
+                    new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                st4["双人.vpk"] = true;
+                MainForm.ApplyEightPackRule(st4, sub, isOn);
+                if (st4.ContainsKey("比尔.vpk")) { bad++; Console.WriteLine("EXCL 双人包不该触发互斥"); }
+
+                Console.WriteLine("excluself failures = " + bad);
                 return bad == 0 ? 0 : 1;
             }
             if (wsSelf)

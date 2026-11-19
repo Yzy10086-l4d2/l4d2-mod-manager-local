@@ -4269,37 +4269,54 @@ namespace Installer
         private Dictionary<string, bool> EnforceEightPack(Dictionary<string, bool> st)
         {
             if (treeView == null) return st;
-            bool eightOn = false, soloOn = false;
+            Dictionary<string, string> map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (Slot s in treeView.Slots)
             {
                 if (s.Pile) continue;
-                bool on = false;
                 foreach (ModGroup g in s.Items)
                     foreach (ModItem p in g.Parts)
-                    {
-                        bool v;
-                        if (st.TryGetValue(p.Name, out v) && v) { on = true; break; }
-                    }
-                if (!on) continue;
-                if (s.Sub == "八人包") eightOn = true;
-                else if (s.Sub == "一代" || s.Sub == "二代") soloOn = true;
+                        if (!string.IsNullOrEmpty(p.Name)) map[p.Name] = s.Sub;
+            }
+            Dictionary<string, bool> on = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (Slot s in treeView.Slots)
+            {
+                if (s.Pile) continue;
+                foreach (ModGroup g in s.Items)
+                    foreach (ModItem p in g.Parts)
+                        if (!string.IsNullOrEmpty(p.Name) && p.AddonOn) on[p.Name] = true;
+            }
+            return ApplyEightPackRule(st, map, delegate(string n) { bool v; return on.TryGetValue(n, out v) && v; });
+        }
+
+        /// <summary>
+        /// 八人包 ↔ 一代 / 二代：纯规则，不碰界面（自检直接喂假数据）。
+        /// nameToSub：文件名 → 小分类（一代 / 二代 / 八人包 …）。
+        /// </summary>
+        internal static Dictionary<string, bool> ApplyEightPackRule(Dictionary<string, bool> st, Dictionary<string, string> nameToSub, Func<string, bool> isOn)
+        {
+            if (st == null || nameToSub == null) return st;
+            bool eightOn = false, soloOn = false;
+            foreach (KeyValuePair<string, bool> kv in st)
+            {
+                if (!kv.Value) continue;
+                string sub;
+                if (!nameToSub.TryGetValue(kv.Key, out sub)) continue;
+                if (sub == "八人包") eightOn = true;
+                else if (sub == "一代" || sub == "二代") soloOn = true;
             }
             if (!eightOn && !soloOn) return st;
 
             int flipped = 0;
-            foreach (Slot s in treeView.Slots)
+            foreach (KeyValuePair<string, string> kv in nameToSub)
             {
-                if (s.Pile) continue;
-                bool clash = eightOn ? (s.Sub == "一代" || s.Sub == "二代") : (s.Sub == "八人包");
+                string nm = kv.Key, sub = kv.Value;
+                bool clash = eightOn ? (sub == "一代" || sub == "二代") : (sub == "八人包");
                 if (!clash) continue;
-                foreach (ModGroup g in s.Items)
-                    foreach (ModItem p in g.Parts)
-                        if (p.AddonOn)
-                        {
-                            bool cur;
-                            if (st.TryGetValue(p.Name, out cur) && !cur) continue;
-                            st[p.Name] = false; flipped++;
-                        }
+                bool cur;
+                if (st.TryGetValue(nm, out cur) && !cur) continue;      // 已经是关的，不用再翻
+                if (st.TryGetValue(nm, out cur) && cur) { st[nm] = false; flipped++; continue; }
+                // 这次没点名、但现在是开着的：也要压成关（互斥的另一半常不在这批里）
+                if (isOn != null && isOn(nm)) { st[nm] = false; flipped++; }
             }
             if (flipped > 0)
                 Core.Log("INFO", (eightOn ? "八人包开着" : "一条人物开着") + " → 关掉对面 " + flipped + " 个开关（互斥）");
