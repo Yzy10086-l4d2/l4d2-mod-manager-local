@@ -3643,6 +3643,9 @@ namespace Installer
             // 名字/标题里带着玩家叫法的，直接告诉他「可能是什么」——新人不用先双击进窗口才知道
             string hint = Positions.Hint(g.Name, g.Main != null ? g.Main.AddonTitle : "", 3);
             if (hint.Length > 0) li.ToolTipText += "\r\n\r\n" + hint + "（双击可直接归到第一个）";
+            // 识别经过：认不出时也要说清「看过什么、按什么猜」，别让人对着「未归类」干瞪眼
+            string trace = g.Main != null ? (g.Main.SubjectTrace ?? "") : "";
+            if (trace.Length > 0) li.ToolTipText += "\r\n识别经过：" + trace;
             lv.Items.Add(li);
         }
 

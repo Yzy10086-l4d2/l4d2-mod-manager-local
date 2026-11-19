@@ -2215,7 +2215,7 @@ namespace Installer
         public static string DumpIdentify()
         {
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine("大类\t小分类\t名字\t识别结果\t键\t部件\t路径\t归组依据");
+            sb.AppendLine("大类\t小分类\t名字\t识别结果\t键\t部件\t路径\t归组依据\t证据链");
             foreach (ModGroup g in Groups)
             {
                 ModItem m = g.Main;
@@ -2226,7 +2226,8 @@ namespace Installer
                   .Append(m == null ? "" : (m.SubjectKey ?? "")).Append('\t')
                   .Append(g.Parts.Count).Append('\t')
                   .Append(m == null ? "" : m.RelPath).Append('\t')
-                  .Append(g.Evidence).AppendLine();
+                  .Append(g.Evidence).Append('\t')
+                  .Append(g.Main == null ? "" : (g.Main.SubjectTrace ?? "")).AppendLine();
             }
             string f = Path.Combine(Core.LogDir, "识别清单.tsv");
             Core.WriteAllTextAtomic(f, sb.ToString(), new UTF8Encoding(true));
