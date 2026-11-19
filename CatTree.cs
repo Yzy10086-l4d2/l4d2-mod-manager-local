@@ -467,7 +467,7 @@ namespace Installer
         }
 
         /// <summary>小分类 → 大类。跟 SubOf 反着来，只覆盖 PosOrder 里那些标准位置用到的。</summary>
-        private static string CatOfSub(string sub)
+        internal static string CatOfSub(string sub)      // 位置表配套：小分类 → 大类，识别层也要用
         {
             switch (sub)
             {

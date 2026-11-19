@@ -1083,6 +1083,16 @@ namespace Installer
         /// </summary>
         static void RefineBySubject(ModItem it)
         {
+            // 位置认出来了，但小分类还是文件夹 / 兜底给的：以小分类跟位置对齐。
+            // 否则会出现「识别结果 MAC-10、小分类 UZI」这种自相矛盾的记录，
+            // 树上到底听谁的完全看运气（2026-11-19 实测 shu_weapon_ram7_starlit_mac10）。
+            Positions.Row pr = Positions.Find(it.Subject);
+            if (pr != null && it.Sub != pr.Sub)
+            {
+                it.Sub = pr.Sub;
+                it.Cat = SlotIndex.CatOfSub(pr.Sub);
+                it.Category = it.Cat;
+            }
             // 整套替换的三栏（界面 / 特效 / 音效）：包里没有可指名的本体，用栏名兜一个对象名。
             // 这一步必须放在识别之后 —— 识别会把 Subject 整个覆盖掉（这类包读不出模型名），
             // 在 Classify 里补的会被冲成空串，SlotIndex 再按「名字都认不出」整包丢掉，
