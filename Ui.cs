@@ -3479,6 +3479,10 @@ namespace Installer
             // 尺寸判定「没变」就整段跳过，而锚点已经先把按钮挪到了旧位置 ——
             // 结果底下空出一大块、按钮还贴着窗口外面（2026-11-19 实测 1431×737 整排掉下去）。
             PinBottomRow(physH);
+            Core.Log("INFO", "GEOM 客户区 " + physW + "x" + physH + " 缩放 " + Dpi.Factor
+                + " | gMod " + (gMod == null ? "null" : ("top=" + gMod.Top + " h=" + gMod.Height + " bottom=" + (gMod.Top + gMod.Height)))
+                + " | 状态行 top=" + (lblStatus == null ? -1 : lblStatus.Top)
+                + " | 底栏高=" + Dpi.S(BottomBarH));
             if (physW == lastRespW && physH == lastRespH) return;
             lastRespW = physW;
             lastRespH = physH;
