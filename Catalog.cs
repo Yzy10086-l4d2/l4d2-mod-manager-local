@@ -1009,6 +1009,9 @@ namespace Installer
                 it.Subject = ir.Subject;
                 it.SubjectLevel = ir.Level;
                 it.SubjectKey = ir.Key;
+                // 一个包里换了好几个生还者（≥3）时，位置跟小分类走，别跟包里第一个模型走：
+                // 否则「全生还者」整包被算成佐伊，八人包那格永远是空的（2026-11-19）。
+                if (it.Sub == "幸存者") { it.Subject = "幸存者"; it.SubjectKey = "幸存者"; }
                 it.Kinds = ir.Kinds;
                 it.Only1P = ir.Only1P;
                 it.AnimOnly = ir.AnimOnly;
@@ -1156,6 +1159,14 @@ namespace Installer
             {
                 it.Cat = ccat;
                 it.Sub = csub;
+                // 一个包里换了好几个生还者（≥3）时，识别层给的是「幸存者」：
+                // 位置名和键也要跟着走这一格，不能再回落到包里第一个匹配到的模型
+                // （Eku 水手服「全生还者」就被算成了佐伊，2026-11-19 用户指出）。
+                if (csub == "幸存者")
+                {
+                    it.Subject = "幸存者";
+                    it.SubjectKey = "幸存者";
+                }
                 it.Category = it.Cat;
                 // 整套替换三栏的对象名在 RefineBySubject 里补 —— 必须等识别跑完，
                 // 识别会把 Subject 覆盖一遍，这里补了也会被冲空。
