@@ -1936,6 +1936,11 @@ namespace Installer
             List<ModGroup> oldGroups = Groups;
             Dictionary<string, ModGroup> oldByKey = GroupByKey;
             int bad = 0;
+            // 位置表是唯一真源（树 / 翻译 / 识别归一都读它），它错了整棵树跟着错，所以先自检。
+            foreach (string issue in Positions.Audit()) { bad++; Console.WriteLine("POS " + issue); }
+            if (Positions.Canonical("15发连狙") != "15发木狙") { bad++; Console.WriteLine("POS 归一失败: 15发连狙"); }
+            if (Positions.Canonical("药丸") != "止痛药") { bad++; Console.WriteLine("POS 归一失败: 药丸"); }
+            if (Positions.Canonical("huntingrifle") != "15发木狙") { bad++; Console.WriteLine("POS 归一失败: huntingrifle"); }
             try
             {
                 Core.ModList = new List<ModItem>();

@@ -90,7 +90,18 @@ namespace Installer
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>(StringComparer.Ordinal);
         private static bool built;
 
-        public static void EnsureBuilt() { if (!built) { built = true; Build(); } }
+        public static void EnsureBuilt() { if (!built) { built = true; Build(); BuildPositions(); } }
+
+        /// <summary>
+        /// 位置显示名统一从位置表喂进来：Positions.cs 里没单独写英文的（AK-47 这种）就用显示名本身。
+        /// 新增一个位置只改 Positions.cs，不用再回来补一行翻译 —— 以前两头写，漏一处英文界面就露中文。
+        /// </summary>
+        private static void BuildPositions()
+        {
+            Dictionary<string, string> d = En;
+            foreach (Positions.Row p in Positions.All)
+                if (!d.ContainsKey(p.Name)) Add(d, p.Name, Positions.En(p.Name));
+        }
 
         private static void Add(Dictionary<string, string> d, string zh, string en) { d[zh] = en; }
 
@@ -198,9 +209,7 @@ namespace Installer
             Add(d, "冲锋枪", "SMGs");
             Add(d, "霰弹枪", "Shotguns");
             Add(d, "狙击枪", "Snipers");
-            Add(d, "手枪", "Pistols");
             Add(d, "特殊武器", "Heavy weapons");
-            Add(d, "近战武器", "Melee weapons");
             Add(d, "治疗与复活", "Healing & revival");
             Add(d, "暂时增益", "Temporary buffs");
             Add(d, "其他药品", "Other medical");
@@ -209,62 +218,14 @@ namespace Installer
             Add(d, "一代", "L4D1");
             Add(d, "二代", "L4D2");
             Add(d, "八人包", "All-survivor pack");
-            Add(d, "普通感染者", "Common infected");
             Add(d, "其他", "Other");
-            Add(d, "弹药", "Ammo");
 
             Add(d, "未分型号", "Unspecified");
             Add(d, "认不出改的是什么（点开看全部 · 可手动指定）", "Cannot tell what this changes (open to see all · assign manually)");
             Add(d, "{0} 个", "{0}");
 
             // ---------- 位置名（按游戏里的英文叫法） ----------
-            Add(d, "木喷", "Pump Shotgun");
-            Add(d, "铁喷", "Chrome Shotgun");
-            Add(d, "一代连喷", "Auto Shotgun");
-            Add(d, "二代连喷", "Combat Shotgun");
-            Add(d, "鸟狙", "Hunting Rifle");
-            Add(d, "15发木狙", "Hunting Rifle (15)");
-            Add(d, "30发军用狙", "Military Sniper");
-            Add(d, "马格南", "Magnum");
-            Add(d, "榴弹发射器", "Grenade Launcher");
-            Add(d, "消防斧", "Fire Axe");
-            Add(d, "武士刀", "Katana");
-            Add(d, "砍刀", "Machete");
-            Add(d, "撬棍", "Crowbar");
-            Add(d, "电锯", "Chainsaw");
-            Add(d, "平底锅", "Frying Pan");
-            Add(d, "棒球棍", "Baseball Bat");
-            Add(d, "干草叉", "Pitchfork");
-            Add(d, "铁锹", "Shovel");
-            Add(d, "小刀", "Knife");
-            Add(d, "燃烧瓶", "Molotov");
-            Add(d, "土制炸弹", "Pipe Bomb");
-            Add(d, "胆汁", "Bile Jar");
-            Add(d, "燃烧弹药包", "Incendiary Ammo");
-            Add(d, "爆破弹药包", "Explosive Ammo");
-            Add(d, "激光瞄准", "Laser Sight");
-            Add(d, "医疗包", "Medkit");
-            Add(d, "电击器", "Defibrillator");
-            Add(d, "肾上腺素", "Adrenaline");
-            Add(d, "止痛药", "Pain Pills");
             Add(d, "药丸", "Pills");
-            Add(d, "氧气瓶", "Oxygen Tank");
-            Add(d, "煤气罐", "Gas Can");
-            Add(d, "油桶", "Oil Barrel");
-            Add(d, "燃料桶", "Fuel Barrel");
-            Add(d, "烟花盒", "Fireworks Crate");
-            Add(d, "地精", "Gnome");
-            Add(d, "可乐", "Cola Bottles");
-            Add(d, "天空盒", "Skybox");
-            Add(d, "比尔", "Bill");
-            Add(d, "佐伊", "Zoey");
-            Add(d, "路易斯", "Louis");
-            Add(d, "弗朗西斯", "Francis");
-            Add(d, "教练", "Coach");
-            Add(d, "埃利斯", "Ellis");
-            Add(d, "尼克", "Nick");
-            Add(d, "罗谢尔", "Rochelle");
-            Add(d, "幸存者", "Survivor");
 
             // ---------- 第二批：语言自检扫出来的漏项 ----------
             Add(d, "收起", "Collapse");
