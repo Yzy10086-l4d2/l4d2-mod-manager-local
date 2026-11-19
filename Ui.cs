@@ -1795,6 +1795,14 @@ namespace Installer
             string root = txtGame == null ? "" : txtGame.Text.Trim();
             if (!Core.TestGame(root)) return -1;
             Dictionary<string, bool> st = AddonList.Read(root);
+            // 顺手看一眼「上次写完到现在，文件是不是被外面动过」（Steam 更新订阅 / 游戏内改开关）。
+            // 只报一次，报过就刷新快照，不会每次切回窗口都嘮叨。
+            try
+            {
+                string ext = AddonList.CheckExternal(root);
+                if (!string.IsNullOrEmpty(ext)) SetStatus(ext);
+            }
+            catch { }
             int n = 0;
             List<ModItem> list = Core.ModList;
             if (list == null) return 0;
@@ -3113,7 +3121,10 @@ namespace Installer
             }
             Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (ModItem it in sel) st[it.Name] = true;
-            AddonList.Write(root, st);
+            if (!AddonList.Write(root, st) && AddonList.LastWroteWhileRunning)
+            {
+                Core.Log("INFO", title + "：文件已就位，开关也写了（写入时游戏正在运行）");
+            }
             // 状态列是从 addons + addonlist 现读的，装完得重扫一次，否则列表还显示旧状态
             try { Core.ScanMods(); } catch (Exception exs) { Core.Log("WARN", "装完重扫失败: " + exs.Message); }
             RefreshMods();
@@ -3712,8 +3723,11 @@ namespace Installer
                 SetDrawer(savedDrawer);
 
                 // 候选列表的列宽：ListView 的 Columns[].Width 不受 AutoScaleMode.Dpi 管，
-                // 得自己乘。四个定宽列合计应当是 100+74+84+62=320 设计值按当前比例放大后的数
-                // （本地模式只是把「已装」并进「开关」，合计不变）。
+                // 得自己乘。96dpi 设计值：改了什么 100 / 大小 74 / 已装 84 / 开关 62。
+                // 本地模式没有「已装」这一列（CatTree.Cols 里 instW 收成 0，宽度给了名字列），
+                // 所以合计随模式变，不能写死 320 —— b8cbf63e 把「并给开关列」改成「并给名字列」
+                // 之后合计从 320 掉到 236，这条断言就一直红着。
+                // 另外按列分别换算再相加，别拿 Dpi.S(320) 去比：每列各自取整，和取整一次不是一回事。
                 int[] cols = CatTree.ColsForTest(2000);
                 int colSum = cols[0] + cols[1] + cols[2] + cols[3];
                 // 设计值从实现本身量一次（临时把缩放压回 1），别再写死 320：
@@ -3723,7 +3737,9 @@ namespace Installer
                 int[] baseCols = CatTree.ColsForTest(2000);
                 Dpi.Factor = keepFactor;
                 int baseSum = baseCols[0] + baseCols[1] + baseCols[2] + baseCols[3];
-                int colWant = Dpi.S(baseSum);
+                // 每列各自换算再相加：CatTree.Cols 是一列一列 Dpi.S 的，
+                // 拿 Dpi.S(合计) 去比，高 DPI 下会差一两像素、白报失败。
+                int colWant = Dpi.S(baseCols[0]) + Dpi.S(baseCols[1]) + Dpi.S(baseCols[2]) + Dpi.S(baseCols[3]);
                 if (colSum != colWant)
                 {
                     bad++;
@@ -4337,6 +4353,9 @@ namespace Installer
                 MessageBox.Show("这个游戏目录写不进去（可能只读、被占用或权限不足）。\r\n可以试试以管理员身份运行。", "目录不可写");
                 return false;
             }
+            // 游戏开着不拦：大厅里改开关本来就是正常操作。
+            // 只是游戏自己也会读写这个文件，所以写完要回读确认、并把话说明白。
+            bool gameOn = AddonList.GameIsRunning();
             int on = 0;
             foreach (KeyValuePair<string, bool> kv in st) if (kv.Value) on++;
 
@@ -4356,7 +4375,13 @@ namespace Installer
             {
                 st = EnforceEightPack(st);
                 Core.Log("INFO", "写开关：" + st.Count + " 条 → " + AddonList.FileOf(root));
-                AddonList.Write(root, st);
+                if (!AddonList.Write(root, st))
+                {
+                    Core.Log("WARN", "开关没写进去（写入失败）");
+                    MessageBox.Show("写不进 addonlist.txt（可能被占用或权限不足）。可以试试以管理员身份运行。", "没写进去",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return false;
+                }
                 // 写完立刻回读一次：文件到底有没有落成我们想要的值，别只信「写成功」。
                 // 以前出过「工具说改好了、重进又是旧状态」，没有回读就只能靠猜。
                 int bad = 0;
@@ -4373,7 +4398,16 @@ namespace Installer
                 Core.Log(bad == 0 ? "OK" : "WARN",
                     "应用开关 " + st.Count + " 处（开 " + on + "、关 " + (st.Count - on) + "）"
                     + "；改值 " + hit + "、新增 " + (st.Count - hit) + "；原有 " + total + " 条"
-                    + "；回读不符 " + bad + " 条；文件=" + AddonList.FileOf(root));
+                    + "；回读不符 " + bad + " 条" + (gameOn ? "；写入时游戏正在运行" : "")
+                    + "；文件=" + AddonList.FileOf(root));
+                if (bad > 0 && gameOn)
+                {
+                    // 写得进去，但游戏可能用自己的内存状态盖回来 —— 把这种可能直接说出来
+                    MessageBox.Show("写进去了，但回读有 " + bad + " 条对不上。\r\n\r\n"
+                        + "写入时游戏正在运行，它可能用自己的开关状态把文件盖了回去。\r\n"
+                        + "大厅里改通常没问题；如果对不上，退出游戏后再改一次。",
+                        "回读不一致", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
 
                 // 只改了开关，文件没动：直接对齐内存里的值，省一次全库重扫
                 foreach (ModGroup g in Catalog.Groups)
@@ -4384,7 +4418,9 @@ namespace Installer
                     }
                 RefreshMods();
                 RefreshConflicts(true);
-                SetStatus((GameRunning() ? "已应用 " + st.Count + " 处（游戏开着，重启后才生效）" : "已应用 " + st.Count + " 处开关改动")
+                SetStatus((gameOn
+                        ? "已应用 " + st.Count + " 处（游戏开着：下次加载生效；若随后在游戏内菜单动过开关，以游戏为准）"
+                        : "已应用 " + st.Count + " 处开关改动")
                     + " · 其它 " + untouched + " 条没动");
                 return true;
             }

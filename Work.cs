@@ -2285,6 +2285,84 @@ namespace Installer
             return all.ToArray();
         }
 
+        // ---------- 自测：addonlist 写入策略 + 外部改动（不依赖库） ----------
+        /// <summary>
+        /// 干净机器上也要真跑，所以不放在 SelfTestAddons 的库检查后面：
+        ///   1) 游戏在跑时照写（大厅里改开关是正常操作），写完读得回来、并打上 LastWroteWhileRunning
+        ///   2) 写完留快照；外部（Steam 更新 / 游戏内改开关）改了能报出来，且同一处只报一次
+        /// </summary>
+        public static int SelfTestAddonGate()
+        {
+            int bad = 0;
+            string savedLogDir = Core.LogDir;
+            string root = Path.Combine(Path.GetTempPath(), "l4d2-gate-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(root, "left4dead2"));
+                Core.LogDir = Path.Combine(root, "_装机记录");
+                Directory.CreateDirectory(Core.LogDir);
+
+                string file = AddonList.FileOf(root);
+                Dictionary<string, bool> a = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                a["alpha.vpk"] = true;
+                a["beta.vpk"] = false;
+                if (!AddonList.Write(root, a)) { bad++; Console.WriteLine("[FAIL] 正常写入被拒了"); }
+
+                // 1) 假装游戏在跑 → 照写，写得进去，且打上「写入时游戏在跑」的标记
+                string before = File.Exists(file) ? File.ReadAllText(file, Encoding.Default) : "";
+                Dictionary<string, bool> b = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                b["alpha.vpk"] = false;
+                b["beta.vpk"] = true;
+                AddonList.ForceGameRunning = true;
+                bool wrote = AddonList.Write(root, b);
+                bool flagged = AddonList.LastWroteWhileRunning;
+                AddonList.ForceGameRunning = false;
+                string after = File.Exists(file) ? File.ReadAllText(file, Encoding.Default) : "";
+                Dictionary<string, bool> now = AddonList.Read(root);
+                bool alphaOff = now.ContainsKey("alpha.vpk") && !now["alpha.vpk"];
+                bool betaOn = now.ContainsKey("beta.vpk") && now["beta.vpk"];
+
+                if (!wrote) { bad++; Console.WriteLine("[FAIL] 游戏在跑时写不进去了（应该照写）"); }
+                if (!flagged) { bad++; Console.WriteLine("[FAIL] 游戏在跑时没打标记，界面就不知道该提醒"); }
+                if (before == after) { bad++; Console.WriteLine("[FAIL] 说要写，文件却没变"); }
+                if (!alphaOff || !betaOn) { bad++; Console.WriteLine("[FAIL] 写进去的值不对：alpha关=" + alphaOff + "，beta开=" + betaOn); }
+                Console.WriteLine("ADDON 写入策略：游戏在跑 → 照写=" + wrote + "、打过标记=" + flagged
+                    + "、文件已变=" + (before != after) + "、回读一致=" + (alphaOff && betaOn));
+
+                // 游戏不在跑时，标记应当归位
+                AddonList.Write(root, b);
+                if (AddonList.LastWroteWhileRunning) { bad++; Console.WriteLine("[FAIL] 游戏没跑却打上了「正在运行」的标记"); }
+
+                // 2) 外部改动：直接改文件（模拟 Steam 更新 / 游戏内开关）
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("\"AddonList\"");
+                sb.AppendLine("{");
+                sb.AppendLine("\t\"alpha.vpk\"\t\t\"1\"");
+                sb.AppendLine("\t\"beta.vpk\"\t\t\"1\"");        // 被外部打开了
+                sb.AppendLine("\t\"gamma.vpk\"\t\t\"0\"");       // 外部新增
+                sb.AppendLine("}");
+                File.WriteAllText(file, sb.ToString(), Encoding.Default);
+
+                string ext = AddonList.CheckExternal(root);
+                // 只断言「报得出来、举的例子里有 gamma」：
+                // 上一组结束时快照里已经是 alpha=0/beta=1，所以外部这一改到底算
+                // 「alpha 被开启」还是「beta 被开启」取决于前面怎么写的，不写死名字。
+                bool reported = ext != null && ext.IndexOf("gamma.vpk", StringComparison.Ordinal) >= 0;
+                string again = AddonList.CheckExternal(root);
+                if (!reported) { bad++; Console.WriteLine("[FAIL] 外部改动没报出来: " + (ext == null ? "null" : ext)); }
+                if (again != null) { bad++; Console.WriteLine("[FAIL] 同一处外部改动报了两遍: " + again); }
+                Console.WriteLine("ADDON 外部改动：报出=" + reported + "，二次不重复=" + (again == null)
+                    + (ext == null ? "" : "；" + ext));
+            }
+            catch (Exception ex) { bad++; Console.WriteLine("[FAIL] addonlist 守门自检异常: " + ex.Message); }
+            finally
+            {
+                Core.LogDir = savedLogDir;
+                try { Directory.Delete(root, true); } catch { }
+            }
+            return bad;
+        }
+
         // ---------- 自测：换整套只翻开关，文件不动 ----------
         /// <summary>
         /// 拿个假游戏目录跑一遍 SwitchAddons，检查：
@@ -2299,6 +2377,8 @@ namespace Installer
             try
             {
                 Directory.CreateDirectory(addons);
+                // 守门 + 外部改动：不依赖库，任何环境都要真跑（库里没 MOD 也不能被跳过）
+                bad += SelfTestAddonGate();
                 Core.ScanMods();
                 List<ModItem> pool = new List<ModItem>();
                 foreach (ModItem m in Core.ModList)
@@ -2308,8 +2388,9 @@ namespace Installer
                     if (pool.Count >= 3) break;
                 }
                 // 干净 runner / 刚装完的机器上库里没有 MOD：这是环境不足，不是功能坏了。
-                // 跟 tripane 一样明确跳过（返回 0），否则这条自检永远只能挂着，当不了门禁。
-                if (pool.Count < 3) { Console.WriteLine("addonself skipped: 库里不到 3 个 MOD"); return 0; }
+                // 跟 tripane 一样明确跳过 —— 但要把已经跑出来的失败带出去：
+                // 以前这里写死 return 0，前面守门那组真挂了也会被这里吃掉，CI 照样绿。
+                if (pool.Count < 3) { Console.WriteLine("addonself skipped: 库里不到 3 个 MOD（守门那组已跑）"); return bad; }
 
                 foreach (ModItem m in pool) File.WriteAllText(Path.Combine(addons, m.Name), "x");
                 string mine = "我自己放的.vpk";
