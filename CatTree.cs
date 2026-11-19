@@ -690,7 +690,9 @@ namespace Installer
             // 两套同时开只会互相覆盖，必须走 Items 单选（和 AK-47 一个道理）。
             // 它们的 Kinds 天然带 HUD / 音效 / 特效，不在这里拦住就会被判成叠加栏。
             // （只改一把枪的 HUD 图标不在此列：它的 Cat 是枪械，本来就该当那把枪的叠加载荷。）
-            if (g.Cat == "平台") return true;      // 平台是底座：永远当叠加，谁也顶不掉它
+            // 平台是独立一栏，不是某个位置的扩展：它得能像别的包一样被点选、也有封面预览。
+            // 「换方案时不许关」由 Work.SwitchAddons 单独保证，不靠这一条。
+            if (g.Cat == "平台") return false;
             if (g.Cat == "杂项" && (g.Sub == "UI 界面" || g.Sub == "特效" || g.Sub == "音效"))
                 return false;
             if (m.Only1P) return true;                                         // 只动了第一人称，和整套模型不抢
