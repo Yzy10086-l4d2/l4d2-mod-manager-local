@@ -22,6 +22,8 @@ namespace Installer
                 set { _subject = Positions.Canonical(value); }
             }
             public string Level = "";         // 依据强度：模型 / HUD图标 / 音效 / 材质
+            // 证据链：这一条结论是哪条规则、命中了什么（新产品/开源协作排查用，也进识别明细）
+            public string Trace = "";
             public string Key = "";           // 被替换的模型名，如 "v_rifle"（用于同枪冲突检测）
             public string Kinds = "";         // 影响面：模型,音效,HUD图标,地图...
             public bool Only1P = false;       // 模型全是第一人称 v_，世界模型没动
@@ -314,7 +316,7 @@ namespace Installer
                     {
                         if (!found.Contains(n)) found.Add(n);
                         if (r.Key.Length == 0) r.Key = KeyOf(m);
-                        if (r.Level.Length == 0) r.Level = "模型";
+                        if (r.Level.Length == 0) { r.Level = "模型"; r.Trace = "规则:模型名 · 命中:" + KeyOf(m); }
                     }
                 }
 
@@ -369,7 +371,7 @@ namespace Installer
                         {
                             if (!found.Contains(n)) found.Add(n);
                             if (r.Key.Length == 0) r.Key = KeyOf(h);
-                            if (r.Level.Length == 0) r.Level = "HUD图标";
+                            if (r.Level.Length == 0) { r.Level = "HUD图标"; r.Trace = "规则:HUD图标路径 · 命中:" + KeyOf(h); }
                         }
                     }
                 }
@@ -383,7 +385,7 @@ namespace Installer
                         {
                             if (!found.Contains(n)) found.Add(n);
                             if (r.Key.Length == 0) r.Key = KeyOf(s2);
-                            if (r.Level.Length == 0) r.Level = "音效";
+                            if (r.Level.Length == 0) { r.Level = "音效"; r.Trace = "规则:音效路径 · 命中:" + KeyOf(s2); }
                         }
                     }
                 }
@@ -396,7 +398,7 @@ namespace Installer
                         if (n != null)
                         {
                             if (!found.Contains(n)) found.Add(n);
-                            if (r.Level.Length == 0) r.Level = "材质";
+                            if (r.Level.Length == 0) { r.Level = "材质"; r.Trace = "规则:材质路径 · 命中:" + mp; }
                         }
                     }
                 }
@@ -463,14 +465,14 @@ namespace Installer
             if (r == null) return;
             // 文件名先当线索：作者常把「（15连）」「30连」写进文件名，标题却是英文
             // （实测：`（15连） 美游athena.vpk` 标题是 Athena…(huntingrifle)，只认标题就漏了）
-            try { GuessFromText(r, System.IO.Path.GetFileNameWithoutExtension(vpkFile)); } catch { }
+            try { GuessFromText(r, System.IO.Path.GetFileNameWithoutExtension(vpkFile), "文件名"); } catch { }
             try
             {
                 Vpk.AddonMeta m = Vpk.ReadAddonInfo(vpkFile);
                 if (m == null) return;
                 r.Title = m.Title ?? "";
                 r.Author = m.Author ?? "";
-                GuessFromText(r, (m.Title ?? "") + " " + (m.Text ?? ""));
+                GuessFromText(r, (m.Title ?? "") + " " + (m.Text ?? ""), "标题");
             }
             catch { }
         }
@@ -480,7 +482,7 @@ namespace Installer
         /// 文件名经常是作者乱写的，但标题和描述里常写着「铁喷」「30连狙」这种玩家叫法。
         /// 只在模型和路径都没判出来时用，且不覆盖已有结论。
         /// </summary>
-        private static void GuessFromText(Result r, string text)
+        private static void GuessFromText(Result r, string text, string source)
         {
             if (r == null || string.IsNullOrEmpty(text) || r.Subject.Length > 0) return;
             string low = text.ToLowerInvariant();
@@ -492,7 +494,11 @@ namespace Installer
                     : low.IndexOf(k, StringComparison.Ordinal) >= 0;
                 if (!hit) continue;
                 r.Subject = AliasKeys[i, 1];
-                if (r.Level.Length == 0) r.Level = "标题";
+                if (r.Level.Length == 0)
+                {
+                    r.Level = "标题";
+                    r.Trace = "规则:" + source + " · 命中「" + k + "」";
+                }
                 return;
             }
         }
@@ -506,7 +512,7 @@ namespace Installer
                 if (m == null) return;
                 r.Title = m.Title ?? "";
                 r.Author = m.Author ?? "";
-                GuessFromText(r, (m.Title ?? "") + " " + (m.Text ?? ""));
+                GuessFromText(r, (m.Title ?? "") + " " + (m.Text ?? ""), "标题");
             }
             catch { }
         }
@@ -806,6 +812,7 @@ namespace Installer
             if (c.Length >= 10) r.AnimOnly = c[9] == "1";
             // 老缓存行只有 10 列：没有标题就当空，AnalyzeCached 那边会补读一次并回写
             if (c.Length >= 12) { r.Title = c[10]; r.Author = c[11]; }
+            if (c.Length >= 13) r.Trace = c[12];
             r.Ok = entries > 0;
             return r;
         }
@@ -815,7 +822,7 @@ namespace Installer
             return relPath + "\t" + stamp + "\t" + r.Subject + "\t" + r.Level + "\t" + r.Key + "\t" + r.Kinds
                  + "\t" + (r.Only1P ? "1" : "0") + "\t" + r.Entries + "\t" + PackAssets(r.Assets)
                  + "\t" + (r.AnimOnly ? "1" : "0")
-                 + "\t" + (r.Title ?? "") + "\t" + (r.Author ?? "");
+                 + "\t" + (r.Title ?? "") + "\t" + (r.Author ?? "") + "\t" + (r.Trace ?? "");
         }
 
         private static void LoadCache()

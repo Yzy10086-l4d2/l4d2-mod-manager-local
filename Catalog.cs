@@ -1017,6 +1017,7 @@ namespace Installer
                 it.Only1P = ir.Only1P;
                 it.AnimOnly = ir.AnimOnly;
                 it.Entries = ir.Entries;
+                it.SubjectTrace = ir.Trace;
                 it.AssetPaths = ir.Assets;
                 it.AddonTitle = ir.Title;
                 it.AddonAuthor = ir.Author;
@@ -2232,7 +2233,7 @@ namespace Installer
 
             // 明细：每个 vpk 单独一行，看套装里有没有部件被认错
             StringBuilder d = new StringBuilder();
-            d.AppendLine("所在MOD\t部件角色\t部件名\t大类\t小分类\t识别结果\t键\t路径");
+            d.AppendLine("所在MOD\t部件角色\t部件名\t大类\t小分类\t识别结果\t键\t路径\t证据链");
             foreach (ModGroup g in Groups)
                 foreach (ModItem it in g.Parts)
                     d.Append(g.Name).Append('\t')
@@ -2242,7 +2243,8 @@ namespace Installer
                      .Append(it.Sub).Append('\t')
                      .Append(it.Subject).Append('\t')
                      .Append(it.SubjectKey ?? "").Append('\t')
-                     .Append(it.RelPath).AppendLine();
+                     .Append(it.RelPath).Append('\t')
+                     .Append(it.SubjectTrace).AppendLine();
             Core.WriteAllTextAtomic(Path.Combine(Core.LogDir, "识别明细.tsv"), d.ToString(), new UTF8Encoding(true));
             return f;
         }

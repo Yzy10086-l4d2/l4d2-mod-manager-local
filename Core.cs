@@ -29,6 +29,7 @@ namespace Installer
         public string Subject = "";       // 改了什么（从 vpk 内容反推，不是看文件夹名）
         public string SubjectLevel = "";  // 依据：模型 / HUD图标 / 音效 / 材质
         public string SubjectKey = "";    // 被替换的模型名，用于同枪冲突检测
+        public string SubjectTrace = "";  // 证据链：哪条规则、命中了什么（识别明细里给人看）
         public string Kinds = "";         // 影响面：模型,音效,HUD...
         public bool Only1P;               // 模型全是第一人称 v_，世界模型 w_ 一个没动（能和模型叠加）
         public bool AnimOnly;             // 模型全是 anim_/gestures_ 表情骨架（KSEP 这类陪套，能和模型叠加）
