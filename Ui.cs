@@ -46,7 +46,7 @@ namespace Installer
         // 原来是 116，按钮下面空出 68px，「下巴」明显偏厚；收到 76 之后按钮行和状态栏只隔 12px。
         // 底部动作区高度。曾经试过「没有一键还原就收到 56」——实测按钮被挤到窗口边缘、
         // 状态字被切掉，比原来更糟，已回退（2026-11-19）。要动这块得整块重排，不是改一个数。
-        private const int BottomBarH = 76;
+        private const int BottomBarH = 30;   // 2026-11-19 选方案 B：底部只留一行状态，「替换此方案」移到顶栏
         // 方案标记：当前下拉里那套方案包含哪些文件，用来在列表里一眼看出「这条属不属于方案」
         private Label lblScheme;
         private readonly HashSet<string> schemeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -454,10 +454,12 @@ namespace Installer
             const int viewW = 56;       // 台面 ⇄ 方案树
             const int panelW = 56;      // 左栏抽屉
             const int wsW = 64;         // 工坊导入
+            const int installW = 132;   // 「替换此方案」：主操作上顶栏最右（方案 B）
             const int topGap = 8;
-            // 顶栏分三组：游戏目录 | 启动项·工坊（对象操作）| 总览·面板（视图）| 设置（全局）
+            // 顶栏分三组：游戏目录 | 启动项·工坊（对象操作）| 总览·面板（视图）| 主操作 · 设置
             const int groupGap = 22;
-            int settingsX = W - Theme.M - settingsW;
+            int installX = W - Theme.M - installW;
+            int settingsX = installX - groupGap - settingsW;
             int panelX = settingsX - groupGap - panelW;
             int viewX = panelX - topGap - viewW;
             int wsX = viewX - groupGap - wsW;
@@ -732,7 +734,7 @@ namespace Installer
             btnInstall = new FlatButton(); btnInstall.Text = Lang.S("替换此方案"); btnInstall.Primary = true;
             btnInstall.AccessibleName = "把游戏里的开关替换成当前勾选的这套";
             btnInstall.Font = new Font(Theme.UI, FontStyle.Bold);
-            btnInstall.SetBounds(xInstall, CH - BottomBarH, bwInstall, Theme.HP);
+            btnInstall.SetBounds(installX, 16, installW, Theme.H);   // 方案 B：主操作上顶栏
             btnInstall.Click += delegate { DoInstall(); }; Controls.Add(btnInstall);
             btnRestore = new FlatButton(); btnRestore.Text = Lang.S("一键还原"); btnRestore.Danger = true;
             btnRestore.SetBounds(Theme.M, CH - BottomBarH, bwRestore, Theme.HP);
@@ -3460,11 +3462,10 @@ namespace Installer
         private void PinBottomRow(int physH)
         {
             int top = physH - Dpi.S(BottomBarH);
-            if (btnInstall != null) btnInstall.Top = top;
             if (btnRestore != null) btnRestore.Top = top;
             if (bar != null) bar.Top = top + Dpi.S(12);
             if (btnCancel != null) btnCancel.Top = top + Dpi.S(6);
-            if (lblStatus != null) lblStatus.Top = physH - Dpi.S(28);
+            if (lblStatus != null) lblStatus.Top = physH - Dpi.S(34);   // 留 6px 余量，别贴着窗口下沿
         }
 
         private void ApplyResponsive()
@@ -3565,7 +3566,8 @@ namespace Installer
 
                 // 底部动作区同理：Anchor 只在「距底多远」这一维上跟，自检里连着改几档尺寸时
                 // 会一路漂（窗口缩回 900 却还停在 200% 的位置），所以每次按设计值钉死。
-                btnInstall.Top = Dpi.S(H - BottomBarH);
+                btnInstall.Top = Dpi.S(16);
+                btnInstall.Left = Dpi.S(W - Theme.M - 132);
                 btnRestore.Top = Dpi.S(H - BottomBarH);
                 bar.Top = Dpi.S(H - BottomBarH + 12);
                 btnCancel.Top = Dpi.S(H - BottomBarH + 6);
@@ -3589,7 +3591,9 @@ namespace Installer
             const int wsW = 64;         // 工坊导入
             const int topGap = 8;
             const int groupGap = 22;
-            int settingsX = W - Theme.M - settingsW;
+            const int installW = 132;
+            int installX = W - Theme.M - installW;
+            int settingsX = installX - groupGap - settingsW;
             int panelX = settingsX - groupGap - panelW;
             int viewX = panelX - topGap - viewW;
             int wsX = viewX - groupGap - wsW;
@@ -3602,7 +3606,9 @@ namespace Installer
             if (btnWorkshop != null) btnWorkshop.Left = Dpi.S(wsX);
 
             // 底部：右边一组（工具 + 次要 + 主操作），「一键还原」单独钉在左下角
-            btnInstall.Left = Dpi.S(W - Theme.M - 112);
+            btnInstall.Left = Dpi.S(installX);
+            btnInstall.Top = Dpi.S(16);
+            btnInstall.Width = Dpi.S(installW);
             btnRestore.Left = Dpi.S(Theme.M);
             btnRestore.Width = Dpi.S(96);
             lblStatus.Width = Dpi.S(W - 2 * Theme.M);
@@ -3647,24 +3653,21 @@ namespace Installer
                 int m = Dpi.S(Theme.M);
 
                 // 底部右侧三连从右往左排：位置必须严格递减，最左的不能压进左边距，最右的不能出窗
-                FlatButton[] bottom = new FlatButton[] { btnInstall };
-                for (int i = 1; i < bottom.Length; i++)
-                    if (bottom[i].Left >= bottom[i - 1].Left) { bad++; Core.Log("FAIL", tag + "底部按钮顺序错：" + bottom[i].Text); }
-                if (btnInstall.Left < m + Dpi.S(200)) { bad++; Core.Log("FAIL", tag + "底部按钮把进度条挤没了"); }
+                // 方案 B（2026-11-19）：主操作上顶栏，底部只剩一行状态。
+                // 下面这几条原来量的是底部那排，现在改成量顶栏：主操作必须在设置左边、且不出窗。
                 // 「一键还原」必须留在左下角、和主操作隔开一大截（就是怕手滑点错的那条）
                 if (Math.Abs(btnRestore.Left - m) > Dpi.S(2)) { bad++; Core.Log("FAIL", tag + "「一键还原」不在左下角"); }
-                if (btnInstall.Left - (btnRestore.Left + btnRestore.Width) < Dpi.S(300))
-                { bad++; Core.Log("FAIL", tag + "「一键还原」离「开始安装」太近：" + (btnInstall.Left - btnRestore.Left - btnRestore.Width) + "px"); }
+                if (btnInstall.Left + btnInstall.Width > W - m + 1) { bad++; Core.Log("FAIL", tag + "「替换此方案」出窗"); }
                 if (bar.Left < btnRestore.Left + btnRestore.Width)
                 { bad++; Core.Log("FAIL", tag + "进度条压住了「一键还原」"); }
                 // 进度条 / 停止按钮 / 主按钮 三者同一行，从左到右必须严格排开，谁都不许压谁
                 if (bar.Left + bar.Width > btnCancel.Left)
                 { bad++; Core.Log("FAIL", tag + "进度条压住了「停止剩余」"); }
-                if (btnCancel.Left + btnCancel.Width > btnInstall.Left)
-                { bad++; Core.Log("FAIL", tag + "「停止剩余」压住了「开始安装」"); }
+                if (btnCancel.Left + btnCancel.Width > W - m)
+                { bad++; Core.Log("FAIL", tag + "「停止剩余」跑出右边距"); }
 
                 // 顶部：设置 ← 工坊 ← 抽屉 ← 台面 ← 启动项 ← 浏览（从左到右依次右移）
-                FlatButton[] top = new FlatButton[] { btnLaunch, btnWorkshop, btnView, btnPanel, btnSettings };
+                FlatButton[] top = new FlatButton[] { btnLaunch, btnWorkshop, btnView, btnPanel, btnSettings, btnInstall };
                 if (btnSettings.Left + Dpi.S(60) > W - m + 1) { bad++; Core.Log("FAIL", tag + "「设置」出窗"); }
                 for (int i = 1; i < top.Length; i++)
                     if (top[i].Left <= top[i - 1].Left + Dpi.S(56)) { bad++; Core.Log("FAIL", tag + "顶部按钮叠在一起：" + top[i].Text); }
@@ -3674,11 +3677,11 @@ namespace Installer
                 if (gMod.Left + gMod.Width > W) { bad++; Core.Log("FAIL", tag + "右栏超出窗口"); }
                 // 右栏底边必须停在按钮行上面。这一条专门抓「窗口变矮 / 高 DPI 下右栏一路长到底，
                 // 把开始安装那排整块盖住」——盖住之后按钮看得见文字、点不中，或者干脆整排消失。
-                if (gMod.Top + gMod.Height > btnInstall.Top)
+                if (gMod.Top + gMod.Height > lblStatus.Top)
                 {
                     bad++;
                     Core.Log("FAIL", tag + "右栏底边 " + (gMod.Top + gMod.Height)
-                        + "px 压到按钮行 " + btnInstall.Top + "px（底部按钮会被整块盖住）");
+                        + "px 压到底栏状态行 " + lblStatus.Top + "px");
                 }
                 if (viewHost.Width <= 0) { bad++; Core.Log("FAIL", tag + "台面宽度算成 0"); }
                 if (txtLog.Width <= 0) { bad++; Core.Log("FAIL", tag + "日志框宽度算成 0"); }
@@ -3690,8 +3693,8 @@ namespace Installer
                 if (gLog.Height > 0)
                 { bad++; Core.Log("FAIL", tag + "日志默认没收起（高 " + gLog.Height + "px）"); }
                 SetLogOpen(true);
-                if (gLog.Top + gLog.Height > btnInstall.Top + 1)
-                { bad++; Core.Log("FAIL", tag + "日志展开后压到底栏（底 " + (gLog.Top + gLog.Height) + " / 按钮 " + btnInstall.Top + "）"); }
+                if (gLog.Top + gLog.Height > lblStatus.Top + 1)
+                { bad++; Core.Log("FAIL", tag + "日志展开后压到底栏（底 " + (gLog.Top + gLog.Height) + " / 状态行 " + lblStatus.Top + "）"); }
                 if (gLog.Top < Dpi.S(56))
                 { bad++; Core.Log("FAIL", tag + "日志展开后压到「安装选项」卡片"); }
                 if (gLog.Height < Dpi.S(120))
