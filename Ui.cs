@@ -3684,18 +3684,21 @@ namespace Installer
                 SetDrawer(savedDrawer);
 
                 // 候选列表的列宽：ListView 的 Columns[].Width 不受 AutoScaleMode.Dpi 管，
-                // 得自己乘。四个定宽列合计应当是 100+74+84+62=320 设计值按当前比例放大后的数
-                // （本地模式只是把「已装」并进「开关」，合计不变）。
+                // 得自己乘。96dpi 设计值：改了什么 100 / 大小 74 / 已装 84 / 开关 62。
+                // 本地模式没有「已装」这一列（CatTree.Cols 里 instW 收成 0，宽度给了名字列），
+                // 所以合计随模式变，不能写死 320 —— b8cbf63e 把「并给开关列」改成「并给名字列」
+                // 之后合计从 320 掉到 236，这条断言就一直红着。
+                // 另外按列分别换算再相加，别拿 Dpi.S(320) 去比：每列各自取整，和取整一次不是一回事。
                 int[] cols = CatTree.ColsForTest(2000);
                 int colSum = cols[0] + cols[1] + cols[2] + cols[3];
-                int colWant = Dpi.S(320);
+                int colWant = Dpi.S(100) + Dpi.S(74) + Dpi.S(62) + (Core.IsLocal ? 0 : Dpi.S(84));
                 if (colSum != colWant)
                 {
                     bad++;
                     Core.Log("FAIL", tag + "列表定宽列合计 " + colSum + "px，应为 " + colWant
-                        + "px（100/74/84/62 没跟着缩放，高 DPI 下这几列会截字）");
+                        + "px（100/74/" + (Core.IsLocal ? "—" : "84") + "/62 没跟着缩放，高 DPI 下这几列会截字）");
                 }
-                else Core.Log("INFO", tag + "列表定宽列合计 " + colSum + "px（设计值 320）");
+                else Core.Log("INFO", tag + "列表定宽列合计 " + colSum + "px（设计值 " + (Core.IsLocal ? 236 : 320) + "）");
                 if (bad == 0) Core.Log("OK", tag + "无重叠、无越界（窗口 " + W + "px，设计宽 " + designW + "）");
             }
             catch (Exception ex) { bad++; Core.Log("FAIL", "LAYOUT 异常: " + ex.Message); }
