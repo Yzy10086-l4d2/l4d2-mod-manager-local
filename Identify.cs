@@ -729,7 +729,7 @@ namespace Installer
             // 文件名带版本号：改了识别规则就把版本 +1，旧缓存自动作废，不会读到过时的结论
             // 7z 补上目录表识别（v2.45）时刻意没有升版本：升一次要让整个库的 rar 重新解一遍
             // （几百个包、每个条目一次 Rar.exe），代价太大。改成在 LoadCache 里只丢掉 7z 的旧结论。
-            get { return Path.Combine(Core.LogDir, "identify-cache-v21.tsv"); }
+            get { return Path.Combine(Core.LogDir, "identify-cache-v22.tsv"); }
         }
 
         private static string PackAssets(string assets)
