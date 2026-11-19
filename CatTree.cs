@@ -938,6 +938,7 @@ namespace Installer
         private readonly FlatButton btnPick;
         private readonly ToolTip tipExtra;                 // 「可叠加的扩展」小标题的悬停说明
         private readonly ToolTip tipRow = new ToolTip();    // 列表行悬停：用 ItemMouseHover 触发，比 MouseMove 可靠
+        private int tipShownAt = -1;                        // 当前挂着的那一行（-1 = 没挂）：换行要先收旧的
         private SwitchBox chkMulti;                        // 「允许多选」：这个位置可以同时开好几个 MOD（模式类选项，用开关）
         private bool applyingMulti;                        // 程序自己改勾选时别触发联动
         private CoverPeek peek;                            // 封面预览：两列时是候选区上方的横条，三列时是右侧详情栏
@@ -1230,6 +1231,7 @@ namespace Installer
             tipExtra = new ToolTip();
         tipRow.InitialDelay = 100;
         tipRow.ReshowDelay = 50;
+        tipRow.AutoPopDelay = 5000;
             // 小标题在窄窗口放不下整句话，完整的解释挂在这里
             tipExtra.SetToolTip(lblExtraTitle,
                 "可叠加的扩展 = 不换本体模型、能和模型同时生效的东西：开火音效、第一人称手部模型、HUD 图标。\r\n"
@@ -1258,9 +1260,19 @@ namespace Installer
             // 这个事件是控件专门为「鼠标停在一行上」发的，不依赖 MouseMove 是否被上层吃掉。
             v.ItemMouseHover += delegate(object s, ListViewItemMouseHoverEventArgs e2)
             {
-                if (e2.Item == null || string.IsNullOrEmpty(e2.Item.ToolTipText)) return;
+                // 换行时先把上一条收掉：不收的话这一条和上一条会一起挂着，像是「提示卡住不消失」。
+                if (e2.Item == null || string.IsNullOrEmpty(e2.Item.ToolTipText))
+                { tipRow.Hide(v); tipShownAt = -1; return; }
+                if (tipShownAt != e2.Item.Index) { tipRow.Hide(v); tipShownAt = e2.Item.Index; }
                 tipRow.Show(e2.Item.ToolTipText, v, Cursor.Position.X - v.PointToScreen(Point.Empty).X + 18,
-                            Cursor.Position.Y - v.PointToScreen(Point.Empty).Y + 20, 20000);
+                            Cursor.Position.Y - v.PointToScreen(Point.Empty).Y + 20, 5000);
+            };
+            // 离开列表 / 滚轮一滚 / 停在空白处：立刻收掉，不等那 5 秒自己到点。
+            v.MouseLeave += delegate { tipRow.Hide(v); tipShownAt = -1; };
+            v.MouseWheel += delegate { tipRow.Hide(v); tipShownAt = -1; };
+            v.MouseMove += delegate(object s3, MouseEventArgs e3)
+            {
+                if (v.GetItemAt(e3.X, e3.Y) == null) { tipRow.Hide(v); tipShownAt = -1; }
             };
             v.HideSelection = false;
             ImageList pad = new ImageList();
@@ -3197,6 +3209,8 @@ namespace Installer
             lvExtra.BeginUpdate();
             try
             {
+                tipRow.Hide(lv);            // 列表整批换掉了，旧提示不能再挂在那儿
+                tipShownAt = -1;
                 lv.Items.Clear();
                 lvExtra.Items.Clear();
                 if (s == null)
