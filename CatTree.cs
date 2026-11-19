@@ -2306,7 +2306,7 @@ namespace Installer
             FillDetail();
             // 这一页的固定说明（不随光标变，也不占别的行）
             if (lblFoot != null)
-                lblFoot.Text = "这些是程序没认出位置的包：按住一行拖到左边的树上归类，。";
+                lblFoot.Text = "这些是程序没认出位置的包：按住一行拖到左边的树上归类。" + (Catalog.BrokenCount > 0 ? "（另有 " + Catalog.BrokenCount + " 个包读不出内容，见日志）" : "");
         }
 
         public void SelectSlot(string key)

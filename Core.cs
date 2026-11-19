@@ -42,6 +42,10 @@ namespace Installer
         public string AddonTitle = "";
         public string AddonAuthor = "";
 
+        // 包里有多少个条目。0 = 连目录表都读不出来（坏包 / 下载不完整 / 格式不认识）。
+        // 这种包以前和「认不出」混在一起，静默躺在库里 —— 新人只会觉得「装了没反应」。
+        public int Entries;
+
         public bool IsArchive { get { return Container != null && Container.Length > 0; } }
     }
 
@@ -826,6 +830,7 @@ namespace Installer
                 {
                     System.Diagnostics.Stopwatch swg = System.Diagnostics.Stopwatch.StartNew();
                     Catalog.ScanMods();
+                    Catalog.ReportBroken();          // 读不出内容的包当场点名，别让它静默
                     Log("INFO", "扫库阶段完成（含缓存落盘），开始归组");
                     Catalog.BuildGroups();
                     Log("INFO", "归组计时: 扫库后归组 " + swg.ElapsedMilliseconds + " ms");

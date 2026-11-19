@@ -845,6 +845,7 @@ namespace Installer
                         it.Kinds = ir.Kinds;
                         it.Only1P = ir.Only1P;
                         it.AnimOnly = ir.AnimOnly;
+                        it.Entries = ir.Entries;
                         it.AssetPaths = ir.Assets;
                         it.AddonTitle = ir.Title;
                         it.AddonAuthor = ir.Author;
@@ -1015,6 +1016,7 @@ namespace Installer
                 it.Kinds = ir.Kinds;
                 it.Only1P = ir.Only1P;
                 it.AnimOnly = ir.AnimOnly;
+                it.Entries = ir.Entries;
                 it.AssetPaths = ir.Assets;
                 it.AddonTitle = ir.Title;
                 it.AddonAuthor = ir.Author;
@@ -2142,6 +2144,32 @@ namespace Installer
                 map[c[0]] = c[1] + "|" + c[2] + "|" + c[3] + "|" + c[4];
             }
             return map;
+        }
+
+        /// <summary>读不出内容的 vpk 数量（目录表 0 条）：界面提示和日志用。</summary>
+        internal static int BrokenCount = -1;
+
+        /// <summary>
+        /// 扫完库立刻点名：哪些 vpk 连目录表都读不出来（多半是下载不完整 / 格式不认识）。
+        /// 压缩包里的 vpk 不算 —— 7z 读不出目录表是已知限制。
+        /// 以前这类包和「认不出位置」混在一起，静默躺在库里，新人只会觉得「装了没反应」。
+        /// </summary>
+        public static void ReportBroken()
+        {
+            List<string> names = new List<string>();
+            int n = 0;
+            foreach (ModItem it in Core.ModList)
+            {
+                if (it.IsArchive) continue;
+                if (it.Entries > 0) continue;
+                if (it.Name == null || !it.Name.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase)) continue;
+                n++;
+                if (names.Count < 5) names.Add(it.Name);
+            }
+            BrokenCount = n;
+            if (n == 0) return;
+            Core.Log("WARN", "有 " + n + " 个 vpk 读不出内容（目录表 0 条，多半是下载不完整）："
+                + string.Join("、", names.ToArray()) + (n > names.Count ? " 等" : ""));
         }
 
         /// <summary>自测用：把每个 MOD 的识别结果铺成一张表，人眼核错用。</summary>
