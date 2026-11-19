@@ -572,6 +572,230 @@ namespace Installer
             return total;
         }
 
+        // ---------- 插件对齐：按磁盘上的现状收敛，不记账 ----------
+        // 「开哪几套」只有 addonlist 一份真相，bin 下的插件文件是它的影子。每次写完开关（或删完 vpk）
+        // 就按当前开着的包把影子对齐一遍：该有的补回来、不该有的挪进停用区。
+        // 不维护「哪些插件开着」的表 —— 表迟早和磁盘打架，而磁盘永远是对的；对齐是幂等的，跑两遍一样。
+
+        /// <summary>停用区：关掉的 MOD 的独占插件挪到这儿，保持 bin\neko\plugins\... 的相对路径。</summary>
+        public static string DisabledPluginDir()
+        {
+            return Path.Combine(Core.LogDir, "插件停用");
+        }
+
+        /// <summary>记录区里收下的插件：一个 vpk 一个文件夹，进去是 bin\neko\plugins\...。</summary>
+        public static string PluginPackDir()
+        {
+            return Path.Combine(Core.LogDir, "插件包");
+        }
+
+        /// <summary>一次对齐的账。</summary>
+        public sealed class SyncResult
+        {
+            public List<string> Added = new List<string>();      // 补进游戏目录的
+            public List<string> Parked = new List<string>();     // 挪进停用区的
+            public List<string> Missing = new List<string>();    // 该在、可包源和停用区都找不到的
+            public bool GameRunning;                             // 游戏在跑，一个文件都没碰
+
+            public int Changes { get { return Added.Count + Parked.Count; } }
+        }
+
+        /// <summary>
+        /// 把 bin\neko\plugins 对齐到「这几套包开着」的状态。插件文件的唯一写入入口。
+        ///
+        /// 规则刻意不对称：
+        ///   · 独占文件、目标内   → 缺就补（先找停用区，再找包源）
+        ///   · 独占文件、目标外   → 游戏目录里有就挪进停用区（不删：再开回来要原位放回）
+        ///   · 共用框架           → 只补缺的，已经在了就不动（版本不同也不覆盖，别的包还在用它）
+        /// 游戏在跑时一个文件都不碰：游戏正读着这些 DLL，挪一半比不动更糟，开关本身已经写好了。
+        /// </summary>
+        public static int SyncPlugins(string gameRoot, List<PluginPack> packs, SyncResult r)
+        {
+            if (r == null) r = new SyncResult();
+            if (string.IsNullOrEmpty(gameRoot) || string.IsNullOrEmpty(Core.LogDir)) return 0;
+            try { gameRoot = Path.GetFullPath(gameRoot).TrimEnd('\\'); }
+            catch { return 0; }
+
+            if (AddonList.GameIsRunning())
+            {
+                r.GameRunning = true;
+                Core.Log("INFO", "游戏正在运行，插件文件这次一个都不动（开关已写好，退出游戏后再开关一次就对齐）");
+                return 0;
+            }
+
+            // 目标 = 开着的包里的独占文件
+            HashSet<string> target = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            List<PluginPack> live = new List<PluginPack>();
+            HashSet<string> seenPack = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (packs != null)
+                foreach (PluginPack p in packs)
+                {
+                    if (p == null || !seenPack.Add(p.Key)) continue;
+                    live.Add(p);
+                    foreach (PluginFile f in p.Files) if (!f.Shared) target.Add(f.Rel);
+                }
+
+            // 已知 = 记录区收下的全部包 + 这次传进来的包（装机时还没有记录）。
+            // 只动认得的文件：用户自己塞进 bin 的别的插件不认识，一律不碰。
+            Dictionary<string, PluginFile> known = new Dictionary<string, PluginFile>(StringComparer.OrdinalIgnoreCase);
+            foreach (PluginPack p in RecordedPluginPacks()) AddPluginFiles(known, p);
+            foreach (PluginPack p in live) AddPluginFiles(known, p);
+            if (known.Count == 0) return 0;
+
+            string parkRoot = DisabledPluginDir();
+            int added = 0, parked = 0, missing = 0;
+            foreach (KeyValuePair<string, PluginFile> kv in known)
+            {
+                string rel = kv.Key;
+                PluginFile f = kv.Value;
+                string dst = Path.Combine(gameRoot, rel);
+                bool onDisk = File.Exists(dst);
+
+                if (f.Shared)
+                {
+                    if (onDisk) continue;
+                    string w0;
+                    if (CopyPluginFile(f, dst, out w0)) { added++; r.Added.Add(rel); }
+                    else { missing++; r.Missing.Add(rel); Core.Log("WARN", "共用插件补不回来 " + rel + "：" + w0); }
+                    continue;
+                }
+
+                if (target.Contains(rel))
+                {
+                    if (onDisk) continue;
+                    string fromPark = Path.Combine(parkRoot, rel);
+                    if (File.Exists(fromPark))
+                    {
+                        try
+                        {
+                            Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                            File.Move(fromPark, dst);
+                            added++;
+                            r.Added.Add(rel);
+                            continue;
+                        }
+                        catch (Exception ex) { Core.Log("WARN", "停用区挪回来失败 " + rel + "：" + ex.Message); }
+                    }
+                    string w1;
+                    if (CopyPluginFile(f, dst, out w1)) { added++; r.Added.Add(rel); }
+                    else { missing++; r.Missing.Add(rel); Core.Log("WARN", "独占插件补不回来 " + rel + "：" + w1); }
+                }
+                else if (onDisk)
+                {
+                    string to = Path.Combine(parkRoot, rel);
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(to));
+                        File.Copy(dst, to, true);
+                        File.Delete(dst);
+                        parked++;
+                        r.Parked.Add(rel);
+                    }
+                    catch (Exception ex) { Core.Log("WARN", "插件挪进停用区失败 " + rel + "：" + ex.Message); }
+                }
+            }
+
+            if (parked > 0) PrunePluginDirs(gameRoot, r.Parked);
+            if (added > 0) PruneParkDirs(parkRoot, r.Added);
+
+            if (added + parked + missing > 0)
+                Core.Log(missing > 0 ? "WARN" : "OK",
+                    "插件对齐：就位 +" + added + "、停用 " + parked
+                    + (missing > 0 ? "、找不到 " + missing : "")
+                    + "（认得 " + known.Count + " 个插件文件）");
+            return r.Changes;
+        }
+
+        /// <summary>
+        /// 单个插件文件落盘：源在压缩包里就按条目抽出来，否则整份复制（和 CopyPlugins 同一套口径）。
+        /// 记录区的源一定是磁盘文件，但 SyncPlugins 是公开入口，压缩包形态的包也可能传进来。
+        /// </summary>
+        private static bool CopyPluginFile(PluginFile f, string dst, out string why)
+        {
+            if (f.Inner == null) return Core.CopyOneVerified(f.Src, dst, out why);
+            string pd = Path.GetDirectoryName(dst);
+            if (!string.IsNullOrEmpty(pd) && !Directory.Exists(pd)) Directory.CreateDirectory(pd);
+            return Catalog.ExtractEntryTo(f.Src, f.Inner, dst, out why);
+        }
+
+        /// <summary>记录区里收下的所有插件包（一个 vpk 一个文件夹）。</summary>
+        private static List<PluginPack> RecordedPluginPacks()
+        {
+            List<PluginPack> list = new List<PluginPack>();
+            string root = PluginPackDir();
+            if (!Directory.Exists(root)) return list;
+            try
+            {
+                foreach (string d in Directory.GetDirectories(root))
+                {
+                    string dir = Path.Combine(Path.Combine(Path.Combine(d, "bin"), "neko"), "plugins");
+                    if (!Directory.Exists(dir)) continue;
+                    PluginPack p = PluginKit.Load(dir);
+                    if (p != null) list.Add(p);
+                }
+            }
+            catch (Exception ex) { Core.Log("WARN", "读记录区的插件包失败: " + ex.Message); }
+            return list;
+        }
+
+        private static void AddPluginFiles(Dictionary<string, PluginFile> known, PluginPack p)
+        {
+            if (p == null) return;
+            foreach (PluginFile f in p.Files)
+                if (!known.ContainsKey(f.Rel)) known[f.Rel] = f;
+        }
+
+        /// <summary>从停用区把文件挪回去之后，把空掉的目录收掉（停用区自己留着）。</summary>
+        private static void PruneParkDirs(string parkRoot, List<string> rels)
+        {
+            if (rels == null || rels.Count == 0) return;
+            string root;
+            try { root = Path.GetFullPath(parkRoot).TrimEnd('\\'); }
+            catch { return; }
+            foreach (string rel in rels)
+            {
+                try
+                {
+                    string d = Path.GetDirectoryName(Path.GetFullPath(Path.Combine(root, rel)));
+                    while (!string.IsNullOrEmpty(d) && d.Length > root.Length
+                           && d.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!Directory.Exists(d) || Directory.GetFileSystemEntries(d).Length > 0) break;
+                        Directory.Delete(d);
+                        d = Path.GetDirectoryName(d);
+                    }
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// 挂载点：addonlist 刚写完（开关变了）、或刚删掉一个 vpk 时调一次。全程序只有这里算「现在开着哪些包」。
+        /// 缺 L4N 时顺手留一句话给界面：插件写了却不会被加载，进游戏是空手，不弹出来没人查得出来。
+        /// </summary>
+        public static void SyncFromSwitches(string gameRoot)
+        {
+            AddonList.LastPluginNote = "";
+            if (Core.SelfTesting) return;      // 自检跑的都是假目录，别把真记录区的插件往里铺
+            if (string.IsNullOrEmpty(gameRoot)) return;
+            try
+            {
+                SyncResult r = new SyncResult();
+                SyncPlugins(gameRoot, Catalog.EnabledPluginPacks(gameRoot), r);
+                if (r.GameRunning || r.Added.Count == 0) return;
+                if (File.Exists(Path.Combine(gameRoot, "bin\\left4neko.dll"))) return;
+                AddonList.LastPluginNote = "这次往 bin\\neko\\plugins 写了 " + r.Added.Count + " 个插件文件，"
+                    + "但游戏目录里没有 bin\\left4neko.dll（L4N 加载器）。\r\n\r\n"
+                    + "插件不会被加载，进游戏是空手 —— 不崩也不报错，所以先说清楚。\r\n"
+                    + "把 L4N 的 bin\\left4neko.dll 补进游戏目录后，再开关一次这个 MOD 就会生效。";
+            }
+            catch (Exception ex)
+            {
+                // 插件对齐失败不能连累开关：addonlist 已经写成功了，这里只留日志
+                Core.Log("WARN", "插件对齐没做完（开关已写好）: " + ex.Message);
+            }
+        }
+
         /// <summary>覆盖前把 bin 下的旧文件存进快照。返回相对 LogDir 的路径（失败返回 null）。</summary>
         private static string SnapshotPlugin(string gameRoot, string rel, string txn)
         {
@@ -830,6 +1054,9 @@ namespace Installer
             {
                 try { AddonList.Remove(addonListRoot, new string[] { m.Name }); }
                 catch (Exception ex) { Core.Log("WARN", "从 addonlist 摘掉 " + m.Name + " 失败: " + ex.Message); }
+                // vpk 没了 = 这套不开了，插件跟着收敛。Remove 写过时已经对齐过一次，这里是幂等的
+                // （没登记的手放 vpk 走不到上面那次写入）。
+                SyncFromSwitches(addonListRoot);
             }
             return null;
         }
@@ -1394,6 +1621,9 @@ namespace Installer
             foreach (string f in Directory.GetFiles(sourceDir, "*.vpk", SearchOption.AllDirectories))
             {
                 string name = Path.GetFileName(f);
+                // 插件先收：move=true 会把源 vpk 删掉，删完就再也找不到旁边的 bin 了。
+                // 「库里已有、跳过」的那条也要收 —— vpk 在库、插件没记录，是最常见的一次性漏。
+                CollectPlugins(f, log);
                 if (known.Contains(name)) { skipped++; continue; }
                 string relDir = ClassifyByName(name);
                 if (PutIntoLib(f, name, relDir, move, log)) { imported++; known.Add(name); }
@@ -1412,6 +1642,36 @@ namespace Installer
                 }
             }
             return log;
+        }
+
+        /// <summary>
+        /// 把 vpk 旁边那套插件收进记录区：&lt;记录&gt;\插件包\&lt;vpk 名&gt;\bin\neko\plugins\...。
+        /// 本地版的 vpk 进了 addons 之后就只剩一个文件（旁边的 bin 不会跟着进），
+        /// 插件只能趁导入这一下收下来，否则以后开关这个 MOD 没处找插件。
+        /// 带校验、按大小跳过已收过的 —— 重复导入同一批不会越积越多。
+        /// </summary>
+        private static void CollectPlugins(string vpkPath, List<string> log)
+        {
+            PluginPack p = PluginKit.Find(vpkPath);
+            if (p == null) return;
+            string name = Path.GetFileNameWithoutExtension(vpkPath);
+            string dstRoot = Path.Combine(PluginPackDir(), name);
+            int n = 0, failed = 0;
+            foreach (PluginFile f in p.Files)
+            {
+                if (f.Inner != null) continue;      // Find 找出来的源一定在磁盘上
+                string dst = Path.Combine(dstRoot, f.Rel);
+                try
+                {
+                    if (File.Exists(dst) && new FileInfo(dst).Length == f.Size) continue;   // 已经收过
+                }
+                catch { }
+                string why;
+                if (Core.CopyOneVerified(f.Src, dst, out why)) n++;
+                else { failed++; log.Add("插件没复制进去 " + f.Rel + "：" + why); }
+            }
+            if (n > 0) log.Add("收插件 " + n + " 个 → 插件包\\" + name);
+            if (failed > 0) Core.Log("WARN", "收插件有 " + failed + " 个文件失败（" + Path.GetFileName(vpkPath) + "）");
         }
 
         // 复制进库（带校验），move=true 时删源文件
@@ -2838,6 +3098,229 @@ namespace Installer
             }
             catch (Exception ex) { sb.AppendLine("调用失败: " + ex.Message); }
             return sb.ToString();
+        }
+
+        // ---------- 自检：插件对齐（--plugself 的后半段，临时假目录，不碰真游戏） ----------
+
+        private static int SyncExpect(bool ok, string what)
+        {
+            if (ok) return 0;
+            Console.WriteLine("SYNC FAIL " + what);
+            return 1;
+        }
+
+        private static int SyncCount(int got, int want, string what)
+        {
+            if (got == want) return 0;
+            Console.WriteLine("SYNC FAIL " + what + "：期望 " + want + "，实际 " + got);
+            return 1;
+        }
+
+        /// <summary>
+        /// 开关 → bin\neko\plugins 这条链：首次补齐、跑两次不变（幂等）、关掉只收独占、
+        /// 开回来原位放回、游戏在跑一律不动；最后拿真实素材（RAM7 CFX 插件版）走一遍
+        /// 「导入收包 → 对齐 → 关掉」。全程建在 %TEMP%，真游戏目录和真记录区都不碰。
+        /// </summary>
+        public static int PluginSyncSelfTest()
+        {
+            int bad = 0;
+            string tmp = Path.Combine(Path.GetTempPath(), "syncself-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+            string savedLog = Core.LogDir, savedGame = Core.Cfg.GameRoot, savedMods = Core.ModRoot;
+            bool? savedRunning = AddonList.ForceGameRunning;
+            // 自检没法真起/真停游戏，直接按「没跑」验（第四步再手动按「在跑」）；本机开着游戏时也不影响自检
+            AddonList.ForceGameRunning = false;
+            try
+            {
+                string game = Path.Combine(tmp, "假游戏");
+                Core.LogDir = Path.Combine(tmp, "记录");
+                Directory.CreateDirectory(Core.LogDir);
+                Directory.CreateDirectory(Path.Combine(Path.Combine(game, "left4dead2"), "addons"));
+                Directory.CreateDirectory(Path.Combine(game, "bin"));
+                File.WriteAllText(Path.Combine(game, "bin", "left4neko.dll"), "fake loader");
+
+                // 假包：独占 3（plugins 根 2 + 枪目录 1）、共用 2（CFX 根配置 + Framework）。
+                // 直接摆在记录区里，跟「导入收下之后」一模一样（导入那一步在后面真实素材那组验）。
+                string plug = Path.Combine(PluginPackDir(), "a", "bin\\neko\\plugins");   // 记录按 vpk 名（无扩展名）存
+                Directory.CreateDirectory(Path.Combine(plug, "CFX", "Framework"));
+                Directory.CreateDirectory(Path.Combine(plug, "CFX", "Weapons", "Gun1"));
+                File.WriteAllText(Path.Combine(plug, "loader.dll"), "loader");
+                File.WriteAllText(Path.Combine(plug, "shu_weapon.dll"), "weapon");
+                File.WriteAllText(Path.Combine(plug, "CFX", "cfx_host.ini"), "ini");
+                File.WriteAllText(Path.Combine(plug, "CFX", "Framework", "core.dll"), "core");
+                File.WriteAllText(Path.Combine(plug, "CFX", "Weapons", "Gun1", "gun.dll"), "gun");
+                PluginKit.ClearCache();
+                PluginPack pack = PluginKit.LoadCollected(Core.LogDir, "a.vpk");
+                bad += SyncExpect(pack != null && pack.Files.Count == 5, "记录区里认出 5 个插件文件（3 独占 / 2 共用）");
+                if (pack == null) return bad;
+
+                string inGame = Path.Combine(game, "bin\\neko\\plugins");
+                // 1) 首次对齐：缺的从包源补齐
+                SyncResult r1 = new SyncResult();
+                SyncPlugins(game, new List<PluginPack> { pack }, r1);
+                bad += SyncCount(r1.Added.Count, 5, "首次对齐补了 5 个文件");
+                bad += SyncExpect(File.Exists(Path.Combine(inGame, "loader.dll")), "首次对齐：独占 loader.dll 就位");
+                bad += SyncExpect(File.Exists(Path.Combine(inGame, "CFX\\Framework\\core.dll")), "首次对齐：共用框架也补了");
+
+                // 2) 再跑一次：一个文件都不该动（幂等）
+                SyncResult r2 = new SyncResult();
+                SyncPlugins(game, new List<PluginPack> { pack }, r2);
+                bad += SyncCount(r2.Changes, 0, "二次对齐 0 变化（幂等）");
+
+                // 3) 关掉这一套：独占进停用区，共用框架原地不动
+                string park = DisabledPluginDir();
+                SyncResult r3 = new SyncResult();
+                SyncPlugins(game, new List<PluginPack>(), r3);
+                bad += SyncCount(r3.Parked.Count, 3, "关掉后 3 个独占进停用区");
+                bad += SyncExpect(!File.Exists(Path.Combine(inGame, "loader.dll")), "关掉后 loader.dll 离开游戏目录");
+                bad += SyncExpect(File.Exists(Path.Combine(park, "bin\\neko\\plugins\\loader.dll")), "loader.dll 在停用区里（没删）");
+                bad += SyncExpect(File.Exists(Path.Combine(park, "bin\\neko\\plugins\\CFX\\Weapons\\Gun1\\gun.dll")), "枪目录的插件也在停用区");
+                bad += SyncExpect(File.Exists(Path.Combine(inGame, "CFX\\Framework\\core.dll")), "关掉后共用框架还在（别的包在用）");
+
+                // 4) 再开回来：独占从停用区原位放回，共用不动
+                SyncResult r4 = new SyncResult();
+                SyncPlugins(game, new List<PluginPack> { pack }, r4);
+                bad += SyncCount(r4.Added.Count, 3, "开回来补 3 个独占");
+                bad += SyncCount(r4.Parked.Count, 0, "开回来没有再往停用区挪");
+                bad += SyncExpect(File.Exists(Path.Combine(inGame, "loader.dll")), "loader.dll 回到原位");
+                bad += SyncExpect(!File.Exists(Path.Combine(park, "bin\\neko\\plugins\\loader.dll")), "停用区里那份已经挪走");
+
+                // 5) 游戏在跑：缺的也不补，一个文件都不碰
+                File.Delete(Path.Combine(inGame, "shu_weapon.dll"));
+                AddonList.ForceGameRunning = true;
+                SyncResult r5 = new SyncResult();
+                SyncPlugins(game, new List<PluginPack> { pack }, r5);
+                AddonList.ForceGameRunning = false;
+                bad += SyncExpect(r5.GameRunning, "游戏在跑：报「跳过（游戏在跑）」");
+                bad += SyncCount(r5.Changes, 0, "游戏在跑：0 变化");
+                bad += SyncExpect(!File.Exists(Path.Combine(inGame, "shu_weapon.dll")), "游戏在跑：缺的文件也没补");
+
+                // 6) 真实素材：完整链路（这台机器上没有素材就跳过，不算失败）
+                bad += RealPluginChain(Path.Combine(tmp, "真链"));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("SYNC 自检异常: " + ex.Message);
+                bad++;
+            }
+            finally
+            {
+                Core.LogDir = savedLog;
+                Core.Cfg.GameRoot = savedGame;
+                Core.ModRoot = savedMods;
+                AddonList.ForceGameRunning = savedRunning;
+                PluginKit.ClearCache();
+                try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { }
+            }
+            Console.WriteLine("SYNC 自检失败数 = " + bad);
+            return bad;
+        }
+
+        // 真实素材（只读）：RAM7 的 CFX 插件版。换台机器没有就跳过，不判失败。
+        private const string RealPluginSample =
+            @"D:\游戏内容\求生之路2各项MOD\addons各类物品储藏库\MAC-10\RAM7 星月夜（CFX 插件版）";
+
+        /// <summary>
+        /// 真实素材的完整链路：导入两个 vpk 时把旁边那套 44 个插件收进记录区 → 打开时铺进假游戏目录
+        /// → 关掉后只收 2 个独占、42 个共用框架留下 → 再开回来 44 个齐。假游戏目录，素材只读。
+        /// </summary>
+        private static int RealPluginChain(string tmp)
+        {
+            int bad = 0;
+            if (!Directory.Exists(RealPluginSample))
+            {
+                Console.WriteLine("SYNC 跳过真实素材链路（这台机器没有 RAM7 素材）");
+                return 0;
+            }
+            string savedLog = Core.LogDir, savedGame = Core.Cfg.GameRoot, savedMods = Core.ModRoot;
+            try
+            {
+                string game = Path.Combine(tmp, "游戏");
+                Directory.CreateDirectory(Path.Combine(Path.Combine(game, "left4dead2"), "addons"));
+                Directory.CreateDirectory(Path.Combine(game, "bin"));
+                File.WriteAllText(Path.Combine(game, "bin", "left4neko.dll"), "fake loader");
+                Core.LogDir = Path.Combine(tmp, "记录");
+                Directory.CreateDirectory(Core.LogDir);
+                Core.Cfg.GameRoot = game;
+                Core.ModRoot = Path.Combine(tmp, "库");
+                Directory.CreateDirectory(Core.ModRoot);
+                PluginKit.ClearCache();
+
+                // 导入：两个真 vpk + 旁边那套插件
+                int imported = 0, skipped = 0;
+                List<string> lines = ImportVpks(RealPluginSample, false, out imported, out skipped);
+                Console.WriteLine("SYNC 真实素材：导入 " + imported + " 个 vpk，跳过 " + skipped);
+                bad += SyncCount(imported, 2, "真实素材两个 vpk 都收进库");
+                if (lines != null)
+                    for (int i = 0; i < lines.Count && i < 8; i++) Console.WriteLine("SYNC   · " + lines[i]);
+
+                string[] records = Directory.GetDirectories(PluginPackDir());
+                bad += SyncCount(records.Length, 2, "两个 vpk 各收一份插件（插件包\\<vpk 名>\\）");
+                int per = 0;
+                if (records.Length > 0)
+                    per = Directory.GetFiles(Path.Combine(records[0], "bin\\neko\\plugins"), "*", SearchOption.AllDirectories).Length;
+                Console.WriteLine("SYNC 真实素材：每份记录 " + per + " 个插件文件");
+                bad += SyncCount(per, 44, "记录区每份 44 个插件文件");
+
+                // 再导一次：vpk 已在库会被跳过 —— 插件那条也得走（最容易漏的一支）。
+                // 先删掉记录里一个文件，好验证「跳过」时插件确实被补回来，而不是整支被跳过
+                string probe = Path.Combine(records[0], "bin\\neko\\plugins\\shu_weapon.dll");
+                File.Delete(probe);
+                int imported2 = 0, skipped2 = 0;
+                List<string> lines2 = ImportVpks(RealPluginSample, false, out imported2, out skipped2);
+                bool sawExist = false;
+                foreach (string l in lines2) if (l.IndexOf("已存在", StringComparison.Ordinal) >= 0) sawExist = true;
+                bad += SyncCount(imported2, 0, "二次导入 0 个 vpk 新入库");
+                bad += SyncExpect(sawExist, "二次导入走了「已存在，跳过」那一支");
+                bad += SyncExpect(File.Exists(probe), "vpk 被跳过时插件照样补收回来");
+                bad += SyncCount(Directory.GetDirectories(PluginPackDir()).Length, 2, "二次导入后记录区仍是 2 份（没重复堆）");
+                bad += SyncCount(Directory.GetFiles(Path.Combine(records[0], "bin\\neko\\plugins"), "*", SearchOption.AllDirectories).Length, 44, "二次导入后每份记录仍是 44 个文件");
+
+                // 打开：addonlist 写 1，vpk 在 addons 里（判据只看名字在不在，内容不重要）
+                Dictionary<string, bool> on = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                foreach (string v in Directory.GetFiles(RealPluginSample, "*.vpk"))
+                {
+                    string name = Path.GetFileName(v);
+                    File.WriteAllText(Path.Combine(Path.Combine(Path.Combine(game, "left4dead2"), "addons"), name), "");
+                    on[name] = true;
+                }
+                AddonList.Write(game, on);
+                List<PluginPack> packs = Catalog.EnabledPluginPacks(game);
+                bad += SyncCount(packs.Count, 2, "开着的插件包认出 2 份记录");
+
+                string inGame = Path.Combine(game, "bin\\neko\\plugins");
+                SyncPlugins(game, packs, new SyncResult());
+                int got = Directory.GetFiles(inGame, "*", SearchOption.AllDirectories).Length;
+                Console.WriteLine("SYNC 真实素材：铺进游戏 " + got + " 个文件");
+                bad += SyncCount(got, 44, "44 个插件文件全在游戏目录");
+
+                // 关掉：2 个独占进停用区，42 个共用框架留
+                SyncPlugins(game, new List<PluginPack>(), new SyncResult());
+                int left = Directory.GetFiles(inGame, "*", SearchOption.AllDirectories).Length;
+                int parked = Directory.GetFiles(DisabledPluginDir(), "*", SearchOption.AllDirectories).Length;
+                Console.WriteLine("SYNC 真实素材：关掉后游戏里留 " + left + " 个（共用），停用区 " + parked + " 个（独占）");
+                bad += SyncCount(left, 42, "关掉后 42 个共用框架原地不动");
+                bad += SyncCount(parked, 2, "关掉后 2 个独占进停用区");
+                bad += SyncExpect(File.Exists(Path.Combine(DisabledPluginDir(), "bin\\neko\\plugins\\shu_weapon.dll")), "shu_weapon.dll 在停用区");
+                bad += SyncExpect(File.Exists(Path.Combine(DisabledPluginDir(), "bin\\neko\\plugins\\CFX\\Weapons\\RAM7_Starlit\\CfxRam7Starlit.dll")), "CfxRam7Starlit.dll 在停用区");
+
+                // 再开回来：44 个齐
+                SyncPlugins(game, Catalog.EnabledPluginPacks(game), new SyncResult());
+                int again = Directory.GetFiles(inGame, "*", SearchOption.AllDirectories).Length;
+                bad += SyncCount(again, 44, "再开回来 44 个插件文件都到位");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("SYNC 真实素材链路异常: " + ex.Message);
+                bad++;
+            }
+            finally
+            {
+                Core.LogDir = savedLog;
+                Core.Cfg.GameRoot = savedGame;
+                Core.ModRoot = savedMods;
+                PluginKit.ClearCache();
+            }
+            return bad;
         }
     }
 }

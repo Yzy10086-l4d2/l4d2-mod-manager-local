@@ -250,6 +250,20 @@ namespace Installer
             return p;
         }
 
+        /// <summary>
+        /// 记录区里收下的那份插件：&lt;记录&gt;\插件包\&lt;vpk 名&gt;\bin\neko\plugins。
+        /// 本地版的 vpk 进了游戏 addons 就只剩一个文件，旁边再也不会有 bin ——
+        /// 插件是导入时收进记录区的那一份，开关 MOD 时按 vpk 名回这里找。
+        /// </summary>
+        public static PluginPack LoadCollected(string logDir, string vpkName)
+        {
+            if (string.IsNullOrEmpty(logDir) || string.IsNullOrEmpty(vpkName)) return null;
+            string dir = Path.Combine(Path.Combine(logDir, "插件包"), Path.GetFileNameWithoutExtension(vpkName));
+            dir = Path.Combine(Path.Combine(Path.Combine(dir, "bin"), "neko"), "plugins");
+            if (!Directory.Exists(dir)) return null;
+            return Load(dir);
+        }
+
         /// <summary>包名：插件目录往上第四层（...\RAM7 星月夜（CFX 插件版）\bin\neko\plugins）。</summary>
         private static string PackNameOf(string pluginsDir)
         {
@@ -397,6 +411,14 @@ namespace Installer
                 }
                 bad += CheckB(LoadFromArchive(Path.ChangeExtension(zip, ".rar")) == null, true, "非 zip 不认");
                 bad += CheckB(LoadFromArchive(Path.Combine(plain, "b.vpk")) == null, true, "普通文件不会当压缩包读");
+
+                // 7b) 记录区形态：<记录>\插件包\<vpk 名>\bin\neko\plugins —— 本地版导入时收下的那份
+                string recLog = Path.Combine(tmp, "记录");
+                Directory.CreateDirectory(Path.Combine(recLog, "插件包", "c", "bin", "neko", "plugins", "CFX", "Framework"));
+                File.WriteAllText(Path.Combine(recLog, "插件包", "c", "bin", "neko", "plugins", "CFX", "Framework", "core.dll"), "x");
+                ClearCache();
+                bad += CheckB(LoadCollected(recLog, "c.vpk") != null, true, "按 vpk 名从记录区找到插件");
+                bad += CheckB(LoadCollected(recLog, "记录区没有的.vpk") == null, true, "记录区没有的 vpk 返回空");
 
                 // 8) rar 形态：库里 98/141 个包是 rar，必须能认（没有 WinRAR 就跳过，不判失败）
                 string rarExe = Catalog.RarExe();

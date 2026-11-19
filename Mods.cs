@@ -25,6 +25,20 @@ namespace Installer
         /// <summary>上一次写入时游戏是否正在运行。界面靠它决定要不要提醒「游戏开着，可能被它自己的状态覆盖」。</summary>
         public static bool LastWroteWhileRunning { get; private set; }
 
+        /// <summary>
+        /// 写完开关后插件那边要提醒的一句话（现在只有「缺 L4N」一种）。
+        /// 开关的写入口有好几个，文案只在 Work.SyncFromSwitches 里生成一份，界面调 ShowPluginNote 弹。
+        /// </summary>
+        public static string LastPluginNote = "";
+
+        /// <summary>缺 L4N 时弹一次。没有话就什么都不做。</summary>
+        public static void ShowPluginNote()
+        {
+            if (string.IsNullOrEmpty(LastPluginNote)) return;
+            MessageBox.Show(LastPluginNote, "插件不会被加载", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            LastPluginNote = "";
+        }
+
         public static bool GameIsRunning()
         {
             if (ForceGameRunning.HasValue) return ForceGameRunning.Value;
@@ -207,7 +221,7 @@ namespace Installer
             }
             List<string> all = new List<string>();
             all.AddRange(head); all.AddRange(body); all.AddRange(tail);
-            return WriteKeepEol(p, all);
+            return WriteKeepEol(gameRoot, p, all);
         }
 
         /// <summary>
@@ -215,7 +229,7 @@ namespace Installer
         /// 结果只是「点一下开关」，整份 addonlist 的每一行都被改了 —— 用对比工具看像是全文件都动过，
         /// 也说不清到底改的是哪几条。现在沿用原文的行尾和文件末尾是否有换行，只动该动的那几行。
         /// </summary>
-        private static bool WriteKeepEol(string path, List<string> lines)
+        private static bool WriteKeepEol(string gameRoot, string path, List<string> lines)
         {
             LastWroteWhileRunning = GameIsRunning();
             if (LastWroteWhileRunning)
@@ -235,6 +249,9 @@ namespace Installer
             // 原子写：写一半被打断（拔 U 盘 / 空间满）会把 addonlist 留成空文件，游戏里所有开关就全丢了
             Core.WriteAllTextAtomic(path, string.Join(nl, lines.ToArray()) + tail, Encoding.Default);
             SaveSnapshot(path);
+            // 开关刚变：插件的进出跟着这份新状态收敛。全程序只在这一处收口（Write / WriteOrdered /
+            // Remove 都走这儿），按钮里不再各调一遍；游戏在跑时 SyncPlugins 自己会跳过文件操作。
+            Work.SyncFromSwitches(gameRoot);
             return true;
         }
 
@@ -312,7 +329,7 @@ namespace Installer
                 if (close < 0) close = lines.Count;
                 lines.InsertRange(close, add);
             }
-            return WriteKeepEol(p, lines);
+            return WriteKeepEol(gameRoot, p, lines);
         }
 
         /// <summary>从 addonlist 里删掉这些名字（文件被移走后，别留一条指向不存在文件的开关）。</summary>
@@ -329,7 +346,7 @@ namespace Installer
                 Match m = LineRe.Match(lines[i]);
                 if (m.Success && drop.Contains(m.Groups[1].Value)) { lines.RemoveAt(i); n++; }
             }
-            if (n > 0 && !WriteKeepEol(p, lines)) return 0;
+            if (n > 0 && !WriteKeepEol(gameRoot, p, lines)) return 0;
             return n;
         }
     }
@@ -1572,6 +1589,7 @@ namespace Installer
                             : "可以试试以管理员身份运行，或先退出占用这个文件的程序。"),
                         "回读不一致", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
+                AddonList.ShowPluginNote();
                 return true;
             }
             catch (Exception ex)

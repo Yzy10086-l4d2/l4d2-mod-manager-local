@@ -3372,6 +3372,7 @@ namespace Installer
                         li.SubItems[1].Font = Theme.UIBold;
                         li.ToolTipText = FullNameOf(g) + "\r\n\r\n" + PartsTip(g);
                     }
+                    AppendPluginTip(li, g);
                     lv.Items.Add(li);
                 }
 
@@ -3448,6 +3449,7 @@ namespace Installer
                             li.ToolTipText = FullNameOf(g) + "\r\n\r\n" + PartsTip(g);
                         }
                         else li.ToolTipText = "和上面的模型同时生效，互不影响";
+                        AppendPluginTip(li, g);
                         lvExtra.Items.Add(li);
                     }
                 }
@@ -3646,6 +3648,7 @@ namespace Installer
             // 识别经过：认不出时也要说清「看过什么、按什么猜」，别让人对着「未归类」干瞪眼
             string trace = g.Main != null ? (g.Main.SubjectTrace ?? "") : "";
             if (trace.Length > 0) li.ToolTipText += "\r\n识别经过：" + trace;
+            AppendPluginTip(li, g);
             lv.Items.Add(li);
         }
 
@@ -3660,6 +3663,31 @@ namespace Installer
             // 不标的话和普通包在列表里长得一模一样，装完「手上空的」根本对不上号。
             if (g.Plugin != null) k = k.Length > 0 ? k + "·含插件" : "含插件";
             return k;
+        }
+
+        /// <summary>
+        /// 悬停里的插件状态。「含插件」只说明这包带 DLL，带不等于在位：
+        /// 文件缺了就是进游戏空手，所以把在 / 缺 / 停用区几个数直接摆出来。
+        /// </summary>
+        private static void AppendPluginTip(ListViewItem li, ModGroup g)
+        {
+            PluginPack pk = g == null ? null : g.Plugin;
+            if (pk == null) return;
+            string gameRoot = Core.Cfg == null || Core.Cfg.GameRoot == null ? "" : Core.Cfg.GameRoot.TrimEnd('\\');
+            string park = Work.DisabledPluginDir();
+            int here = 0, gone = 0, parked = 0;
+            foreach (PluginFile f in pk.Files)
+            {
+                bool onDisk = false, inPark = false;
+                try { onDisk = gameRoot.Length > 0 && File.Exists(Path.Combine(gameRoot, f.Rel)); }
+                catch { }
+                if (onDisk) { here++; continue; }
+                try { inPark = File.Exists(Path.Combine(park, f.Rel)); }
+                catch { }
+                if (inPark) parked++; else gone++;
+            }
+            string tip = "插件：共 " + pk.Files.Count + " 个文件，已就位 " + here + " / 缺 " + gone + " / 停用区 " + parked;
+            li.ToolTipText = string.IsNullOrEmpty(li.ToolTipText) ? tip : li.ToolTipText + "\r\n\r\n" + tip;
         }
 
         /// <summary>组合装行的悬停说明：部件一个一个念出来，外加怎么挑。</summary>

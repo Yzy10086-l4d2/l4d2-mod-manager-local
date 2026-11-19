@@ -3142,6 +3142,7 @@ namespace Installer
             {
                 Core.Log("INFO", title + "：文件已就位，开关也写了（写入时游戏正在运行）");
             }
+            AddonList.ShowPluginNote();
             // 状态列是从 addons + addonlist 现读的，装完得重扫一次，否则列表还显示旧状态
             try { Core.ScanMods(); } catch (Exception exs) { Core.Log("WARN", "装完重扫失败: " + exs.Message); }
             RefreshMods();
@@ -4475,6 +4476,7 @@ namespace Installer
                         + "大厅里改通常没问题；如果对不上，退出游戏后再改一次。",
                         "回读不一致", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
+                AddonList.ShowPluginNote();
 
                 // 只改了开关，文件没动：直接对齐内存里的值，省一次全库重扫
                 foreach (ModGroup g in Catalog.Groups)

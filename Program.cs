@@ -454,6 +454,8 @@ namespace Installer
             {
                 // 插件组件自检：纯离线，只验共享判定和目录解析，不碰游戏目录
                 int bad = PluginKit.SelfTest();
+                // 插件对齐自检：开关 → bin 下文件进出（临时假目录），外加 RAM7 真实素材走一遍完整链路
+                bad += Work.PluginSyncSelfTest();
                 Console.WriteLine("plugself failures = " + bad);
                 return bad == 0 ? 0 : 1;
             }

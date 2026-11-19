@@ -1430,6 +1430,35 @@ namespace Installer
         }
 
         /// <summary>
+        /// 当前「开着」的插件包（本地版）。判据只认磁盘：addonlist 里写着 1（或压根没登记，游戏默认开）
+        /// 且那个 vpk 还在 addons 里。不看 Groups —— 刚装完 / 刚删完那一瞬间，内存里的扫描结果是旧的。
+        /// </summary>
+        public static List<PluginPack> EnabledPluginPacks(string gameRoot)
+        {
+            List<PluginPack> packs = new List<PluginPack>();
+            if (string.IsNullOrEmpty(gameRoot)) return packs;
+            string root = Path.Combine(Core.LogDir, "插件包");
+            if (!Directory.Exists(root)) return packs;
+            string addons = Path.Combine(Path.Combine(gameRoot, "left4dead2"), "addons");
+            Dictionary<string, bool> states = AddonList.Read(gameRoot);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (string d in Directory.GetDirectories(root))
+                {
+                    string vpk = Path.GetFileName(d) + ".vpk";
+                    bool on;
+                    if (states.TryGetValue(vpk, out on) && !on) continue;   // 明确关掉的
+                    if (!File.Exists(Path.Combine(addons, vpk))) continue;  // vpk 都不在 addons 里，谈不上开
+                    PluginPack p = PluginKit.LoadCollected(Core.LogDir, vpk);
+                    if (p != null && seen.Add(p.Key)) packs.Add(p);
+                }
+            }
+            catch (Exception ex) { Core.Log("WARN", "读插件包记录失败: " + ex.Message); }
+            return packs;
+        }
+
+        /// <summary>
         /// 给套装挂插件组件：同一个包里的每个 vpk 往上找 bin\neko\plugins，找到就挂上。
         ///
         /// 只挂到「第一个命中的部件所在的套装」，装的时候还会按 PluginPack.Key 去重 ——
@@ -1445,13 +1474,23 @@ namespace Installer
             {
                 foreach (ModItem it in g.Parts)
                 {
-                    // 游戏 addons 里那份本来就没有 bin，跳过
-                    if (it.FromGame) continue;
-                    // 压缩包里的 vpk 没有真实目录：改读包里有没有按游戏根摆的 bin\neko\plugins
-                    PluginPack p = it.IsArchive
-                        ? (ArchiveHasPlugins(it.FullPath) ? PluginKit.LoadFromArchive(it.FullPath) : null)
-                        : PluginKit.Find(it.FullPath);
-                    if (p == null) continue;
+                    // 游戏 addons 里那份只剩一个 vpk 文件，旁边不会再有 bin：
+                    // 插件是「导入时收进记录区」的那一份，按 vpk 名去找。
+                    // 其余来源（库里的散装 vpk / 压缩包）保持原来的找法。
+                    PluginPack p;
+                    if (it.FromGame)
+                    {
+                        p = PluginKit.LoadCollected(Core.LogDir, it.Name);
+                        if (p == null) continue;
+                    }
+                    else
+                    {
+                        // 压缩包里的 vpk 没有真实目录：改读包里有没有按游戏根摆的 bin\neko\plugins
+                        p = it.IsArchive
+                            ? (ArchiveHasPlugins(it.FullPath) ? PluginKit.LoadFromArchive(it.FullPath) : null)
+                            : PluginKit.Find(it.FullPath);
+                        if (p == null) continue;
+                    }
                     g.Plugin = p;
                     n++;
                     names.Add(g.Name);
