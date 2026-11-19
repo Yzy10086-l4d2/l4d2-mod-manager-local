@@ -1225,12 +1225,20 @@ namespace Installer
             if (Core.ModList != null)
                 foreach (ModItem m in Core.ModList) if (!string.IsNullOrEmpty(m.Name)) known.Add(m.Name);
 
+            // 平台包是别人的前置：换方案时一律不许关 —— 关掉它，挂在上面的 mod 会静默失效，
+            // 玩家只会看到「表情没了 / 挂件没了」，查不出是换方案干的。
+            HashSet<string> platform = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (Core.ModList != null)
+                foreach (ModItem m in Core.ModList)
+                    if (m != null && !string.IsNullOrEmpty(m.Name) && m.Cat == Catalog.CAT_PLATFORM) platform.Add(m.Name);
+
             if (Directory.Exists(addons))
                 foreach (string f in Directory.GetFiles(addons, "*.vpk"))
                 {
                     string n = Path.GetFileName(f);
                     if (want.Contains(n)) continue;
                     if (!known.Contains(n)) { untouched++; continue; }   // 不认识的：不是我们装的，别管
+                    if (platform.Contains(n)) { untouched++; continue; }  // 平台：永远不关
                     st[n] = false;
                 }
 

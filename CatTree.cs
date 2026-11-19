@@ -374,7 +374,7 @@ namespace Installer
             "治疗与复活", "暂时增益", "其他药品",
             // 杂项里的「整套替换」三栏排在最前：它们的包通常十几件，比零散道具更该先看到
             "UI 界面", "特效", "音效", "弹道",
-            "可搬道具", "特效杂项", "其他杂项"
+            "可搬道具", "特效杂项", "其他杂项", "平台"
         };
 
         public static int SubRank(string sub)
@@ -490,6 +490,8 @@ namespace Installer
                 // 换的不是某个人，挂在人物底下看着像要换角色。
                 case "场景": case "天空盒": case "地面细节": case "场景贴图":
                     return "场景";
+                case "平台":
+                    return "平台";
             }
             return "人物";                       // 一代 / 二代
         }
@@ -688,6 +690,7 @@ namespace Installer
             // 两套同时开只会互相覆盖，必须走 Items 单选（和 AK-47 一个道理）。
             // 它们的 Kinds 天然带 HUD / 音效 / 特效，不在这里拦住就会被判成叠加栏。
             // （只改一把枪的 HUD 图标不在此列：它的 Cat 是枪械，本来就该当那把枪的叠加载荷。）
+            if (g.Cat == "平台") return true;      // 平台是底座：永远当叠加，谁也顶不掉它
             if (g.Cat == "杂项" && (g.Sub == "UI 界面" || g.Sub == "特效" || g.Sub == "音效"))
                 return false;
             if (m.Only1P) return true;                                         // 只动了第一人称，和整套模型不抢

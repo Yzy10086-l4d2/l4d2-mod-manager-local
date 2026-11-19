@@ -62,6 +62,7 @@ namespace Installer
         public const string CAT_MED = "药品";
         public const string CAT_MISC = "杂项";
         public const string CAT_SPRAY = "喷漆";
+        public const string CAT_PLATFORM = "平台";
 
         // 大类的顺序只有一份：CatPrefs 里那份（方案树按它排）。
         // 内建六类永远在里面，用户新建的分类跟在后面，可以上下移。
@@ -1085,6 +1086,15 @@ namespace Installer
         /// </summary>
         static void RefineBySubject(ModItem it)
         {
+            // 表情 / 动作平台（KSEP 这类）：模型全是 anim_/gestures_、认不出任何本体。
+            // 它不是「换谁」，是给别人的 mod 当底座 —— 单独一个大类，永远当叠加；
+            // 换方案时不跟着关（Work.SwitchAddons 里有一条对应的跳过）。
+            if (it.AnimOnly)
+            {
+                it.Cat = CAT_PLATFORM; it.Sub = "平台"; it.Category = it.Cat;
+                it.Subject = "平台"; it.SubjectLevel = "平台";
+                return;
+            }
             // 位置认出来了，但小分类还是文件夹 / 兜底给的：以小分类跟位置对齐。
             // 否则会出现「识别结果 MAC-10、小分类 UZI」这种自相矛盾的记录，
             // 树上到底听谁的完全看运气（2026-11-19 实测 shu_weapon_ram7_starlit_mac10）。
