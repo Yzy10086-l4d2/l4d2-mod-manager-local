@@ -4237,6 +4237,51 @@ namespace Installer
         /// 只改这几行的 1/0，vpk 文件一个都不碰；写之前也不留副本。
         /// 不动内存里的库扫描结果，只把 AddonOn 对齐，所以点完立刻生效、不用重扫。
         /// </summary>
+        /// <summary>
+        /// 八人包 ↔ 一代 / 二代：开关级互斥（本地版没有「安装」，只有 addonlist 的 1/0）。
+        /// 这次要打开八人包，就把一/二代里开着的压成 0；反过来开了某个人，八人包的压成 0。
+        /// 只改开关值，不碰文件；两边同一次都被打开时以八人包为准。
+        /// </summary>
+        private Dictionary<string, bool> EnforceEightPack(Dictionary<string, bool> st)
+        {
+            if (treeView == null) return st;
+            bool eightOn = false, soloOn = false;
+            foreach (Slot s in treeView.Slots)
+            {
+                if (s.Pile) continue;
+                bool on = false;
+                foreach (ModGroup g in s.Items)
+                    foreach (ModItem p in g.Parts)
+                    {
+                        bool v;
+                        if (st.TryGetValue(p.Name, out v) && v) { on = true; break; }
+                    }
+                if (!on) continue;
+                if (s.Sub == "八人包") eightOn = true;
+                else if (s.Sub == "一代" || s.Sub == "二代") soloOn = true;
+            }
+            if (!eightOn && !soloOn) return st;
+
+            int flipped = 0;
+            foreach (Slot s in treeView.Slots)
+            {
+                if (s.Pile) continue;
+                bool clash = eightOn ? (s.Sub == "一代" || s.Sub == "二代") : (s.Sub == "八人包");
+                if (!clash) continue;
+                foreach (ModGroup g in s.Items)
+                    foreach (ModItem p in g.Parts)
+                        if (p.AddonOn)
+                        {
+                            bool cur;
+                            if (st.TryGetValue(p.Name, out cur) && !cur) continue;
+                            st[p.Name] = false; flipped++;
+                        }
+            }
+            if (flipped > 0)
+                Core.Log("INFO", (eightOn ? "八人包开着" : "一条人物开着") + " → 关掉对面 " + flipped + " 个开关（互斥）");
+            return st;
+        }
+
         internal bool ApplySwitches(Dictionary<string, bool> st)
         {
             if (st == null || st.Count == 0) return false;
@@ -4264,6 +4309,7 @@ namespace Installer
 
             try
             {
+                st = EnforceEightPack(st);
                 Core.Log("INFO", "写开关：" + st.Count + " 条 → " + AddonList.FileOf(root));
                 AddonList.Write(root, st);
                 // 写完立刻回读一次：文件到底有没有落成我们想要的值，别只信「写成功」。
@@ -4348,39 +4394,6 @@ namespace Installer
                         if (!part.Installed && !part.FromGame) continue;   // 还没进游戏的，谈不上关
                         if (seen.Add(part.Name)) off.Add(part);
                     }
-            }
-            // 八人包 和 一代 / 二代 是跨位置互斥（用户 2026-11-19 定）：
-            // 八人包换的是全部 8 个生还者，此时再开着某一个人的单独模型只会互相盖；
-            // 反过来勾了某个人，八人包也得关。两边都按「这次没勾的旧东西」处理：只翻开关，文件不动。
-            HashSet<string> pickedSub = new HashSet<string>(StringComparer.Ordinal);
-            foreach (Slot s2 in treeView.Slots)
-            {
-                if (s2.Pile) continue;
-                foreach (ModGroup g2 in s2.Items)
-                {
-                    bool hit2 = false;
-                    foreach (ModItem p2 in g2.Parts) if (selKey.Contains(p2.Key)) { hit2 = true; break; }
-                    if (hit2) { pickedSub.Add(s2.Sub); break; }
-                }
-            }
-            bool pickEight = pickedSub.Contains("八人包");
-            bool pickSolo = pickedSub.Contains("一代") || pickedSub.Contains("二代");
-            if (pickEight || pickSolo)
-            {
-                foreach (Slot s3 in treeView.Slots)
-                {
-                    if (s3.Pile) continue;
-                    bool clash = (pickEight && (s3.Sub == "一代" || s3.Sub == "二代"))
-                              || (pickSolo && s3.Sub == "八人包");
-                    if (!clash) continue;
-                    foreach (ModGroup g3 in s3.Items)
-                        foreach (ModItem p3 in g3.Parts)
-                        {
-                            if (selKey.Contains(p3.Key) || selName.Contains(p3.Name)) continue;
-                            if (!p3.Installed && !p3.FromGame) continue;
-                            if (seen.Add(p3.Name)) off.Add(p3);
-                        }
-                }
             }
             return off;
         }
