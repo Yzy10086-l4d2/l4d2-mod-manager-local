@@ -39,7 +39,7 @@ namespace Installer
             ShowInTaskbar = false;
 
             lblHint = new Label();
-            lblHint.SetBounds(12, 10, 596, 42);
+            lblHint.SetBounds(12, 12, 596, 44);
             bool hasChoice = false;
             foreach (ModItem p in group.Parts) if (p.Role == "可选" || p.Role == "选配") hasChoice = true;
             lblHint.Text = "分类：" + group.Where + "　·　这套由 " + group.Parts.Count + " 个 vpk 组成\r\n" +

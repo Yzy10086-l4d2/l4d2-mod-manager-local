@@ -67,7 +67,7 @@ namespace Installer
 
             Label title = new Label();
             title.Text = Lang.S("设置");
-            title.SetBounds(20, 14, 300, 30);
+            title.SetBounds(20, 16, 300, 32);
             title.Font = Theme.H1;
             title.ForeColor = Theme.Ink;
             title.BackColor = Color.Transparent;
@@ -146,24 +146,24 @@ namespace Installer
         {
             Card s = AddGroup(Lang.S("常规"), 56, 248);
 
-            RowTitle(s, Lang.S("减少动态效果"), 16, 7, 220);
-            RowNote(s, Lang.S("关掉按钮与状态切换的过渡，低配机器更轻快"), 16, 25, 320);
+            RowTitle(s, Lang.S("减少动态效果"), 16, 8, 220);
+            RowNote(s, Lang.S("关掉按钮与状态切换的过渡，低配机器更轻快"), 16, 28, 320);
 
             tglMotion = new Toggle();
-            tglMotion.SetBounds(520, 15, 44, 26);
+            tglMotion.SetBounds(520, 16, 44, 28);
             tglMotion.Checked = Core.Cfg.ReduceMotion;
             s.Controls.Add(tglMotion);
 
-            s.Separate(100);
+            s.Separate(96);
 
             // 外观：纯粹的显示开关，没有「生效代价」，所以点了就立刻应用并落配置。
             // 不跟着「保存设置」走 —— 用户点完看到颜色变了，关掉窗口却又变回去，会当成 bug。
-            RowTitle(s, Lang.S("外观"), 16, 107, 220);
-            RowNote(s, Lang.S("跟随系统 = 跟 Windows 走；选了立即生效"), 16, 125, 310);
+            RowTitle(s, Lang.S("外观"), 16, 104, 220);
+            RowNote(s, Lang.S("跟随系统 = 跟 Windows 走；选了立即生效"), 16, 124, 310);
 
             segAppearance = new Segmented();
             segAppearance.Items = new string[] { "跟随系统", "浅色", "深色" };
-            segAppearance.SetBounds(332, 106, 232, 30);
+            segAppearance.SetBounds(332, 108, 232, 32);
             segAppearance.SelectedIndex = (int)Theme.Mode;
             segAppearance.SelectedIndexChanged += delegate
             {
@@ -182,16 +182,16 @@ namespace Installer
             };
             s.Controls.Add(segAppearance);
 
-            s.Separate(150);
+            s.Separate(148);
 
             // 语言：和外观一样「点了就生效」，但它必须重建界面（控件文案是构造时定下的），
             // 所以这里只落配置 + 打标记，由主窗口关掉自己、Program 那边重建一次。
-            RowTitle(s, Lang.S("语言 / Language"), 16, 157, 240);
-            RowNote(s, Lang.S("切换后界面立即重建，其它设置不会丢"), 16, 175, 320);
+            RowTitle(s, Lang.S("语言 / Language"), 16, 152, 240);
+            RowNote(s, Lang.S("切换后界面立即重建，其它设置不会丢"), 16, 172, 320);
 
             segLang = new Segmented();
             segLang.Items = new string[] { "中文", "English" };
-            segLang.SetBounds(332, 156, 232, 30);
+            segLang.SetBounds(332, 156, 232, 32);
             segLang.SelectedIndex = Lang.IsEn ? 1 : 0;
             segLang.SelectedIndexChanged += delegate
             {
@@ -204,16 +204,16 @@ namespace Installer
             };
             s.Controls.Add(segLang);
 
-            s.Separate(200);
+            s.Separate(192);
 
             // MOD 名称：只影响显示和搜索，一个文件都不动。两种来源库里都现成：
             //   文件名 = vpk 原名；标题 = 包内 addoninfo 的 AddonTitle（工坊名那种）。
-            RowTitle(s, Lang.S("MOD 名称"), 16, 207, 220);
-            RowNote(s, Lang.S("文件名 = vpk 原名；标题 = 包内 addoninfo 的名字"), 16, 225, 320);
+            RowTitle(s, Lang.S("MOD 名称"), 16, 200, 220);
+            RowNote(s, Lang.S("文件名 = vpk 原名；标题 = 包内 addoninfo 的名字"), 16, 220, 320);
 
             segName = new Segmented();
             segName.Items = new string[] { Lang.S("文件名"), Lang.S("标题") };
-            segName.SetBounds(332, 206, 232, 30);
+            segName.SetBounds(332, 208, 232, 32);
             segName.SelectedIndex = Core.Cfg.NameByTitle ? 1 : 0;
             s.Controls.Add(segName);
         }
@@ -227,33 +227,33 @@ namespace Installer
         /// </summary>
         private void BuildGameDir()
         {
-            Card s = AddGroup(Lang.S("游戏目录"), 344, 104);
+            Card s = AddGroup(Lang.S("游戏目录"), 344, 112);
 
-            RowTitle(s, Lang.S("游戏根目录"), 16, 6, 200);
+            RowTitle(s, Lang.S("游戏根目录"), 16, 8, 200);
 
             cboGame = new ComboBox();
-            cboGame.SetBounds(16, 26, 348, 24);
+            cboGame.SetBounds(16, 32, 348, 28);
             cboGame.DropDownStyle = ComboBoxStyle.DropDown;
             Theme.Dress(cboGame);
             cboGame.Text = Core.Cfg.GameRoot;
             cboGame.TextChanged += delegate { if (!syncing) UpdateGameState(); };
             s.Controls.Add(cboGame);
 
-            btnGameBrowse = SoftButton(s, "浏览…", 374, 26, 76, 24);
+            btnGameBrowse = SoftButton(s, "浏览…", 376, 32, 76, 28);
             btnGameBrowse.Click += delegate { BrowseGameRoot(); };
 
-            btnGameFind = SoftButton(s, "自动找", 458, 26, 86, 24);
+            btnGameFind = SoftButton(s, "自动找", 456, 32, 86, 28);
             btnGameFind.Click += delegate { FindGameRoot(); };
 
-            s.Separate(56);
+            s.Separate(64);
 
             lblGameState = new Label();
-            lblGameState.SetBounds(16, 62, 548, 16);
+            lblGameState.SetBounds(16, 72, 548, 16);
             lblGameState.Font = Theme.UISmall;
             lblGameState.AutoEllipsis = true;
             s.Controls.Add(lblGameState);
 
-            RowNote(s, Lang.S("选里面有 left4dead2.exe 的那一层；本地模式只扫这里的 left4dead2\\addons。"), 16, 79, 548);
+            RowNote(s, Lang.S("选里面有 left4dead2.exe 的那一层；本地模式只扫这里的 left4dead2\\addons。"), 16, 88, 548);
         }
 
         private void BuildDiagnostics()
@@ -269,7 +269,7 @@ namespace Installer
             s.Controls.Add(lblCfg);
 
             lblLog = new Label();
-            lblLog.SetBounds(16, 26, 548, 16);
+            lblLog.SetBounds(16, 28, 548, 16);
             lblLog.Font = Theme.UISmall;
             lblLog.ForeColor = Theme.Ink2;
             lblLog.AutoEllipsis = true;
@@ -278,18 +278,18 @@ namespace Installer
 
             // 组件包目录（L4N / Skeeto / MQCam / dxvk）属于便携版：本地版不往游戏里复制任何东西，
             // 这一栏在本地版里没有意义，整块去掉。
-            s.Separate(44);
+            s.Separate(48);
 
-            FlatButton openCfg = SoftButton(s, Lang.S("打开配置文件夹"), 16, 50, 124, 24);
+            FlatButton openCfg = SoftButton(s, Lang.S("打开配置文件夹"), 16, 52, 124, 28);
             openCfg.Click += delegate { OpenConfigFolder(); };
 
-            FlatButton openLog = SoftButton(s, Lang.S("打开日志"), 148, 50, 84, 24);
+            FlatButton openLog = SoftButton(s, Lang.S("打开日志"), 148, 52, 84, 28);
             openLog.Click += delegate { OpenFolder(Core.LogDir); };
 
-            FlatButton env = SoftButton(s, Lang.S("环境自检"), 240, 118, 88, 24);
+            FlatButton env = SoftButton(s, Lang.S("环境自检"), 240, 52, 88, 28);
             env.Click += delegate { if (owner != null) owner.ShowEnv(); };
 
-            btnImport = SoftButton(s, Lang.S("导入压缩包…"), 336, 50, 116, 24);
+            btnImport = SoftButton(s, Lang.S("导入压缩包…"), 336, 52, 116, 28);
             btnImport.Click += delegate { ImportFromDialog(); };
         }
 
@@ -321,7 +321,7 @@ namespace Installer
         private void BuildFooter()
         {
             Panel rule = new Panel();
-            rule.SetBounds(20, 618, 580, 1);
+            rule.SetBounds(20, 620, 580, 0);
             rule.BackColor = Theme.Line;
             Controls.Add(rule);
 

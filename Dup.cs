@@ -237,7 +237,7 @@ namespace Installer
             MaximizeBox = true;
 
             Label hint = new Label();
-            hint.SetBounds(14, 10, 792, 36);
+            hint.SetBounds(16, 12, 792, 36);
             hint.Font = Theme.UISmall;
             hint.ForeColor = Theme.Ink2;
             hint.Text = "体积完全相同只是「嫌疑」，不一定是同一个文件 —— 先点「核对内容」再看结论，一样就可以删。\r\n"
@@ -245,7 +245,7 @@ namespace Installer
             Controls.Add(hint);
 
             lv = new ListView();
-            lv.SetBounds(14, 50, 792, 388);
+            lv.SetBounds(16, 52, 792, 388);
             lv.View = View.Details;
             lv.CheckBoxes = true;
             lv.FullRowSelect = true;
@@ -271,7 +271,7 @@ namespace Installer
             Controls.Add(lv);
 
             status = new Label();
-            status.SetBounds(14, 444, 792, 20);
+            status.SetBounds(16, 444, 792, 20);
             status.Font = Theme.UISmall;
             status.ForeColor = Theme.Ink3;
             Controls.Add(status);
@@ -306,7 +306,7 @@ namespace Installer
             CancelButton = bClose;
 
             lblOthers = new Label();
-            lblOthers.SetBounds(14, 506, 792, 32);
+            lblOthers.SetBounds(16, 508, 792, 32);
             lblOthers.Font = Theme.UISmall;
             lblOthers.ForeColor = Theme.Ink3;
             Controls.Add(lblOthers);

@@ -175,14 +175,14 @@ namespace Installer
             ShowInTaskbar = false;
 
             lblHint = new Label();
-            lblHint.SetBounds(14, 10, 872, 20);
+            lblHint.SetBounds(16, 12, 872, 20);
             lblHint.Font = Theme.UISmall;
             lblHint.ForeColor = Theme.Ink2;
             lblHint.Text = Lang.S("勾上要用的开关（默认勾好推荐那几条）；右边是选中那条的说明，底下一行是拼出来的组合。");
             Controls.Add(lblHint);
 
             lv = new ListView();
-            lv.SetBounds(14, 36, 420, 496);
+            lv.SetBounds(16, 36, 420, 496);
             lv.View = View.Details;
             lv.CheckBoxes = true;
             lv.FullRowSelect = true;
@@ -235,42 +235,42 @@ namespace Installer
             Controls.Add(btnReset);
 
             Panel right = new Panel();
-            right.SetBounds(446, 36, 440, 496);
+            right.SetBounds(448, 36, 440, 496);
             right.BackColor = Theme.Surface;
             right.BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(right);
 
             lblFlag = new Label();
-            lblFlag.SetBounds(14, 12, 410, 26);
+            lblFlag.SetBounds(16, 12, 412, 28);
             lblFlag.Font = Theme.Mono;
             lblFlag.ForeColor = Theme.Ink;
             right.Controls.Add(lblFlag);
 
             lblVerdict = new Label();
-            lblVerdict.SetBounds(14, 42, 410, 20);
+            lblVerdict.SetBounds(16, 44, 412, 20);
             lblVerdict.Font = Theme.UIBold;
             right.Controls.Add(lblVerdict);
 
             lblWhat = new Label();
-            lblWhat.SetBounds(14, 74, 410, 150);
+            lblWhat.SetBounds(16, 76, 412, 152);
             lblWhat.Font = Theme.UI;
             lblWhat.ForeColor = Theme.Ink2;
             right.Controls.Add(lblWhat);
 
             lblWhere = new Label();
-            lblWhere.SetBounds(14, 176, 410, 60);
+            lblWhere.SetBounds(16, 176, 412, 60);
             lblWhere.Font = Theme.UISmall;
             lblWhere.ForeColor = Theme.Ink3;
             right.Controls.Add(lblWhere);
 
             lblCount = new Label();
-            lblCount.SetBounds(142, 544, 560, 20);
+            lblCount.SetBounds(144, 544, 560, 20);
             lblCount.Font = Theme.UISmall;
             lblCount.ForeColor = Theme.Ink3;
             Controls.Add(lblCount);
 
             txtCombo = new TextBox();
-            txtCombo.SetBounds(14, 576, 700, 24);
+            txtCombo.SetBounds(16, 576, 700, 24);
             txtCombo.ReadOnly = true;
             Theme.Dress(txtCombo);
             txtCombo.BackColor = Theme.Surface;

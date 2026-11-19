@@ -595,7 +595,7 @@ namespace Installer
             ShowInTaskbar = false;
 
             lblTop = new Label();
-            lblTop.SetBounds(12, 10, 656, 40);
+            lblTop.SetBounds(12, 12, 656, 40);
             lblTop.Font = Theme.UISmall;
             lblTop.ForeColor = Theme.Ink2;
             StringBuilder sb = new StringBuilder();
@@ -620,14 +620,14 @@ namespace Installer
             Controls.Add(lblTop);
 
             lblCatHd = new Label();
-            lblCatHd.SetBounds(12, 56, 240, 18);
+            lblCatHd.SetBounds(12, 56, 240, 20);
             lblCatHd.Text = "大类（树里从上到下的顺序）";
             lblCatHd.Font = Theme.UIBold;
             lblCatHd.ForeColor = Theme.Ink;
             Controls.Add(lblCatHd);
 
             lbCat = new ListBox();
-            lbCat.SetBounds(12, 78, 232, 320);
+            lbCat.SetBounds(12, 80, 232, 320);
             lbCat.BorderStyle = BorderStyle.FixedSingle;
             lbCat.IntegralHeight = false;
             lbCat.BackColor = Theme.Surface;
@@ -636,14 +636,14 @@ namespace Installer
             Controls.Add(lbCat);
 
             lblSlotHd = new Label();
-            lblSlotHd.SetBounds(262, 56, 300, 18);
+            lblSlotHd.SetBounds(264, 56, 300, 20);
             lblSlotHd.Text = "替换什么（这一类的具体位置）";
             lblSlotHd.Font = Theme.UIBold;
             lblSlotHd.ForeColor = Theme.Ink;
             Controls.Add(lblSlotHd);
 
             lbSlot = new ListBox();
-            lbSlot.SetBounds(262, 78, 300, 320);
+            lbSlot.SetBounds(264, 80, 300, 320);
             lbSlot.BorderStyle = BorderStyle.FixedSingle;
             lbSlot.IntegralHeight = false;
             lbSlot.BackColor = Theme.Surface;
@@ -662,7 +662,7 @@ namespace Installer
             Small("并到上面的位置", 436, 404, 126).Click += delegate { HintSlot(); };
 
             lblTip = new Label();
-            lblTip.SetBounds(12, 436, 656, 54);
+            lblTip.SetBounds(12, 436, 656, 56);
             lblTip.Font = Theme.UISmall;
             lblTip.ForeColor = Theme.Ink3;
             lblTip.Text = "分类只有这一套：方案树、搜索都按它走，改一处两处一起变。\r\n"

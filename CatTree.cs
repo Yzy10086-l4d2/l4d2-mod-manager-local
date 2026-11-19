@@ -3297,7 +3297,7 @@ namespace Installer
                 else if (s.Empty)
                 {
                     // 窄窗口下这一行只剩一百多像素，长句子必被省略号切 —— 怎么进货交给悬停提示（UpdateTip）
-                    lblFoot.Text = Lang.S("还没有这个位置的 MOD");
+                    lblFoot.Text = Lang.S("这个位置还没有 MOD · 游戏里仍是原版");
                 }
                 else lblFoot.Text = s.Items.Count == 0
                     ? "这个位置还没有换模型的包"
