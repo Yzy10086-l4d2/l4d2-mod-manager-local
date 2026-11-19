@@ -107,6 +107,7 @@ namespace Installer
             bool plugSelf = false;
             string plugTry = null;
             bool layoutSelf = false;
+            bool importSelf = false;
             bool imgSelf = false;
             bool noDpi = false;
             string vpkFile = null;
@@ -180,6 +181,7 @@ namespace Installer
                 else if (a.StartsWith("--plugtry=", StringComparison.OrdinalIgnoreCase)) plugTry = a.Substring(10).Trim('"');
                 else if (string.Equals(a, "--nodpi", StringComparison.OrdinalIgnoreCase)) noDpi = true;
                 else if (string.Equals(a, "--layoutself", StringComparison.OrdinalIgnoreCase)) layoutSelf = true;
+                else if (string.Equals(a, "--importself", StringComparison.OrdinalIgnoreCase)) importSelf = true;
                 else if (string.Equals(a, "--imgself", StringComparison.OrdinalIgnoreCase)) imgSelf = true;
                 else if (a.StartsWith("--vpk=", StringComparison.OrdinalIgnoreCase)) vpkFile = a.Substring(6).Trim('"');
 
@@ -254,6 +256,32 @@ namespace Installer
                     Console.WriteLine("layoutself failures = " + bad);
                     return bad == 0 ? 0 : 1;
                 }
+            }
+            if (importSelf)
+            {
+                // 导入自检：假 addons 里塞一个 vpk 和一个装着两个 vpk 的 zip，
+                // 再跑一遍确认「同名跳过」—— 不碰真游戏目录。
+                string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "l4d2import_" + DateTime.Now.ToString("HHmmss"));
+                string pack = System.IO.Path.Combine(root, "src");
+                string dst = System.IO.Path.Combine(root, "addons");
+                System.IO.Directory.CreateDirectory(pack);
+                System.IO.Directory.CreateDirectory(dst);
+                System.IO.File.WriteAllText(System.IO.Path.Combine(pack, "a.vpk"), "dummy-a");
+                System.IO.File.WriteAllText(System.IO.Path.Combine(pack, "b.vpk"), "dummy-b");
+                string zip = System.IO.Path.Combine(root, "pack.zip");
+                System.IO.Compression.ZipFile.CreateFromDirectory(pack, zip);
+                string lone = System.IO.Path.Combine(root, "c.vpk");
+                System.IO.File.WriteAllText(lone, "dummy-c");
+
+                int added, skipped; System.Collections.Generic.List<string> errs;
+                int bad = 0;
+                string first = Catalog.ImportTo(new string[] { zip, lone }, dst, out added, out skipped, out errs);
+                if (added != 3) { bad++; Console.WriteLine("IMPORTSELF 首批应导入 3 个，实际 " + added + "（" + first + "）"); }
+                if (!System.IO.File.Exists(System.IO.Path.Combine(dst, "a.vpk")) || !System.IO.File.Exists(System.IO.Path.Combine(dst, "c.vpk"))) { bad++; Console.WriteLine("IMPORTSELF 文件没落地"); }
+                Catalog.ImportTo(new string[] { zip, lone }, dst, out added, out skipped, out errs);
+                if (added != 0 || skipped != 3) { bad++; Console.WriteLine("IMPORTSELF 重复导入应全跳过，实际 added=" + added + " skipped=" + skipped); }
+                Console.WriteLine("importself failures = " + bad);
+                return bad == 0 ? 0 : 1;
             }
             if (wsSelf)
             {

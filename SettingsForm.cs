@@ -21,6 +21,7 @@ namespace Installer
         private Toggle tglMotion;
         private ComboBox cboGame;
         private FlatButton btnGameBrowse, btnGameFind, btnSave;
+        private FlatButton btnImport;
         private Label lblGameState, lblCfg, lblLog;
         private bool syncing = true;
 
@@ -272,6 +273,31 @@ namespace Installer
 
             FlatButton env = SoftButton(s, Lang.S("环境自检"), 240, 118, 88, 24);
             env.Click += delegate { if (owner != null) owner.ShowEnv(); };
+
+            btnImport = SoftButton(s, Lang.S("导入压缩包…"), 336, 50, 116, 24);
+            btnImport.Click += delegate { ImportFromDialog(); };
+        }
+
+        /// <summary>把 vpk / 压缩包里的 vpk 搬进 addons，然后重扫一遍让树认出来。</summary>
+        private void ImportFromDialog()
+        {
+            if (owner == null) return;
+            string addons;
+            try { addons = Core.GameAddonsDir(); }
+            catch (Exception ex) { MessageBox.Show(this, "先指定游戏目录。\r\n\r\n" + ex.Message, Text); return; }
+            using (OpenFileDialog d = new OpenFileDialog())
+            {
+                d.Title = Lang.S("选要导入的包或 vpk");
+                d.Filter = "压缩包或 vpk|*.vpk;*.zip;*.rar;*.7z|所有文件|*.*";
+                d.Multiselect = true;
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                int added, skipped;
+                List<string> errs;
+                string msg = Catalog.ImportTo(d.FileNames, addons, out added, out skipped, out errs);
+                Core.Log(added > 0 ? "OK" : "WARN", "导入压缩包: " + msg.Replace("\r\n", " / "));
+                MessageBox.Show(this, msg, Lang.S("导入结果"));
+                if (added > 0) owner.RescanMods();
+            }
         }
 
         // 安装选项整块已删除：严格校验 / 跳过·覆盖重装 / 换整套 都是复制或切换时代的开关，

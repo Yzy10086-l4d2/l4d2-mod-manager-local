@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -232,6 +232,55 @@ namespace Installer
             }
             catch (Exception ex) { why = ex.Message; return false; }
             finally { try { Directory.Delete(stage, true); } catch { } }
+        }
+
+        /// <summary>
+        /// 把用户给的 vpk 或压缩包（zip / rar / 7z）里的 vpk 复制进 addons。
+        /// 只负责「搬进游戏」，不归位、不判断类别 —— 归位交给下一轮扫描。
+        /// 同名文件已存在就跳过（不覆盖，免得把已经装好的替换掉）。
+        /// </summary>
+        public static string ImportTo(string[] files, string addonsDir, out int added, out int skipped, out List<string> errors)
+        {
+            added = 0; skipped = 0; errors = new List<string>();
+            if (files == null || files.Length == 0) return "没选文件";
+            try { Directory.CreateDirectory(addonsDir); }
+            catch (Exception ex) { errors.Add("addons 目录建不出来: " + ex.Message); return "失败"; }
+
+            foreach (string f in files)
+            {
+                if (string.IsNullOrEmpty(f) || !File.Exists(f)) { errors.Add("找不到: " + f); continue; }
+                string ext = Path.GetExtension(f).ToLowerInvariant();
+                if (ext == ".vpk")
+                {
+                    string one = Path.Combine(addonsDir, Path.GetFileName(f));
+                    if (File.Exists(one)) { skipped++; continue; }
+                    try { File.Copy(f, one, false); added++; }
+                    catch (Exception ex) { errors.Add(Path.GetFileName(f) + ": " + ex.Message); }
+                    continue;
+                }
+                if (ext != ".zip" && ext != ".rar" && ext != ".7z") { skipped++; errors.Add(Path.GetFileName(f) + "：不是 vpk / zip / rar / 7z"); continue; }
+
+                string err;
+                List<ArcEntry> list = ListArchive(f, out err);
+                if (!string.IsNullOrEmpty(err)) { errors.Add(Path.GetFileName(f) + ": " + err); continue; }
+                if (list.Count == 0) { errors.Add(Path.GetFileName(f) + "：包里没有 vpk"); continue; }
+                foreach (ArcEntry e in list)
+                {
+                    string dst = Path.Combine(addonsDir, Path.GetFileName(e.Inner));
+                    if (File.Exists(dst)) { skipped++; continue; }
+                    string why;
+                    if (ExtractEntryTo(f, e.Inner, dst, out why)) added++;
+                    else errors.Add(Path.GetFileName(f) + " → " + Path.GetFileName(e.Inner) + ": " + why);
+                }
+            }
+
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.Append("导入 " + added + " 个");
+            if (skipped > 0) sb.Append("，跳过 " + skipped + " 个（已存在）");
+            if (errors.Count > 0) sb.Append("，失败 " + errors.Count + " 个");
+            sb.Append("。");
+            if (errors.Count > 0) sb.Append("\r\n\r\n" + string.Join("\r\n", errors.ToArray(), 0, Math.Min(errors.Count, 6)));
+            return sb.ToString();
         }
 
         /// <summary>列出压缩包里的 vpk（带原始大小）。zip 走 .NET，rar 走 WinRAR 命令行。</summary>
