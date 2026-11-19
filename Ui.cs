@@ -2584,6 +2584,23 @@ namespace Installer
             foreach (ModItem p in Catalog.DefaultParts(g)) checkedKeys.Add(p.Key);
         }
 
+        /// <summary>
+        /// 勾选和 addonlist 必须一起动：只改文件不改勾选，树里还显示「选中的那套」，
+        /// 再点它走的是「再点一次 = 清空」；只改勾选不改文件，重开工具就回退。
+        /// 只写「已经进了游戏 addons 目录」的 vpk，只读库里没开关注释。
+        /// </summary>
+        internal bool ApplyGroupPick(ModGroup g, bool on)
+        {
+            if (g == null) return false;
+            if (on) CheckGroupDefault(g); else UncheckGroup(g);
+            Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (ModItem p in g.Parts) if (p.FromGame || p.Installed) st[p.Name] = on;
+            if (st.Count == 0) { SyncPicks(); return true; }      // 库里只读的，没有开关可写
+            bool ok = ApplySwitches(st);
+            SyncPicks();
+            return ok;
+        }
+
         /// <summary>在方案树里点了一个候选：方案行、底部计数一起对齐。</summary>
         internal void AfterTreePick()
         {

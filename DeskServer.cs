@@ -442,8 +442,7 @@ namespace Installer
                             if (seen != idx) continue;
                             ModGroup g = DeskModel.GroupOf(r, tree);
                             if (g == null) return;
-                            if (mf.CountChecked(g) > 0) mf.UncheckGroup(g);
-                            else mf.CheckGroupDefault(g);
+                            mf.ApplyGroupPick(g, mf.CountChecked(g) == 0);
                             mf.SyncPicks();
                             return;
                         }

@@ -703,8 +703,8 @@ namespace Installer
             }
 
             if (s.On.Count > 0) lastPick[s.Slot.Key] = s.On[0];
-            foreach (ModGroup g in s.On) mf.UncheckGroup(g);
-            foreach (ModGroup g in s.Extra) mf.UncheckGroup(g);
+            foreach (ModGroup g in s.On) mf.ApplyGroupPick(g, false);
+            foreach (ModGroup g in s.Extra) mf.ApplyGroupPick(g, false);
             mf.SyncPicks();
         }
 
@@ -754,9 +754,8 @@ namespace Installer
             if (g != null) lastPick[s.Slot.Key] = g;
             if (s.Slot.Pile)
             {
-                if (g == null) { foreach (ModGroup o in s.Slot.Items) mf.UncheckGroup(o); }
-                else if (mf.CountChecked(g) > 0) mf.UncheckGroup(g);
-                else mf.CheckGroupDefault(g);
+                if (g == null) { foreach (ModGroup o in s.Slot.Items) mf.ApplyGroupPick(o, false); }
+                else mf.ApplyGroupPick(g, mf.CountChecked(g) == 0);
             }
             else if (mf.Tree != null) mf.Tree.ChooseInSlot(s.Slot, g);
             mf.SyncPicks();

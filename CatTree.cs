@@ -1704,8 +1704,7 @@ namespace Installer
         internal void ToggleExtra(ModGroup g)
         {
             if (g == null || Current == null) return;
-            if (mf.CountChecked(g) > 0) mf.UncheckGroup(g);
-            else mf.CheckGroupDefault(g);
+            mf.ApplyGroupPick(g, mf.CountChecked(g) == 0);   // 勾选和 addonlist 一起动
             mf.AfterTreePick();
             FillDetail();
         }
@@ -1748,8 +1747,7 @@ namespace Installer
         internal void TogglePile(ModGroup g)
         {
             if (g == null) return;
-            if (mf.CountChecked(g) > 0) mf.UncheckGroup(g);
-            else mf.CheckGroupDefault(g);
+            mf.ApplyGroupPick(g, mf.CountChecked(g) == 0);   // 勾选和 addonlist 一起动
             mf.AfterTreePick();
             FillDetail();
         }
@@ -3268,6 +3266,7 @@ namespace Installer
             Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (ModItem p in ins) st[p.Name] = target;
             if (!mf.ApplySwitches(st)) return;
+            if (target) mf.CheckGroupDefault(g); else mf.UncheckGroup(g);   // 勾选跟着走，否则树里还挂着「选中的那套」
             RefreshSwitchCells();
             lblFoot.Text = target ? "已开启（写进 addonlist，进游戏生效）" : "已关闭（写进 addonlist，进游戏生效）";
         }
