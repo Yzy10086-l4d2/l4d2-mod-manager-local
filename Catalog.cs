@@ -2072,6 +2072,73 @@ namespace Installer
             return c0 == cat && s0 == sub;
         }
 
+        /// <summary>
+        /// 识别快照：每个 vpk 一行「路径 大类 小分类 识别结果 命中键」。
+        /// 写基线（--dumpid=文件）和差量核对（--idcheck=文件）共用这一份口径，
+        /// 免得两边各拼一套字段、比出来的差异全是格式噪声。
+        /// </summary>
+        public static List<string[]> IdentifySnapshot()
+        {
+            List<string[]> rows = new List<string[]>();
+            foreach (ModGroup g in Groups)
+                foreach (ModItem it in g.Parts)
+                    rows.Add(new string[] { it.RelPath ?? "", it.Cat ?? "", it.Sub ?? "", it.Subject ?? "", it.SubjectKey ?? "" });
+            rows.Sort(delegate(string[] x, string[] y) { return string.CompareOrdinal(x[0], y[0]); });
+            return rows;
+        }
+
+        /// <summary>把识别快照写成基线文件（TSV，首行表头）。</summary>
+        public static string DumpIdentifyTo(string path)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("路径\t大类\t小分类\t识别结果\t键");
+            foreach (string[] r in IdentifySnapshot()) sb.AppendLine(string.Join("\t", r));
+            Core.WriteAllTextAtomic(path, sb.ToString(), new UTF8Encoding(true));
+            return path;
+        }
+
+        /// <summary>
+        /// 拿当前识别结果跟基线比。只有「同一个包被判到别的位置」算失败；
+        /// 新增 / 消失是用户增删 MOD 的正常现象，只报告不拦。
+        /// </summary>
+        public static int CheckIdentify(string baselinePath)
+        {
+            if (string.IsNullOrEmpty(baselinePath) || !File.Exists(baselinePath))
+            {
+                Console.WriteLine("idcheck: 找不到基线文件: " + baselinePath);
+                return -1;
+            }
+            Dictionary<string, string> want = ReadSnapshot(baselinePath);
+            Dictionary<string, string> cur = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string[] r in IdentifySnapshot()) cur[r[0]] = string.Join("|", r, 1, 4);
+            int changed = 0, gone = 0, added = 0, shown = 0;
+            foreach (KeyValuePair<string, string> kv in want)
+            {
+                string now;
+                if (!cur.TryGetValue(kv.Key, out now)) { gone++; continue; }
+                if (string.Equals(now, kv.Value, StringComparison.Ordinal)) continue;
+                changed++;
+                if (shown++ < 20) Console.WriteLine("改判 " + kv.Key + "\n   旧 " + kv.Value + "\n   新 " + now);
+            }
+            foreach (KeyValuePair<string, string> kv in cur) if (!want.ContainsKey(kv.Key)) added++;
+            Console.WriteLine("idcheck: 基线 " + want.Count + " 条 / 当前 " + cur.Count + " 条；改判 " + changed + "、消失 " + gone + "、新增 " + added);
+            Console.WriteLine(changed == 0 ? "idcheck PASS" : "idcheck FAIL（有 " + changed + " 条被判到别的位置）");
+            return changed;
+        }
+
+        private static Dictionary<string, string> ReadSnapshot(string path)
+        {
+            Dictionary<string, string> map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string[] lines = File.ReadAllLines(path, Encoding.UTF8);
+            for (int i = 1; i < lines.Length; i++)      // 首行表头
+            {
+                string[] c = lines[i].Split('\t');
+                if (c.Length < 5) continue;
+                map[c[0]] = c[1] + "|" + c[2] + "|" + c[3] + "|" + c[4];
+            }
+            return map;
+        }
+
         /// <summary>自测用：把每个 MOD 的识别结果铺成一张表，人眼核错用。</summary>
         public static string DumpIdentify()
         {

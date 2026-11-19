@@ -101,6 +101,8 @@ namespace Installer
                 bool addonSelf = false;
             bool safeSelf = false;
             bool dumpId = false;
+            string dumpIdTo = null;      // --dumpid=文件：把识别快照写成基线
+            string idCheckTo = null;     // --idcheck=文件：拿当前结果跟基线比，改判就报
             bool dumpTree = false;
             bool ovDump = false;
             bool recogSelf = false;
@@ -175,6 +177,8 @@ namespace Installer
                     else if (string.Equals(a, "--addonself", StringComparison.OrdinalIgnoreCase)) addonSelf = true;
                 else if (string.Equals(a, "--safeself", StringComparison.OrdinalIgnoreCase)) safeSelf = true;
                 else if (string.Equals(a, "--dumpid", StringComparison.OrdinalIgnoreCase)) dumpId = true;
+            else if (a.StartsWith("--dumpid=", StringComparison.OrdinalIgnoreCase)) dumpIdTo = a.Substring(9).Trim('"');
+            else if (a.StartsWith("--idcheck=", StringComparison.OrdinalIgnoreCase)) idCheckTo = a.Substring(10).Trim('"');
                 else if (string.Equals(a, "--dumptree", StringComparison.OrdinalIgnoreCase)) dumpTree = true;
                 else if (string.Equals(a, "--ovdump", StringComparison.OrdinalIgnoreCase)) ovDump = true;
                 else if (string.Equals(a, "--recogself", StringComparison.OrdinalIgnoreCase)) recogSelf = true;
@@ -196,6 +200,7 @@ namespace Installer
             // 以前这行写在所有自检分支后面，等于对它们全部无效。
             Core.SelfTesting = selfTest || uiTest || copyTest || launchSelf || dupSelf
                             || addonSelf || safeSelf || dumpId || dumpTree || ovDump || recogSelf || plugSelf || plugTry != null
+                            || dumpIdTo != null || idCheckTo != null
                             || mapShot || mapSelf || scanRace || layoutSelf || imgSelf || wsSelf || wsNet != null || wsSearch != null;
 
             // 单实例只约束界面模式：已经开着就把那个窗口叫到前面来。
@@ -386,6 +391,20 @@ namespace Installer
                 int bads = Workshop.SearchTest(wsSearch);
                 Console.WriteLine("workshopsearch failures = " + bads);
                 return bads == 0 ? 0 : 1;
+            }
+            if (dumpIdTo != null)
+            {
+                // 写回归基线（识别快照），改动前后跑 --idcheck 对比
+                Core.ScanMods();
+                string f = Catalog.DumpIdentifyTo(dumpIdTo);
+                Console.WriteLine("baseline: " + f + "（" + Catalog.Groups.Count + " 个 MOD）");
+                return 0;
+            }
+            if (idCheckTo != null)
+            {
+                Core.ScanMods();
+                int changed = Catalog.CheckIdentify(idCheckTo);
+                return changed == 0 ? 0 : 1;
             }
             if (dumpId)
             {
