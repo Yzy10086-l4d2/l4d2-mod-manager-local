@@ -1943,6 +1943,10 @@ namespace Installer
             if (Positions.Canonical("15发连狙") != "15发木狙") { bad++; Console.WriteLine("POS 归一失败: 15发连狙"); }
             if (Positions.Canonical("药丸") != "止痛药") { bad++; Console.WriteLine("POS 归一失败: 药丸"); }
             if (Positions.Canonical("huntingrifle") != "15发木狙") { bad++; Console.WriteLine("POS 归一失败: huntingrifle"); }
+            // 候选提示是一句话给新人看的：必须同时给出两个候选名
+            string hint = Positions.Hint("测试_佐伊和止痛药.vpk", "", 3);
+            if (hint.IndexOf("佐伊", StringComparison.Ordinal) < 0 || hint.IndexOf("止痛药", StringComparison.Ordinal) < 0)
+            { bad++; Console.WriteLine("POS 提示缺候选: " + hint); }
             // 候选建议：文件名里带着玩家叫法时，要能猜出「未归类」该归到哪
             {
                 bool hasZoe = false, hasPill = false;

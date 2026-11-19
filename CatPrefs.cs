@@ -606,15 +606,14 @@ namespace Installer
             if (autoSlot.Length > 0) sb.Append(" · ").Append(autoSlot);
             else sb.Append(" · 位置认不出来");
             // 位置认不出来时先按名字/标题猜 2~3 个候选，写在最上面 —— 新人不用自己研究该归哪。
-            List<Positions.Row> sug = Positions.Suggest(group.Name + " " +
-                ((group.Main != null && group.Main.AddonTitle != null) ? group.Main.AddonTitle : ""), 3);
-            if (autoSlot.Length == 0 && sug.Count > 0)
+            string hint = Positions.Hint(group.Name,
+                (group.Main != null) ? group.Main.AddonTitle : "", 3);
+            if (autoSlot.Length == 0 && hint.Length > 0)
             {
-                List<string> names = new List<string>();
-                foreach (Positions.Row r in sug) names.Add(r.Name);
                 sb.AppendLine();
-                sb.Append("可能是：").Append(string.Join(" / ", names.ToArray())).Append("（右边列表里点一下就是它）");
-                lblSuggested = sug[0].Name;
+                sb.Append(hint).Append("（右边列表里点一下就是它）");
+                lblSuggested = Positions.Suggest(group.Name + " " +
+                    ((group.Main != null && group.Main.AddonTitle != null) ? group.Main.AddonTitle : ""), 1)[0].Name;
             }
             else sb.Append("　·　左边点一行 = 归到这一类；右边点一行 = 它替换那个位置");
             lblTop.Text = sb.ToString();

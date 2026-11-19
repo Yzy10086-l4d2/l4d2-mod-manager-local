@@ -3640,6 +3640,9 @@ namespace Installer
                 li.ToolTipText = FullNameOf(g) + "\r\n\r\n" + PartsTip(g);
             }
             else li.ToolTipText = "按住这行拖到左边的树上松手 = 归到那；双击可打开「设置 MOD 分类」细调";
+            // 名字/标题里带着玩家叫法的，直接告诉他「可能是什么」——新人不用先双击进窗口才知道
+            string hint = Positions.Hint(g.Name, g.Main != null ? g.Main.AddonTitle : "", 3);
+            if (hint.Length > 0) li.ToolTipText += "\r\n\r\n" + hint + "（双击可直接归到第一个）";
             lv.Items.Add(li);
         }
 

@@ -178,6 +178,19 @@ namespace Installer
             return hit;
         }
 
+        /// <summary>
+        /// 一句话候选提示（未归类列表行、分类窗口共用）：「可能：止痛药 / 佐伊」。
+        /// 只做展示，不落库 —— 猜错了用户点别的就是了。
+        /// </summary>
+        internal static string Hint(string name, string title, int max)
+        {
+            List<Row> hit = Suggest((name ?? "") + " " + (title ?? ""), max);
+            if (hit.Count == 0) return "";
+            List<string> names = new List<string>();
+            foreach (Row r in hit) names.Add(r.Name);
+            return "可能：" + string.Join(" / ", names.ToArray());
+        }
+
         private static int MatchScore(Row r, string text)
         {
             int best = 0;
