@@ -3462,6 +3462,10 @@ namespace Installer
         private void PinBottomRow(int physH)
         {
             int top = physH - Dpi.S(BottomBarH);
+            // 内容区底边也按物理高度收口：设计值→物理值来回换算会差几十像素，
+            // 差出来的就是窗口底下那条空白（2026-11-19 实测）。
+            if (gMod != null && gMod.Parent == this)
+                gMod.Height = Math.Max(Dpi.S(160), top - gMod.Top);
             if (btnRestore != null) btnRestore.Top = top;
             if (bar != null) bar.Top = top + Dpi.S(12);
             if (btnCancel != null) btnCancel.Top = top + Dpi.S(6);
@@ -3504,7 +3508,7 @@ namespace Installer
             // 用户看到的就是「下面的按钮全没了」。所以这里按设计坐标把每条高度重新算死。
             int H = Dpi.Un(physH);
             {
-                int modH = H - 56 - BottomBarH;               // 到下方按钮行为止
+                int modH = Dpi.Un(physH - Dpi.S(BottomBarH)) - 56;   // 到下方按钮行为止：按物理客户区收口，别用设计值换算（差出来的就是窗口底下那条空白）
                 gMod.Top = Dpi.S(56);
                 gMod.Height = Dpi.S(modH);
                 viewHost.Top = Dpi.S(118);
