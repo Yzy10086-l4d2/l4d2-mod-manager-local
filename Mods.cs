@@ -14,12 +14,172 @@ namespace Installer
     {
         private static Regex LineRe = new Regex("^\\s*\"([^\"]+)\"\\s+\"([01])\"\\s*$", RegexOptions.Compiled);
 
+        // ---------- 写之前先问一句：游戏在不在跑 ----------
+        // 游戏退出时会把内存里的开关整份写回 addonlist，我们在它运行期间改的内容会被无声覆盖 ——
+        // 「工具说改好了、重进又是旧状态」多半就是这么来的。所以在唯一的落盘口 WriteKeepEol 上拦一道。
+
+        /// <summary>自检用：置 true / false 假装游戏在跑或没跑。null = 真去查进程（自检没法真起游戏）。</summary>
+        internal static bool? ForceGameRunning;
+
+        /// <summary>上一次写是不是被「游戏正在运行」挡下的。界面靠它决定该说「游戏开着」还是「写失败」。</summary>
+        public static bool LastBlocked { get; private set; }
+
+        public static bool GameIsRunning()
+        {
+            if (ForceGameRunning.HasValue) return ForceGameRunning.Value;
+            try
+            {
+                Process[] ps = Process.GetProcessesByName("left4dead2");
+                bool any = ps.Length > 0;
+                for (int i = 0; i < ps.Length; i++) { try { ps[i].Dispose(); } catch { } }
+                return any;
+            }
+            catch { return false; }
+        }
+
+        // ---------- 外部改动：记住「我们写完是什么样」，下次一比就知道被动过 ----------
+        // Steam 更新订阅会把 MOD 重新置为启用，游戏内菜单也能改开关 —— 这两件事都不经过本程序，
+        // 状态一夜之间变样时，至少能给出「谁动了、动了几个」，而不是让用户以为工具坏了。
+
+        private static string SnapshotPath()
+        {
+            string dir = Core.LogDir;
+            if (string.IsNullOrEmpty(dir)) return null;
+            return Path.Combine(dir, "addonlist.snapshot");
+        }
+
+        /// <summary>文件里所有登记（含 workshop 条目）。快照与比对用这个，别用 Read（它会跳过 workshop）。</summary>
+        public static Dictionary<string, bool> ReadAll(string gameRoot)
+        {
+            Dictionary<string, bool> d = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            string p = FileOf(gameRoot);
+            if (!File.Exists(p)) return d;
+            try
+            {
+                foreach (string raw in File.ReadAllLines(p, Encoding.Default))
+                {
+                    Match m = LineRe.Match(raw);
+                    if (m.Success) d[m.Groups[1].Value] = (m.Groups[2].Value == "1");
+                }
+            }
+            catch (Exception ex) { Core.Log("WARN", "读 addonlist 失败: " + ex.Message); }
+            return d;
+        }
+
+        /// <summary>把我们刚写进去的样子存下来。按 addonlist 的绝对路径认，换游戏目录不会串。</summary>
+        private static void SaveSnapshot(string addonListPath)
+        {
+            string snap = SnapshotPath();
+            if (snap == null) return;
+            try
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("# 本程序上次写完 addonlist 的样子；用来发现 Steam 更新 / 游戏内改开关造成的外部改动");
+                sb.AppendLine("File=" + addonListPath);
+                foreach (KeyValuePair<string, bool> kv in ReadAllOfFile(addonListPath))
+                    sb.AppendLine((kv.Value ? "1" : "0") + "\t" + kv.Key);
+                Core.WriteAllTextAtomic(snap, sb.ToString(), new UTF8Encoding(false));
+            }
+            catch (Exception ex) { Core.Log("WARN", "写 addonlist 快照失败: " + ex.Message); }
+        }
+
+        private static Dictionary<string, bool> ReadAllOfFile(string file)
+        {
+            Dictionary<string, bool> d = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            if (!File.Exists(file)) return d;
+            try
+            {
+                foreach (string raw in File.ReadAllLines(file, Encoding.Default))
+                {
+                    Match m = LineRe.Match(raw);
+                    if (m.Success) d[m.Groups[1].Value] = (m.Groups[2].Value == "1");
+                }
+            }
+            catch { }
+            return d;
+        }
+
+        /// <summary>读快照；没有、或记的是别的 addonlist → null（当成第一次，不算外部改动）。</summary>
+        private static Dictionary<string, bool> LoadSnapshot(string addonListPath)
+        {
+            string snap = SnapshotPath();
+            if (snap == null || !File.Exists(snap)) return null;
+            try
+            {
+                Dictionary<string, bool> d = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                bool mine = false;
+                foreach (string raw in File.ReadAllLines(snap, Encoding.UTF8))
+                {
+                    if (raw.StartsWith("#")) continue;
+                    if (raw.StartsWith("File=", StringComparison.Ordinal))
+                    {
+                        mine = string.Equals(raw.Substring(5).Trim(), addonListPath, StringComparison.OrdinalIgnoreCase);
+                        continue;
+                    }
+                    int tab = raw.IndexOf('\t');
+                    if (tab != 2) continue;
+                    d[raw.Substring(3)] = raw[0] == '1';
+                }
+                return mine ? d : null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// 拿上次写完的样子比一次现在的文件：有变化返回一句人话（顺手刷新快照，同一处改动只报一次），
+        /// 没变化 / 没有快照返回 null。
+        /// </summary>
+        public static string CheckExternal(string gameRoot)
+        {
+            if (string.IsNullOrEmpty(gameRoot)) return null;
+            string file = FileOf(gameRoot);
+            Dictionary<string, bool> prev = LoadSnapshot(file);
+            if (prev == null) return null;
+            Dictionary<string, bool> cur = ReadAll(gameRoot);
+
+            List<string> on = new List<string>(), off = new List<string>(), added = new List<string>(), gone = new List<string>();
+            foreach (KeyValuePair<string, bool> kv in cur)
+            {
+                bool was;
+                if (!prev.TryGetValue(kv.Key, out was)) added.Add(kv.Key);
+                else if (kv.Value && !was) on.Add(kv.Key);
+                else if (!kv.Value && was) off.Add(kv.Key);
+            }
+            foreach (KeyValuePair<string, bool> kv in prev) if (!cur.ContainsKey(kv.Key)) gone.Add(kv.Key);
+            if (on.Count + off.Count + added.Count + gone.Count == 0) return null;
+
+            StringBuilder sb = new StringBuilder();
+            sb.Append("检测到 addonlist 被外部改过（Steam 更新订阅，或在游戏里动过开关），已按文件为准：");
+            if (on.Count > 0) sb.Append(" 开启 " + on.Count + " 个");
+            if (off.Count > 0) sb.Append(" 关闭 " + off.Count + " 个");
+            if (added.Count > 0) sb.Append(" 新增 " + added.Count + " 个");
+            if (gone.Count > 0) sb.Append(" 消失 " + gone.Count + " 个");
+            sb.Append("（" + FirstFew(on, off, added, gone) + "）");
+            Core.Log("INFO", sb.ToString());
+            SaveSnapshot(file);                      // 认过就不重复报
+            return sb.ToString();
+        }
+
+        private static string FirstFew(List<string> on, List<string> off, List<string> added, List<string> gone)
+        {
+            List<string> all = new List<string>();
+            all.AddRange(on); all.AddRange(off); all.AddRange(added); all.AddRange(gone);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < all.Count && i < 3; i++)
+            {
+                if (i > 0) sb.Append("、");
+                sb.Append(all[i]);
+            }
+            if (all.Count > 3) sb.Append(" 等 " + all.Count + " 个");
+            return sb.ToString();
+        }
+
         public static string FileOf(string gameRoot)
         {
             return Path.Combine(Path.Combine(gameRoot, "left4dead2"), "addonlist.txt");
         }
 
-        public static void WriteOrdered(string gameRoot, List<string> order, Dictionary<string, bool> states)
+        public static bool WriteOrdered(string gameRoot, List<string> order, Dictionary<string, bool> states)
         {
             string p = FileOf(gameRoot);
             List<string> lines = new List<string>();
@@ -27,7 +187,7 @@ namespace Installer
             if (lines.Count == 0) { lines.Add("\"AddonList\""); lines.Add("{"); lines.Add("}"); }
             int open = lines.FindIndex(delegate(string s) { return s.Trim() == "{"; });
             int close = lines.FindLastIndex(delegate(string s) { return s.Trim() == "}"; });
-            if (open < 0 || close < 0 || close <= open) { Write(gameRoot, states); return; }
+            if (open < 0 || close < 0 || close <= open) { return Write(gameRoot, states); }
             List<string> head = lines.GetRange(0, open + 1);
             List<string> tail = lines.GetRange(close, lines.Count - close);
             HashSet<string> written = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -46,7 +206,7 @@ namespace Installer
             }
             List<string> all = new List<string>();
             all.AddRange(head); all.AddRange(body); all.AddRange(tail);
-            WriteKeepEol(p, all);
+            return WriteKeepEol(p, all);
         }
 
         /// <summary>
@@ -54,8 +214,15 @@ namespace Installer
         /// 结果只是「点一下开关」，整份 addonlist 的每一行都被改了 —— 用对比工具看像是全文件都动过，
         /// 也说不清到底改的是哪几条。现在沿用原文的行尾和文件末尾是否有换行，只动该动的那几行。
         /// </summary>
-        private static void WriteKeepEol(string path, List<string> lines)
+        private static bool WriteKeepEol(string path, List<string> lines)
         {
+            LastBlocked = false;
+            if (GameIsRunning())
+            {
+                LastBlocked = true;
+                Core.Log("WARN", "游戏正在运行，addonlist 没写：游戏退出时会把内存里的开关整份写回，这时候写进去会被覆盖。先完全退出游戏（不是最小化）再改。");
+                return false;
+            }
             string nl = "\r\n", tail = "";
             try
             {
@@ -70,6 +237,8 @@ namespace Installer
             catch { }
             // 原子写：写一半被打断（拔 U 盘 / 空间满）会把 addonlist 留成空文件，游戏里所有开关就全丢了
             Core.WriteAllTextAtomic(path, string.Join(nl, lines.ToArray()) + tail, Encoding.Default);
+            SaveSnapshot(path);
+            return true;
         }
 
         /// <summary>
@@ -112,7 +281,7 @@ namespace Installer
             return d;
         }
 
-        public static void Write(string gameRoot, Dictionary<string, bool> changes)
+        public static bool Write(string gameRoot, Dictionary<string, bool> changes)
         {
             string p = FileOf(gameRoot);
             List<string> lines = new List<string>();
@@ -146,7 +315,7 @@ namespace Installer
                 if (close < 0) close = lines.Count;
                 lines.InsertRange(close, add);
             }
-            WriteKeepEol(p, lines);
+            return WriteKeepEol(p, lines);
         }
 
         /// <summary>从 addonlist 里删掉这些名字（文件被移走后，别留一条指向不存在文件的开关）。</summary>
@@ -163,7 +332,7 @@ namespace Installer
                 Match m = LineRe.Match(lines[i]);
                 if (m.Success && drop.Contains(m.Groups[1].Value)) { lines.RemoveAt(i); n++; }
             }
-            if (n > 0) WriteKeepEol(p, lines);
+            if (n > 0 && !WriteKeepEol(p, lines)) return 0;
             return n;
         }
     }
@@ -1176,6 +1345,13 @@ namespace Installer
                     Lang.S("删除已装 MOD"));
                 return;
             }
+            if (AddonList.GameIsRunning())
+            {
+                MessageBox.Show("游戏正在运行，先完全退出再删。\r\n\r\n"
+                    + "正在被游戏读着的 vpk 删到一半可能留下残文件，删了也不一定真删干净。",
+                    "游戏正在运行");
+                return;
+            }
             // 只认选中行。以前用 CheckedItems，可这个列表里勾选=启用：
             // 用户为了删除去「勾选」，反而先把 MOD 打开了；取消勾选再来删又选不中。
             List<string> names = new List<string>();
@@ -1350,10 +1526,9 @@ namespace Installer
         /// reorder=false 时只改 1/0、不动任何一行的位置 —— 绝大多数人只是来开关一个 MOD，
         /// 不该顺带把整份优先级顺序重写一遍。真的上移/下移过（reorder=true）才按列表顺序重排。
         /// </summary>
-        internal static void WriteSwitches(string gameRoot, List<string> order, Dictionary<string, bool> states, bool reorder)
+        internal static bool WriteSwitches(string gameRoot, List<string> order, Dictionary<string, bool> states, bool reorder)
         {
-            if (reorder) AddonList.WriteOrdered(gameRoot, order, states);
-            else AddonList.Write(gameRoot, states);
+            return reorder ? AddonList.WriteOrdered(gameRoot, order, states) : AddonList.Write(gameRoot, states);
         }
 
         private bool ApplyQuiet()
@@ -1364,7 +1539,15 @@ namespace Installer
             try
             {
                 bool reordered = orderDirty;
-                WriteSwitches(gameRoot, order, changes, reordered);
+                if (!WriteSwitches(gameRoot, order, changes, reordered))
+                {
+                    // 被拦下只有一种原因：游戏开着。别装作保存成功，也别关窗口。
+                    Core.Log("WARN", "开关没写进去：游戏正在运行");
+                    MessageBox.Show("游戏正在运行，开关没写进去。\r\n\r\n"
+                        + "游戏退出时会把内存里的开关整份写回 addonlist，这时候写进去会被覆盖掉。\r\n"
+                        + "先完全退出游戏（不是最小化），再点一次「写入并关闭」。", "游戏正在运行");
+                    return false;
+                }
                 orderDirty = false;
                 int on = 0;
                 foreach (KeyValuePair<string, bool> kv in changes) if (kv.Value) on++;

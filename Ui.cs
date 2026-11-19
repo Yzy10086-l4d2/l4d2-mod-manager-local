@@ -1791,6 +1791,14 @@ namespace Installer
             string root = txtGame == null ? "" : txtGame.Text.Trim();
             if (!Core.TestGame(root)) return -1;
             Dictionary<string, bool> st = AddonList.Read(root);
+            // 顺手看一眼「上次写完到现在，文件是不是被外面动过」（Steam 更新订阅 / 游戏内改开关）。
+            // 只报一次，报过就刷新快照，不会每次切回窗口都嘮叨。
+            try
+            {
+                string ext = AddonList.CheckExternal(root);
+                if (!string.IsNullOrEmpty(ext)) SetStatus(ext);
+            }
+            catch { }
             int n = 0;
             List<ModItem> list = Core.ModList;
             if (list == null) return 0;
@@ -3109,7 +3117,13 @@ namespace Installer
             }
             Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (ModItem it in sel) st[it.Name] = true;
-            AddonList.Write(root, st);
+            if (!AddonList.Write(root, st) && AddonList.LastBlocked)
+            {
+                Core.Log("WARN", title + "：文件已就位，但开关没写进去（游戏正在运行）");
+                MessageBox.Show("MOD 已经在游戏目录里了，但开关没写进去——游戏正在运行。\r\n\r\n"
+                    + "先完全退出游戏，再用「刷新游戏现状」把开关补上。", "游戏正在运行",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
             // 状态列是从 addons + addonlist 现读的，装完得重扫一次，否则列表还显示旧状态
             try { Core.ScanMods(); } catch (Exception exs) { Core.Log("WARN", "装完重扫失败: " + exs.Message); }
             RefreshMods();
@@ -4243,6 +4257,13 @@ namespace Installer
                 MessageBox.Show("这个游戏目录写不进去（可能只读、被占用或权限不足）。\r\n可以试试以管理员身份运行。", "目录不可写");
                 return false;
             }
+            if (AddonList.GameIsRunning())
+            {
+                MessageBox.Show("游戏正在运行，开关没写进去。\r\n\r\n"
+                    + "游戏退出时会把内存里的开关整份写回 addonlist，这时候写进去会被覆盖掉，\r\n"
+                    + "看起来改了、重进又是旧样子。先完全退出游戏（不是最小化）再来。", "游戏正在运行");
+                return false;
+            }
             int on = 0;
             foreach (KeyValuePair<string, bool> kv in st) if (kv.Value) on++;
 
@@ -4261,7 +4282,15 @@ namespace Installer
             try
             {
                 Core.Log("INFO", "写开关：" + st.Count + " 条 → " + AddonList.FileOf(root));
-                AddonList.Write(root, st);
+                if (!AddonList.Write(root, st))
+                {
+                    Core.Log("WARN", "开关没写进去（" + (AddonList.LastBlocked ? "游戏正在运行" : "写入失败") + "）");
+                    MessageBox.Show(AddonList.LastBlocked
+                        ? "游戏正在运行，开关没写进去。先完全退出游戏再改。"
+                        : "写不进 addonlist.txt。可以试试以管理员身份运行。", "没写进去",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return false;
+                }
                 // 写完立刻回读一次：文件到底有没有落成我们想要的值，别只信「写成功」。
                 // 以前出过「工具说改好了、重进又是旧状态」，没有回读就只能靠猜。
                 int bad = 0;

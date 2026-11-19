@@ -2285,6 +2285,75 @@ namespace Installer
             return all.ToArray();
         }
 
+        // ---------- 自测：addonlist 守门 + 外部改动（不依赖库） ----------
+        /// <summary>
+        /// 干净机器上也要真跑，所以不放在 SelfTestAddons 的库检查后面：
+        ///   1) 游戏在跑 → 拒写，文件一个字节都不变，并打上 LastBlocked 供界面提示
+        ///   2) 写完留快照；外部（Steam 更新 / 游戏内改开关）改了能报出来，且同一处只报一次
+        /// </summary>
+        public static int SelfTestAddonGate()
+        {
+            int bad = 0;
+            string savedLogDir = Core.LogDir;
+            string root = Path.Combine(Path.GetTempPath(), "l4d2-gate-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(root, "left4dead2"));
+                Core.LogDir = Path.Combine(root, "_装机记录");
+                Directory.CreateDirectory(Core.LogDir);
+
+                string file = AddonList.FileOf(root);
+                Dictionary<string, bool> a = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                a["alpha.vpk"] = true;
+                a["beta.vpk"] = false;
+                if (!AddonList.Write(root, a)) { bad++; Console.WriteLine("[FAIL] 正常写入被拒了"); }
+
+                // 1) 假装游戏在跑 → 拒写、文件不变、打标记
+                string before = File.Exists(file) ? File.ReadAllText(file, Encoding.Default) : "";
+                Dictionary<string, bool> b = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                b["alpha.vpk"] = false;
+                b["beta.vpk"] = true;
+                AddonList.ForceGameRunning = true;
+                bool wrote = AddonList.Write(root, b);
+                bool flagged = AddonList.LastBlocked;
+                AddonList.ForceGameRunning = false;
+                string after = File.Exists(file) ? File.ReadAllText(file, Encoding.Default) : "";
+                Dictionary<string, bool> now = AddonList.Read(root);
+                bool alphaStillOn = now.ContainsKey("alpha.vpk") && now["alpha.vpk"];
+
+                if (wrote) { bad++; Console.WriteLine("[FAIL] 游戏在跑还是把 addonlist 写了"); }
+                if (!flagged) { bad++; Console.WriteLine("[FAIL] 拦下时没打 LastBlocked，界面没法说清原因"); }
+                if (before != after) { bad++; Console.WriteLine("[FAIL] 被拦下之后文件还是变了"); }
+                if (!alphaStillOn) { bad++; Console.WriteLine("[FAIL] 被拦下时把 alpha 的开关改了"); }
+                Console.WriteLine("ADDON 守门：游戏在跑 → 拒写=" + (!wrote) + "、打过标记=" + flagged + "、文件未变=" + (before == after));
+
+                // 2) 外部改动：直接改文件（模拟 Steam 更新 / 游戏内开关）
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("\"AddonList\"");
+                sb.AppendLine("{");
+                sb.AppendLine("\t\"alpha.vpk\"\t\t\"1\"");
+                sb.AppendLine("\t\"beta.vpk\"\t\t\"1\"");        // 被外部打开了
+                sb.AppendLine("\t\"gamma.vpk\"\t\t\"0\"");       // 外部新增
+                sb.AppendLine("}");
+                File.WriteAllText(file, sb.ToString(), Encoding.Default);
+
+                string ext = AddonList.CheckExternal(root);
+                bool reported = ext != null && ext.IndexOf("beta.vpk", StringComparison.Ordinal) >= 0;
+                string again = AddonList.CheckExternal(root);
+                if (!reported) { bad++; Console.WriteLine("[FAIL] 外部改动没报出来: " + (ext == null ? "null" : ext)); }
+                if (again != null) { bad++; Console.WriteLine("[FAIL] 同一处外部改动报了两遍: " + again); }
+                Console.WriteLine("ADDON 外部改动：报出=" + reported + "，二次不重复=" + (again == null)
+                    + (ext == null ? "" : "；" + ext));
+            }
+            catch (Exception ex) { bad++; Console.WriteLine("[FAIL] addonlist 守门自检异常: " + ex.Message); }
+            finally
+            {
+                Core.LogDir = savedLogDir;
+                try { Directory.Delete(root, true); } catch { }
+            }
+            return bad;
+        }
+
         // ---------- 自测：换整套只翻开关，文件不动 ----------
         /// <summary>
         /// 拿个假游戏目录跑一遍 SwitchAddons，检查：
@@ -2299,6 +2368,8 @@ namespace Installer
             try
             {
                 Directory.CreateDirectory(addons);
+                // 守门 + 外部改动：不依赖库，任何环境都要真跑（库里没 MOD 也不能被跳过）
+                bad += SelfTestAddonGate();
                 Core.ScanMods();
                 List<ModItem> pool = new List<ModItem>();
                 foreach (ModItem m in Core.ModList)
