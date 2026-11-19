@@ -4292,6 +4292,7 @@ namespace Installer
             if (treeView == null) return st;
             Dictionary<string, string> nameToSub = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, string> nameToPos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, ModGroup> nameToGroup = new Dictionary<string, ModGroup>(StringComparer.OrdinalIgnoreCase);
             List<string> soloPos = new List<string>();
             Dictionary<string, bool> on = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (Slot s in treeView.Slots)
@@ -4304,12 +4305,23 @@ namespace Installer
                     {
                         if (string.IsNullOrEmpty(p.Name)) continue;
                         nameToSub[p.Name] = s.Sub;
+                        nameToGroup[p.Name] = g;
                         if (solo) nameToPos[p.Name] = s.Key;
                         if (p.AddonOn) on[p.Name] = true;
                     }
             }
-            return ApplyEightPackRule(st, nameToSub, nameToPos, soloPos,
+            st = ApplyEightPackRule(st, nameToSub, nameToPos, soloPos,
                 delegate(string n) { bool v; return on.TryGetValue(n, out v) && v; });
+            // 互斥顺手压成关的那些，勾选要跟着下架：只写 addonlist 的话，
+            // 树里还显示「这套是选中的」，再点它走的是「再点一次 = 清空」，
+            // 表现出来就是「怎么点都没反应」（2026-11-19 用户实测报的）。
+            foreach (KeyValuePair<string, bool> kv in st)
+            {
+                if (kv.Value) continue;
+                ModGroup g;
+                if (nameToGroup.TryGetValue(kv.Key, out g)) UncheckGroup(g);
+            }
+            return st;
         }
 
         /// <summary>
