@@ -148,6 +148,51 @@ namespace Installer
             return raw;
         }
 
+        /// <summary>
+        /// 从一段文字（文件名 / addoninfo 标题）里猜它属于哪个位置，按命中长度排序。
+        /// 只给「未归类」页提候选用 —— 猜错了不落库，新人点一下才算数。
+        /// </summary>
+        internal static List<Row> Suggest(string text, int max)
+        {
+            List<Row> hit = new List<Row>();
+            if (string.IsNullOrEmpty(text) || max <= 0) return hit;
+            Ensure();
+            List<Row> found = new List<Row>();
+            List<int> score = new List<int>();
+            foreach (Row r in _rows)
+            {
+                int s = MatchScore(r, text);
+                if (s <= 0) continue;
+                int at = -1;
+                for (int i = 0; i < found.Count; i++) if (found[i] == r) { at = i; break; }
+                if (at >= 0) { if (s > score[at]) score[at] = s; continue; }
+                found.Add(r); score.Add(s);
+            }
+            // 命中越长越可信（「军用狙」比「狙」靠谱）
+            while (hit.Count < max && found.Count > 0)
+            {
+                int best = 0;
+                for (int i = 1; i < score.Count; i++) if (score[i] > score[best]) best = i;
+                hit.Add(found[best]); found.RemoveAt(best); score.RemoveAt(best);
+            }
+            return hit;
+        }
+
+        private static int MatchScore(Row r, string text)
+        {
+            int best = 0;
+            if (!string.IsNullOrEmpty(r.Name) && r.Name.Length >= 2
+                && text.IndexOf(r.Name, StringComparison.OrdinalIgnoreCase) >= 0) best = r.Name.Length;
+            if (r.Aliases == null) return best;
+            foreach (string a in r.Aliases)
+            {
+                if (string.IsNullOrEmpty(a) || a.Length < 2) continue;
+                if (text.IndexOf(a, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (a.Length > best) best = a.Length;
+            }
+            return best;
+        }
+
         /// <summary>英文名：表里没写就用显示名（AK-47 这种本来就不该翻译）。</summary>
         internal static string En(string name)
         {

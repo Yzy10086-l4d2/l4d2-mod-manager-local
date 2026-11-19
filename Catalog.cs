@@ -1943,6 +1943,17 @@ namespace Installer
             if (Positions.Canonical("15发连狙") != "15发木狙") { bad++; Console.WriteLine("POS 归一失败: 15发连狙"); }
             if (Positions.Canonical("药丸") != "止痛药") { bad++; Console.WriteLine("POS 归一失败: 药丸"); }
             if (Positions.Canonical("huntingrifle") != "15发木狙") { bad++; Console.WriteLine("POS 归一失败: huntingrifle"); }
+            // 候选建议：文件名里带着玩家叫法时，要能猜出「未归类」该归到哪
+            {
+                bool hasZoe = false, hasPill = false;
+                foreach (Positions.Row r in Positions.Suggest("测试_佐伊和止痛药.vpk", 3))
+                {
+                    if (r.Name == "佐伊") hasZoe = true;
+                    if (r.Name == "止痛药") hasPill = true;
+                }
+                if (!hasZoe) { bad++; Console.WriteLine("POS 候选缺少 佐伊"); }
+                if (!hasPill) { bad++; Console.WriteLine("POS 候选缺少 止痛药"); }
+            }
             try
             {
                 Core.ModList = new List<ModItem>();
@@ -2089,7 +2100,8 @@ namespace Installer
             List<string[]> rows = new List<string[]>();
             foreach (ModGroup g in Groups)
                 foreach (ModItem it in g.Parts)
-                    rows.Add(new string[] { it.RelPath ?? "", it.Cat ?? "", it.Sub ?? "", it.Subject ?? "", it.SubjectKey ?? "" });
+                    rows.Add(new string[] { it.RelPath ?? "", it.Cat ?? "", it.Sub ?? "", it.Subject ?? "", it.SubjectKey ?? "",
+                        it.Subject.Length > 0 ? "" : Candidates(it) });
             rows.Sort(delegate(string[] x, string[] y) { return string.CompareOrdinal(x[0], y[0]); });
             return rows;
         }
@@ -2098,7 +2110,7 @@ namespace Installer
         public static string DumpIdentifyTo(string path)
         {
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine("路径\t大类\t小分类\t识别结果\t键");
+            sb.AppendLine("路径\t大类\t小分类\t识别结果\t键\t候选");
             foreach (string[] r in IdentifySnapshot()) sb.AppendLine(string.Join("\t", r));
             Core.WriteAllTextAtomic(path, sb.ToString(), new UTF8Encoding(true));
             return path;
@@ -2131,6 +2143,18 @@ namespace Installer
             Console.WriteLine("idcheck: 基线 " + want.Count + " 条 / 当前 " + cur.Count + " 条；改判 " + changed + "、消失 " + gone + "、新增 " + added);
             Console.WriteLine(changed == 0 ? "idcheck PASS" : "idcheck FAIL（有 " + changed + " 条被判到别的位置）");
             return changed;
+        }
+
+        /// <summary>
+        /// 给「认不出」的包提 2~3 个候选位置：拿文件名 + addoninfo 标题去对位置表的名字和别名。
+        /// 只输出「路径|大类|小分类|识别结果|键|候选」，候选形如「佐伊,止痛药」。
+        /// </summary>
+        private static string Candidates(ModItem it)
+        {
+            List<Positions.Row> hit = Positions.Suggest((it.Name ?? "") + " " + (it.AddonTitle ?? ""), 3);
+            List<string> names = new List<string>();
+            foreach (Positions.Row r in hit) names.Add(r.Name);
+            return string.Join(",", names.ToArray());
         }
 
         private static Dictionary<string, string> ReadSnapshot(string path)
