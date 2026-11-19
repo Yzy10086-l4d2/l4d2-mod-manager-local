@@ -3688,14 +3688,21 @@ namespace Installer
                 // （本地模式只是把「已装」并进「开关」，合计不变）。
                 int[] cols = CatTree.ColsForTest(2000);
                 int colSum = cols[0] + cols[1] + cols[2] + cols[3];
-                int colWant = Dpi.S(320);
+                // 设计值从实现本身量一次（临时把缩放压回 1），别再写死 320：
+                // 定宽列改过几版，写死的数只能靠人记得同步 —— 2026-11-19 就是这么攒出 8 条假失败。
+                float keepFactor = Dpi.Factor;
+                Dpi.Factor = 1f;
+                int[] baseCols = CatTree.ColsForTest(2000);
+                Dpi.Factor = keepFactor;
+                int baseSum = baseCols[0] + baseCols[1] + baseCols[2] + baseCols[3];
+                int colWant = Dpi.S(baseSum);
                 if (colSum != colWant)
                 {
                     bad++;
                     Core.Log("FAIL", tag + "列表定宽列合计 " + colSum + "px，应为 " + colWant
-                        + "px（100/74/84/62 没跟着缩放，高 DPI 下这几列会截字）");
+                        + "px（设计值 " + baseSum + " 没跟着缩放，高 DPI 下这几列会截字）");
                 }
-                else Core.Log("INFO", tag + "列表定宽列合计 " + colSum + "px（设计值 320）");
+                else Core.Log("INFO", tag + "列表定宽列合计 " + colSum + "px（设计值 " + baseSum + "）");
                 if (bad == 0) Core.Log("OK", tag + "无重叠、无越界（窗口 " + W + "px，设计宽 " + designW + "）");
             }
             catch (Exception ex) { bad++; Core.Log("FAIL", "LAYOUT 异常: " + ex.Message); }
