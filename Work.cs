@@ -2344,7 +2344,10 @@ namespace Installer
                 File.WriteAllText(file, sb.ToString(), Encoding.Default);
 
                 string ext = AddonList.CheckExternal(root);
-                bool reported = ext != null && ext.IndexOf("beta.vpk", StringComparison.Ordinal) >= 0;
+                // 只断言「报得出来、举的例子里有 gamma」：
+                // 上一组结束时快照里已经是 alpha=0/beta=1，所以外部这一改到底算
+                // 「alpha 被开启」还是「beta 被开启」取决于前面怎么写的，不写死名字。
+                bool reported = ext != null && ext.IndexOf("gamma.vpk", StringComparison.Ordinal) >= 0;
                 string again = AddonList.CheckExternal(root);
                 if (!reported) { bad++; Console.WriteLine("[FAIL] 外部改动没报出来: " + (ext == null ? "null" : ext)); }
                 if (again != null) { bad++; Console.WriteLine("[FAIL] 同一处外部改动报了两遍: " + again); }
