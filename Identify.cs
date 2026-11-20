@@ -58,13 +58,13 @@ namespace Installer
             //      （infected 连特感目录、血贴图、高亮特效都沾，会误判）。
             //      非普通（防暴/小丑/泥人/道路工/CEDA/堕落/吉米）必须先判：模型名同样是
             //      common_male_*，排在下面就被普通感染者吃掉，装上去只剩一个槽。
-            {"common_male_riot",     "非普通感染者"},
-            {"common_male_ceda",     "非普通感染者"},
-            {"common_male_clown",    "非普通感染者"},
-            {"common_male_mud",      "非普通感染者"},
-            {"common_male_roadcrew", "非普通感染者"},
-            {"common_male_jimmy",    "非普通感染者"},
-            {"common_male_fallen",   "非普通感染者"},
+            {"common_male_riot",     "防暴警察"},
+            {"common_male_ceda",     "CEDA"},
+            {"common_male_clown",    "小丑"},
+            {"common_male_mud",      "泥人"},
+            {"common_male_roadcrew", "道路工"},
+            {"common_male_jimmy",    "吉米"},
+            {"common_male_fallen",   "堕落幸存者"},
             {"common_male",      "普通感染者"},
             {"common_female",    "普通感染者"},
 
@@ -1058,7 +1058,8 @@ namespace Installer
                 if (!p.EndsWith(".mdl", StringComparison.OrdinalIgnoreCase)) continue;
                 if (p.IndexOf("models/infected/", StringComparison.OrdinalIgnoreCase) < 0) continue;
                 int sl = p.LastIndexOf('/');
-                if (Lookup(sl >= 0 ? p.Substring(sl + 1) : p) != "非普通感染者") continue;
+                Positions.Row pr = Positions.Find(Lookup(sl >= 0 ? p.Substring(sl + 1) : p));
+                if (pr == null || pr.Sub != "小僵尸") continue;
                 cat = "僵尸"; sub = "小僵尸"; return true;
             }
 

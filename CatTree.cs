@@ -273,10 +273,14 @@ namespace Installer
                     return k == cat ? k : cat;
                 }
                 case "僵尸": case "特感":          // 老配置里大类还叫「特感」，一起接住
-                    // 用户 2026-11-21 定：大类叫「僵尸」，下一级只有两个 ——「小僵尸」（尸潮那种，
-                    // 普通 + 非普通感染者都在里面）和「特感」。位置名里带「普通」的就是小僵尸。
+                {
+                    // 用户 2026-11-21 定：大类叫「僵尸」，下一级两个 ——「小僵尸」和「特感」。
+                    // 哪个归小僵尸由位置表说了算（普通感染者 + 七种非普通），别在这里另抄一份名单。
+                    Positions.Row pr = Positions.Find(n);
+                    if (pr != null && !string.IsNullOrEmpty(pr.Sub)) return pr.Sub;
                     if (n.IndexOf("小僵尸", StringComparison.Ordinal) >= 0) return "小僵尸";
                     return n.IndexOf("普通", StringComparison.Ordinal) >= 0 ? "小僵尸" : "特感";
+                }
                 // 杂项里「能搬能扔」的那些（油桶 / 煤气罐 / 弹药堆）单独归一层，
                 // 别和特效、火焰这类真·杂项混在一堆
                 case "杂项":
