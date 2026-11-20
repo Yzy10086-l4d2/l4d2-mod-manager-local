@@ -1196,6 +1196,7 @@ namespace Installer
             recList.Font = Theme.UISmall;
             recList.LargeImageList = recImgs;
             recList.ShowItemToolTips = true;
+            recList.SelectedIndexChanged += delegate { ShowRecDetail(); };
             recList.DoubleClick += delegate { OpenRecPick(); };
             recList.KeyDown += delegate(object s2, KeyEventArgs e2)
             {
@@ -3972,7 +3973,8 @@ namespace Installer
                 else
                 {
                     int whole = lv.Height;
-                    int recH = Math.Max(Dpi.S(96), Math.Min(Dpi.S(220), whole * 38 / 100));
+                    // 用户 2026-11-21 定：上下各一半，别做成一条扁带
+                    int recH = Math.Max(Dpi.S(120), (whole - Dpi.S(6)) / 2);
                     if (whole - recH < Dpi.S(90)) { recPanel.Visible = false; }
                     else
                     {
@@ -4018,8 +4020,7 @@ namespace Installer
             int gen = ++recGen;
             recPanel.Visible = true;
             recTitle.Text = Lang.S("工坊推荐：正在搜…");
-            recList.Items.Clear();
-            recImgs.Images.Clear();
+            ShowRecSkeleton();
             LayoutSelf();
 
             int tw = Math.Max(64, Dpi.S(104)), th = Math.Max(36, Dpi.S(58));
@@ -4055,6 +4056,52 @@ namespace Installer
                 }
                 catch { }
             });
+        }
+
+        /// <summary>
+        /// 骨架屏：还没搜回来时先铺几张空卡，别让人对着白板猜（和工坊窗口的骨架同一个意思）。
+        /// 搜回来/失败时整批换掉。
+        /// </summary>
+        private void ShowRecSkeleton()
+        {
+            recList.Items.Clear();
+            recImgs.Images.Clear();
+            int w = Math.Max(64, Dpi.S(104)), h = Math.Max(36, Dpi.S(58));
+            for (int i = 0; i < 8; i++)
+            {
+                Bitmap bmp = new Bitmap(w, h);
+                using (Graphics g = Graphics.FromImage(bmp))
+                {
+                    g.Clear(Theme.IsDark ? Color.FromArgb(44, 48, 54) : Color.FromArgb(232, 236, 242));
+                    using (SolidBrush b2 = new SolidBrush(Theme.IsDark ? Color.FromArgb(52, 56, 63) : Color.FromArgb(242, 245, 249)))
+                        g.FillRectangle(b2, 0, 0, w, h);
+                }
+                recImgs.Images.Add(bmp);
+                recList.Items.Add(new ListViewItem("", recImgs.Images.Count - 1));
+            }
+        }
+
+        /// <summary>选中一张推荐：右侧详情栏按「已选 MOD」同一套排版显示它（封面/标题/订阅数/简介）。</summary>
+        private void ShowRecDetail()
+        {
+            if (peek == null || recList == null || recList.SelectedItems.Count == 0) return;
+            ListViewItem li = recList.SelectedItems[0];
+            WsItem it = li.Tag as WsItem;
+            if (it == null) return;                       // 骨架卡还没数据
+            Image pic = null;
+            try
+            {
+                int idx = li.ImageIndex;
+                if (idx >= 0 && idx < recImgs.Images.Count) pic = recImgs.Images[idx];
+            }
+            catch { }
+            string meta = it.Subs > 0
+                ? Lang.F("订阅 {0} · 浏览 {1}", WsText.Compact(it.Subs), WsText.Compact(it.Views))
+                : Lang.F("浏览 {0}", WsText.Compact(it.Views));
+            string desc = WsText.Clean(it.Desc ?? "");
+            if (desc.Length > 600) desc = desc.Substring(0, 600) + "…";
+            peek.ShowImage(it.Title ?? "", meta, Lang.S("来源：Steam 创意工坊"), pic,
+                           Lang.S("双击去工坊查看 / 下载"), desc);
         }
 
         /// <summary>把搜到的东西铺成卡片：封面 + 名字，悬停看订阅数，双击去工坊。</summary>

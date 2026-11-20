@@ -55,6 +55,23 @@ namespace Installer
             Invalidate();
         }
 
+        /// <summary>
+        /// 同一套排版，但图已经在内存里（工坊推荐区用：封面是网上下回来裁好的，没有磁盘路径）。
+        /// 图归调用方所有（ImageList 还要继续用），这里不释放 —— owned=false。
+        /// </summary>
+        public void ShowImage(string name, string metaText, string srcText, Image image, string hintText, string infoText)
+        {
+            Detach();
+            img = image;
+            owned = false;
+            title = name ?? "";
+            meta = metaText ?? "";
+            src = srcText ?? "";
+            hint = hintText ?? "";
+            info = infoText ?? "";
+            Invalidate();
+        }
+
         /// <summary>没有选中行时用：只给一句提示。</summary>
         public void Clear(string hintText)
         {
