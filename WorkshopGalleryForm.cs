@@ -1416,6 +1416,21 @@ namespace Installer
         bool IMessageFilter.PreFilterMessage(ref Message m)
         {
             if (m.Msg != WM_MOUSEWHEEL) return false;
+            // 前台是别的窗口（下载管理等）时绝不接管：否则滚轮被画廊吃掉，
+            // 前台窗口滚不动、身后的卡片墙反而在滚（用户 2026-11-21 反馈的老问题）
+            Form act = Form.ActiveForm;
+            if (act != null && act != this) return false;
+            // 光标压在别的窗口上（下载管理等）也不接管：否则滚的是身后这张卡片墙
+            try
+            {
+                Point scr = Cursor.Position;
+                foreach (Form f2 in Application.OpenForms)
+                {
+                    if (f2 == null || f2 == this || f2.IsDisposed || !f2.Visible) continue;
+                    if (f2.Bounds.Contains(scr)) return false;
+                }
+            }
+            catch { }
             // 分类/排序下拉展开时滚轮归下拉列表自己：以前会被墙吃掉，列表翻不动、页面反而跟着跑
             if (cboCat != null && cboCat.DroppedDown) return false;
             if (cboSort != null && cboSort.DroppedDown) return false;

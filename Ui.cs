@@ -2308,6 +2308,22 @@ namespace Installer
                 Application.DoEvents();
                 Shot(f, "downloads-real");      // 真实记录（有就显示，没有就是空态）
                 Core.Log("INFO", "DOWNSHOT 探针 " + f.LayoutProbe());
+                // 逐个"点"分类树、再点几行记录 —— 复现"一点就崩"
+                try
+                {
+                    int tn = f.TreeCountForTest();
+                    Core.Log("INFO", "DOWNSHOT 分类行数 " + tn);
+                    for (int i = 0; i < tn; i++)
+                    {
+                        try { f.ClickTreeForTest(i); }
+                        catch (Exception ex) { Core.Log("FAIL", "DOWNSHOT i=" + i + " 崩: " + ex); }
+                        Application.DoEvents();
+                    }
+                    f.ClickRowForTest(0);
+                    Application.DoEvents();
+                    Core.Log("OK", "DOWNSHOT 点击模拟完成");
+                }
+                catch (Exception ex) { Core.Log("FAIL", "DOWNSHOT 点击崩了: " + ex); }
                 f.ShowEmptyForTest();
                 Application.DoEvents();
                 Shot(f, "downloads-empty");

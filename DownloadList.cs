@@ -93,6 +93,9 @@ namespace Installer
             lv.Columns.Add(Lang.S("时间"), S(120));
             lv.DoubleClick += delegate { Locate(); };
             lv.SelectedIndexChanged += delegate { UpdateButtons(); };
+            // 滚轮发给有焦点的控件：鼠标进哪个列表就把焦点给它，免得"滚轮怎么滚都不动"
+            lv.MouseEnter += delegate { if (!lv.Focused) lv.Focus(); };
+            tree.MouseEnter += delegate { if (!tree.Focused) tree.Focus(); };
             Controls.Add(lv);
 
             // 左侧分类：按"这个 MOD 在方案树里的位置"归档，和工坊首页的分类思路一致
@@ -244,13 +247,19 @@ namespace Installer
         private void RefreshList()
         {
             if (IsDisposed) return;
+            try { RefreshListCore(true); }
+            catch (Exception ex) { Core.Log("FAIL", "下载管理刷新失败: " + ex); SetMsg("刷新失败：" + ex.Message); }
+        }
+
+        private void RefreshListCore(bool rebuildTree)
+        {
             string keep = Selected() != null ? Selected().Id : "";
 
             List<WsDownload> all = WorkshopDownloads.All();
             catOf.Clear();
             foreach (WsDownload d0 in all) catOf[d0.Id] = CatOf(d0);
 
-            FillTree(all);
+            if (rebuildTree) FillTree(all);      // 只在数据刷新时重建树；点分类时绝不能重建（见 PickCatFilter）
 
             List<WsDownload> shownList = new List<WsDownload>();
             foreach (WsDownload d0 in all)
@@ -395,13 +404,39 @@ namespace Installer
             catch (Exception ex) { return "ERR " + ex.Message; }
         }
 
+        /// <summary>自检用：分类树行数。</summary>
+        internal int TreeCountForTest() { return tree.Items.Count; }
+
+        /// <summary>自检用：选中第 i 行分类（等价于点一下）。</summary>
+        internal void ClickTreeForTest(int i)
+        {
+            int cnt = tree.Items.Count;
+            if (i < 0 || i >= cnt) { Core.Log("INFO", "DOWNSHOT 跳过 i=" + i + " 行数=" + cnt); return; }
+            ListViewItem it = tree.Items[i];
+            if (it == null) { Core.Log("FAIL", "DOWNSHOT tree.Items[" + i + "] 是 null（行数=" + cnt + "）"); return; }
+            try { it.Selected = true; }
+            catch (Exception ex) { Core.Log("FAIL", "DOWNSHOT 选 i=" + i + " 崩: " + ex.Message); return; }
+            try { if (it.ListView != null) it.Focused = true; } catch { }
+            Core.Log("INFO", "DOWNSHOT 点 i=" + i + " 后行数=" + tree.Items.Count);
+        }
+
+        /// <summary>自检用：选中第 i 行记录。</summary>
+        internal void ClickRowForTest(int i)
+        {
+            if (i < 0 || i >= lv.Items.Count) return;
+            lv.Items[i].Selected = true;
+            lv.Items[i].Focused = true;
+        }
+
         private void PickCatFilter()
         {
             if (buildingTree) return;
             string[] cs = tree.SelectedItems.Count == 0 ? null : tree.SelectedItems[0].Tag as string[];
             filterCat = cs == null ? "" : (cs[0] ?? "");
             filterSub = cs == null ? "" : (cs[1] ?? "");
-            RefreshList();
+            // 只换筛选项，不重建左树：在 ListView 的选中事件里清空它自己会崩（原生访问越界，用户 2026-11-21 真踩到）
+            try { RefreshListCore(false); }
+            catch (Exception ex) { Core.Log("FAIL", "下载管理筛选失败: " + ex); SetMsg("筛选失败：" + ex.Message); }
         }
 
         private void UpdateFooterCount(List<WsDownload> all)
