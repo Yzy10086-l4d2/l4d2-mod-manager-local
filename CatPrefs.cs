@@ -20,7 +20,7 @@ namespace Installer
     internal static class CatPrefs
     {
         // 默认顺序：树里看得见的四类在前，地图/喷漆不进树、排最后
-        public static readonly string[] DefaultCats = { "枪械", "近战", "投掷物", "弹药升级", "人物", "场景", "平台", "特感", "药品", "杂项", "地图", "喷漆" };
+        public static readonly string[] DefaultCats = { "枪械", "近战", "投掷物", "弹药升级", "人物", "场景", "平台", "僵尸", "药品", "杂项", "地图", "喷漆" };
 
         private static bool loaded;
         private static int ver;                    // 每次改都 +1，Catalog.Cats 的缓存靠它失效
@@ -145,6 +145,22 @@ namespace Installer
                     }
             }
             catch { }
+            // 2026-11-21：大类「特感」改名「僵尸」，下一级分「小僵尸」「特感」。
+            // 必须在补默认大类之前搬：不然「僵尸」被当成缺的大类再插一份，旧「特感」还留着，左栏会并排两个。
+            bool migrated = false;
+            if (cats.Contains("特感"))
+            {
+                int oldAt = cats.IndexOf("特感");
+                if (!cats.Contains("僵尸")) cats[oldAt] = "僵尸"; else cats.RemoveAt(oldAt);
+                foreach (string k in new List<string>(modCat.Keys))
+                    if (modCat[k] == "特感") modCat[k] = "僵尸";
+                migrated = true;
+            }
+            foreach (string k in new List<string>(slotSub.Keys))
+            {
+                string v = slotSub[k];
+                if (v == "普通感染者" || v == "非普通感染者") { slotSub[k] = "小僵尸"; migrated = true; }
+            }
             // 缺了的默认大类插到它的默认位置（而不是一律追加在最后）：
             // 老用户配置里没有「近战 / 投掷物 / 弹药升级」，得让它们落在枪械后面，而不是排到喷漆后头
             for (int i = 0; i < DefaultCats.Length; i++)
@@ -171,7 +187,7 @@ namespace Installer
                 if (!slotsOfCat.ContainsKey("弹药升级")) slotsOfCat["弹药升级"] = oldSlots;
                 renamed = true;
             }
-            if (renamed) Save();
+            if (renamed || migrated) Save();
             Touch();
         }
 

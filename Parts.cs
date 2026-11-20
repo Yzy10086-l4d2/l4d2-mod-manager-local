@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
@@ -25,7 +25,7 @@ namespace Installer
             public override string ToString() { return Text; }
         }
 
-        public PartsForm(ModGroup group, HashSet<string> checkedKeys)
+        public PartsForm(ModGroup group, HashSet<string> checkedKeys, bool explicitNone = false)
         {
             g = group;
             Text = "选择部件 — " + group.Name;
@@ -60,7 +60,7 @@ namespace Installer
             lb.IntegralHeight = false;
             Controls.Add(lb);
 
-            bool any = false;
+            bool any = explicitNone;
             foreach (ModItem p in group.Parts) if (checkedKeys.Contains(p.Key)) any = true;
             List<ModItem> preset = any ? null : Catalog.DefaultParts(group);
 
@@ -108,7 +108,7 @@ namespace Installer
             for (int i = 0; i < rows.Count; i++)
                 if (lb.GetItemChecked(i)) Result.Add(rows[i].It);
             if (Result.Count == 0 &&
-                MessageBox.Show("一个部件都没选，这样装不进去任何东西。仍然确定？", "确认",
+                MessageBox.Show("一个部件都没选 —— 等于这套不装（停用）。确定？", "确认",
                                 MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK) return;
             DialogResult = DialogResult.OK;
             Close();

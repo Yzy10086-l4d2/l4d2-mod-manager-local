@@ -60,6 +60,8 @@ namespace Installer
         private bool forceClose;                 // 已经确认过一次退出，收盘时不要再弹确认
         private TextBox txtLog;
         private readonly HashSet<string> checkedKeys = new HashSet<string>();
+        // 整组一个部件都不勾 = 这套不装（用户 2026-11-21 定）。也要记住，否则重开又回到默认部件。
+        private readonly HashSet<string> noParts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // 展开了哪些套装（按 ModGroup.Key）：展开后每个 vpk 单独一行，可以只勾其中一个
         private readonly HashSet<string> expanded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private List<string> conflictMsgs = new List<string>();
@@ -908,7 +910,11 @@ namespace Installer
 
         private void ApplyConfig()
         {
-            foreach (string m in Core.Cfg.Mods) checkedKeys.Add(m);
+            foreach (string m in Core.Cfg.Mods)
+            {
+                if (m.StartsWith("#off:", StringComparison.Ordinal)) noParts.Add(m.Substring(5));
+                else checkedKeys.Add(m);
+            }
             CheckRowsByKeys();
             UpdateSel();
             Log("已载入上次勾选（" + checkedKeys.Count + " 个 MOD）");
@@ -1283,10 +1289,12 @@ namespace Installer
             {
                 // 勾这一行 = 装默认部件（主体 + 必装 + 第一个选配）；想挑就双击展开
                 foreach (ModItem p in Catalog.DefaultParts(g)) checkedKeys.Add(p.Key);
+                noParts.Remove(g.Key);
             }
             else
             {
                 foreach (ModItem p in g.Parts) checkedKeys.Remove(p.Key);
+                noParts.Add(g.Key);
             }
             if (g.IsSet) e.Item.Text = GroupRowText(g);
             Color c;
@@ -1306,7 +1314,16 @@ namespace Installer
         /// </summary>
         private void SaveChecks()
         {
-            Core.Cfg.Mods = new List<string>(checkedKeys);
+            // 「整组一个都不勾」= 这套不装，也要记住（用户 2026-11-21 定），用 #off:组键 标出来。
+            foreach (string k in new List<string>(noParts))
+            {
+                ModGroup gg;
+                if (!Catalog.GroupByKey.TryGetValue(k, out gg)) { noParts.Remove(k); continue; }
+                if (CountChecked(gg) > 0) noParts.Remove(k);
+            }
+            List<string> keep = new List<string>(checkedKeys);
+            foreach (string k in noParts) keep.Add("#off:" + k);
+            Core.Cfg.Mods = keep;
             Core.SaveConfig();
         }
 
@@ -2934,11 +2951,12 @@ namespace Installer
 
         private void PickParts(ModGroup g)
         {
-            using (PartsForm f = new PartsForm(g, checkedKeys))
+            using (PartsForm f = new PartsForm(g, checkedKeys, noParts.Contains(g.Key)))
             {
                 if (f.ShowDialog(this) != DialogResult.OK) return;
                 foreach (ModItem p in g.Parts) checkedKeys.Remove(p.Key);
                 foreach (ModItem p in f.Result) checkedKeys.Add(p.Key);
+                if (f.Result.Count == 0) noParts.Add(g.Key); else noParts.Remove(g.Key);
             }
             SaveChecks();
             RefreshMods();

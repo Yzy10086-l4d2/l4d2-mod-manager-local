@@ -1059,7 +1059,7 @@ namespace Installer
                 if (p.IndexOf("models/infected/", StringComparison.OrdinalIgnoreCase) < 0) continue;
                 int sl = p.LastIndexOf('/');
                 if (Lookup(sl >= 0 ? p.Substring(sl + 1) : p) != "非普通感染者") continue;
-                cat = "特感"; sub = "非普通感染者"; return true;
+                cat = "僵尸"; sub = "小僵尸"; return true;
             }
 
             // 2.5) 作用于多个特感（或只改材质、没有模型）的包 → 「特感 / 通用」。
@@ -1078,7 +1078,7 @@ namespace Installer
                             infTypes.Add(InfectKeys[i, 1]);
                 }
                 if (infAny && infTypes.Count > 1)
-                { cat = "特感"; sub = "通用"; return true; }
+                { cat = "僵尸"; sub = "通用"; return true; }
             }
 
             // 3) 特感：必须有 infected 的模型文件。「特感高亮」那种只改贴图的包不算 ——
@@ -1089,8 +1089,8 @@ namespace Installer
                 if (p.IndexOf("models/infected/", StringComparison.OrdinalIgnoreCase) < 0) continue;
                 for (int i = 0; i < InfectKeys.GetLength(0); i++)
                     if (p.IndexOf(InfectKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
-                    { cat = "特感"; sub = InfectKeys[i, 1]; return true; }
-                cat = "特感"; sub = "特感"; return true;
+                    { cat = "僵尸"; sub = InfectKeys[i, 1]; return true; }
+                cat = "僵尸"; sub = "特感"; return true;
             }
 
             // 4) 药品：医疗包/止痛药/肾上腺素/电击器 的模型或图标

@@ -30,7 +30,8 @@ namespace Installer
                 case "人物": return "person";
                 // 特感以前落到 default 的 misc（叠片杂物），八只感染者共用一个杂物图标；
                 // 小分类 "claw" 早就有，大类这里补上，两层才对得上。
-                case "特感": return "claw";
+                // 2026-11-21 大类改名「僵尸」，下面分「小僵尸」「特感」；老名字继续接。
+                case "僵尸": case "特感": return "claw";
                 case "药品": return "medkit";
                 case "地图":
                 case "三方图": return "map";
@@ -59,7 +60,7 @@ namespace Installer
                 case "一代": return "survivor1";
                 case "二代": return "survivor2";
                 case "特感": return "claw";
-                case "普通感染者": return "horde";
+                case "小僵尸": case "普通感染者": return "horde";
                 case "非普通感染者": return "horde";
                 case "八人包": return "person";
                 case "治疗与复活": return "medkit";

@@ -272,11 +272,11 @@ namespace Installer
                     string k = GunKindOf(n, key);
                     return k == cat ? k : cat;
                 }
-                case "特感":
-                    // 普通感染者（尸潮小僵尸）不是特感，单独一层；非普通（防暴/小丑/泥人…）再单一层。
-                    // 「非普通」里也含「普通」，必须先判它，否则会被并回普通感染者。
-                    if (n.IndexOf("非普通", StringComparison.Ordinal) >= 0) return "非普通感染者";
-                    return n.IndexOf("普通", StringComparison.Ordinal) >= 0 ? "普通感染者" : "特感";
+                case "僵尸": case "特感":          // 老配置里大类还叫「特感」，一起接住
+                    // 用户 2026-11-21 定：大类叫「僵尸」，下一级只有两个 ——「小僵尸」（尸潮那种，
+                    // 普通 + 非普通感染者都在里面）和「特感」。位置名里带「普通」的就是小僵尸。
+                    if (n.IndexOf("小僵尸", StringComparison.Ordinal) >= 0) return "小僵尸";
+                    return n.IndexOf("普通", StringComparison.Ordinal) >= 0 ? "小僵尸" : "特感";
                 // 杂项里「能搬能扔」的那些（油桶 / 煤气罐 / 弹药堆）单独归一层，
                 // 别和特效、火焰这类真·杂项混在一堆
                 case "杂项":
@@ -368,7 +368,7 @@ namespace Installer
         private static readonly string[] SubOrder =
         {
             "步枪", "冲锋枪", "霰弹枪", "狙击枪", "手枪", "特殊武器", "近战", "投掷物", "弹药升级", "其他枪械",
-            "一代", "二代", "特感", "普通感染者", "非普通感染者", "八人包",
+            "一代", "二代", "特感", "小僵尸", "普通感染者", "非普通感染者", "八人包",
             "治疗与复活", "暂时增益", "其他药品",
             // 杂项里的「整套替换」三栏排在最前：它们的包通常十几件，比零散道具更该先看到
             "UI 界面", "特效", "音效", "弹道",
@@ -480,8 +480,8 @@ namespace Installer
                     return "药品";
                 case "可搬道具": case "其他杂项": case "弹道":
                     return "杂项";
-                case "特感": case "普通感染者": case "非普通感染者":
-                    return "特感";
+                case "特感": case "小僵尸": case "普通感染者": case "非普通感染者":
+                    return "僵尸";
                 case "八人包":
                     return "人物";
                 // 场景自己一个大类（用户 2026-11-19 定）：天空盒 / 地面细节 / 场景贴图，

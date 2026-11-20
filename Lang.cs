@@ -198,6 +198,7 @@ namespace Installer
             Add(d, "投掷物", "Throwables");
             Add(d, "弹药升级", "Ammo upgrades");
             Add(d, "人物", "Survivors");
+            Add(d, "僵尸", "Infected");
             Add(d, "特感", "Special infected");
             Add(d, "药品", "Medical");
             Add(d, "杂项", "Misc");
@@ -205,6 +206,7 @@ namespace Installer
             Add(d, "喷漆", "Sprays");
 
             // ---------- 小分类 ----------
+            Add(d, "小僵尸", "Common infected");
             Add(d, "步枪", "Rifles");
             Add(d, "冲锋枪", "SMGs");
             Add(d, "霰弹枪", "Shotguns");

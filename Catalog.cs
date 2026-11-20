@@ -83,7 +83,7 @@ namespace Installer
     {
         public const string CAT_MAP = "地图";
         public const string CAT_CHAR = "人物";
-        public const string CAT_INFECTED = "特感";
+        public const string CAT_INFECTED = "僵尸";
         public const string CAT_GUN = "枪械";
         public const string CAT_MED = "药品";
         public const string CAT_MISC = "杂项";
@@ -2273,7 +2273,7 @@ namespace Installer
                     "只改一把枪的 HUD 图标归那把枪的枪种");
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/icon_smg.vtf" }, "枪械", "冲锋枪"),
                     "冲锋枪图标归冲锋枪");
-                bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/icon_tank.vtf" }, "特感", "特感"),
+                bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/icon_tank.vtf" }, "僵尸", "特感"),
                     "特感图标归特感");
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/health.vtf", "materials/vgui/hud/scoreboard.vtf" }, "杂项", "UI 界面"),
                     "整套 HUD 仍归界面");
@@ -2287,10 +2287,10 @@ namespace Installer
                     "认不出对象的武器音效仍按音效兜底（对象名由识别另给）");
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/logos/spray_01.vtf" }, "喷漆", "喷漆"),
                     "动态喷漆归喷漆，不占 UI 界面");
-                bad += RecogCheck(Classified(new string[] { "models/infected/common_male_riot.mdl" }, "特感", "非普通感染者"),
-                    "非普通感染者（防暴）单列，不被普通感染者吃掉");
-                bad += RecogCheck(Classified(new string[] { "models/infected/common_male_clown.mdl" }, "特感", "非普通感染者"),
-                    "非普通感染者（小丑）单列");
+                bad += RecogCheck(Classified(new string[] { "models/infected/common_male_riot.mdl" }, "僵尸", "小僵尸"),
+                    "非普通感染者（防暴）归小僵尸，不被普通感染者吃掉");
+                bad += RecogCheck(Classified(new string[] { "models/infected/common_male_clown.mdl" }, "僵尸", "小僵尸"),
+                    "非普通感染者（小丑）归小僵尸");
                 bad += RecogCheck(Classified(new string[] { "models/survivors/survivor_biker.mdl" }, "人物", "弗朗西斯"),
                     "正常人物模型仍归人物（界面排除没殃及本体）");
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/survivor_biker_portrait.vtf" }, "杂项", "UI 界面"),
