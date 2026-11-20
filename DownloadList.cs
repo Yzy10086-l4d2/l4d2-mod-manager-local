@@ -436,6 +436,8 @@ namespace Installer
                     {
                         WorkshopDownloads.Progress(d.Id, got, total);
                     });
+                    if (Workshop.LastSavedPath.Length > 0) dest = Workshop.LastSavedPath;
+                    if (Workshop.LastDownloadNote.Length > 0) SetMsg(Workshop.LastDownloadNote);
                     string rn = Workshop.RenameToAddonTitle(dest);
                     if (rn != null) dest = Path.Combine(dir, rn);
                     Workshop.RememberDownload(d.Id, Path.GetFileName(dest));

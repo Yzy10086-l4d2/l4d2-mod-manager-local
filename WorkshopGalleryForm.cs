@@ -36,6 +36,8 @@ namespace Installer
         private readonly FlatButton btnBack = new FlatButton();
         private readonly FlatButton btnOpen = new FlatButton();
         private readonly FlatButton btnGet = new FlatButton();
+        private readonly FlatButton btnDeps = new FlatButton();      // 配套 MOD（正文里写了工坊链接的）
+        private List<string> depIds = new List<string>();
         private readonly FlatButton btnLang = new FlatButton();   // 原文 / 译文 切换
 
         private readonly ComboBox cboCat = new ComboBox();
@@ -267,6 +269,11 @@ namespace Installer
             btnBack.Click += delegate { ShowGallery(); };
             detail.Controls.Add(btnBack);
 
+            btnDeps.Text = Lang.S("配套 MOD");
+            btnDeps.Visible = false;
+            btnDeps.Click += delegate { DownloadDeps(); };
+            detail.Controls.Add(btnDeps);
+
             btnGet.Text = Lang.S("下载这个 MOD");
             btnGet.Primary = true;
             btnGet.Click += delegate { DownloadOne(); };
@@ -401,8 +408,9 @@ namespace Installer
             int btnY = dh - S(34);
             descBox.SetBounds(0, descTop, dw, Math.Max(S(60), btnY - S(10) - descTop));
             btnBack.SetBounds(0, btnY, S(88), S(32));
-            btnGet.SetBounds(S(96), btnY, S(124), S(32));
-            btnOpen.SetBounds(S(228), btnY, S(120), S(32));
+            btnGet.SetBounds(S(96), btnY, S(116), S(32));
+            btnDeps.SetBounds(S(220), btnY, S(132), S(32));
+            btnOpen.SetBounds(btnDeps.Visible ? S(360) : S(228), btnY, S(120), S(32));
             btnLang.SetBounds(dw - S(96), btnY, S(96), S(32));
         }
 
@@ -844,6 +852,10 @@ namespace Installer
                         if (token != detailToken) return;         // 换条目了：计数已被新条目重置，别碰
                         DetailBusy(false);
                         detailClean = WsText.Clean(it.Desc);      // 短介绍换成全文
+                        // 正文里写了工坊链接的 = 需要一起装的配套 MOD：给一个入口，装不装用户自己定
+                        depIds = Workshop.DepIds(it.Desc, it.Id);
+                        btnDeps.Visible = depIds.Count > 0;
+                        btnDeps.Text = Lang.F("配套 MOD（{0}）", depIds.Count);
                         // 全文里带着新的 time_updated：缓存要按它重判一次，别拿旧译文糊上去。
                         // 但如果用户已经自己点过「看原文」，就别替他改回来。
                         detailZh = WsTranslate.ReadCache(it.Id, it.Updated);
@@ -999,6 +1011,57 @@ namespace Installer
 
         // ---------------------------------------------------------- 下载单个
 
+        /// <summary>
+        /// 下载"配套 MOD"：正文里出现的那些工坊物品。先确认（作者写的不一定都是必须），
+        /// 然后逐个走普通下载流程，完事刷新主界面。
+        /// </summary>
+        private void DownloadDeps()
+        {
+            if (depIds.Count == 0) return;
+            if (MessageBox.Show(this,
+                Lang.F("正文里提到这些工坊物品，作者可能要求一起安装（{0} 个）：\r\n\r\n{1}\r\n\r\n现在一起下载？",
+                       depIds.Count, string.Join("\r\n", depIds.ToArray())),
+                Lang.S("配套 MOD"), MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
+            string dir;
+            try { dir = Workshop.DestDir(); }
+            catch (Exception ex) { lblState.Text = ex.Message; return; }
+            List<string> ids = new List<string>(depIds);
+            btnDeps.Enabled = false;
+            lblState.Text = Lang.S("正在下载配套 MOD…");
+            Thread t = new Thread(delegate()
+            {
+                int ok = 0, fail = 0;
+                try
+                {
+                    List<WsItem> items = Workshop.Fetch(ids);
+                    foreach (WsItem one in items)
+                    {
+                        if (one == null || one.IsCollection || one.Url.Length == 0) { fail++; continue; }
+                        try
+                        {
+                            string dest = Path.Combine(dir, Workshop.SafeFileName(one.Title, one.Id));
+                            Workshop.Download(one, dest, null);
+                            if (Workshop.LastSavedPath.Length > 0) dest = Workshop.LastSavedPath;
+                            Workshop.RenameToAddonTitle(dest);
+                            ok++;
+                        }
+                        catch { fail++; }
+                    }
+                }
+                catch { }
+                int okF = ok, failF = fail;
+                Ui(delegate()
+                {
+                    btnDeps.Enabled = true;
+                    lblState.Text = Lang.F("配套 MOD 下载完成：成功 {0} / 失败 {1}", okF, failF);
+                    try { if (owner != null) owner.RefreshAfterImport(); } catch { }
+                });
+            });
+            t.IsBackground = true;
+            t.Priority = ThreadPriority.BelowNormal;
+            t.Start();
+        }
+
         private void DownloadOne()
         {
             WsItem it = detailItem;
@@ -1034,6 +1097,9 @@ namespace Installer
                             WorkshopDownloads.Progress(it.Id, got, total);
                         });
                     });
+                    // 容器不是 vpk 时 Download 会改扩展名，以实际落盘路径为准
+                    if (Workshop.LastSavedPath.Length > 0) dest = Workshop.LastSavedPath;
+                    string note = Workshop.LastDownloadNote;
                     string rn = Workshop.RenameToAddonTitle(dest);
                     if (rn != null) dest = Path.Combine(dir, rn);
                     string name = Path.GetFileName(dest);
@@ -1048,7 +1114,7 @@ namespace Installer
                         long sz = 0;
                         try { sz = new FileInfo(dest).Length; } catch { }
                         WorkshopDownloads.Finish(it.Id, true, dest, sz, "");
-                        lblState.Text = "已下载到库里：" + name + "（已自动刷新方案树）";
+                        lblState.Text = "已下载到库里：" + name + (note.Length > 0 ? "（" + note + "）" : "（已自动刷新方案树）");
                         // 下完立刻刷主界面，不用等关窗（用户 2026-11-21 反馈）
                         try { if (owner != null) owner.RefreshAfterImport(); } catch { }
                     });

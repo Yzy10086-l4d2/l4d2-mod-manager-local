@@ -682,6 +682,11 @@ namespace Installer
             return final;
         }
 
+        /// <summary>下载完成后要告诉用户的话（压缩包 / 结构不完整 / 未知格式），没话说就是空串。</summary>
+        public static string LastDownloadNote = "";
+        /// <summary>实际落盘路径：容器不是 vpk 时扩展名会被改成 .zip/.rar/.7z。</summary>
+        public static string LastSavedPath = "";
+
         /// <summary>
         /// 下一个物品。先写 .part，校验大小后再改名 —— 半截文件绝不能出现在库里，
         /// 否则扫描会把一个坏 vpk 当成正常 MOD 收进去。
@@ -711,27 +716,45 @@ namespace Installer
                 try { File.Delete(part); } catch { }
                 throw new IOException("下载到 0 字节");
             }
-            // 结构校验：vpk 必须"数据段完整"。半截文件大小可能碰巧对，但进游戏就是缺件。
-            if (IsVpkFile(part))
+            // 认真实容器（不看扩展名）：作者可能用 zip/rar/7z 传播，甚至把压缩包命名成 .vpk。
+            // 只有"网页/图片"才是真的下错了；其余一律保存下来并提示，不能替作者判"失败"（用户 2026-11-21 要求）。
+            LastDownloadNote = "";
+            LastSavedPath = "";
+            string kind = ContainerKind(part);
+            if (kind == "html" || kind == "image")
+            {
+                try { File.Delete(part); } catch { }
+                throw new IOException("下到的是网页/图片，不是 MOD（多半是合集封面或链接失效）");
+            }
+            if (kind == "vpk")
             {
                 string why;
                 if (!Vpk.VerifyComplete(part, out why))
-                {
-                    try { File.Delete(part); } catch { }
-                    throw new IOException("下载的 vpk 不完整：" + why);
-                }
+                    LastDownloadNote = "这个 vpk 结构不完整（" + why + "），先留着，进游戏可能缺件";
             }
-
-            // 最后一道闸：只认库能用的格式。合集封面、HTML 错误页这类东西绝不能以 .vpk 落进库，
-            // 否则扫描会把它当成一个正常 MOD 收进去，后面读 addoninfo 一直失败也看不出原因。
-            if (!LooksLikeModFile(part))
+            else if (kind == "zip" || kind == "rar" || kind == "7z")
             {
-                try { File.Delete(part); } catch { }
-                throw new IOException("下到的不是 vpk / 压缩包（多半是合集封面图）");
+                // 按真实容器改扩展名：库和游戏都按扩展名认压缩包，名字叫 .vpk 会被当坏包
+                string ext = "." + kind;
+                if (!string.Equals(Path.GetExtension(dest), ext, StringComparison.OrdinalIgnoreCase))
+                {
+                    string dir0 = Path.GetDirectoryName(dest) ?? "";
+                    string stem = Path.Combine(dir0, Path.GetFileNameWithoutExtension(dest));
+                    string cand = stem + ext;
+                    int n = 2;
+                    while (File.Exists(cand)) { cand = stem + " (" + n + ")" + ext; n++; }
+                    dest = cand;
+                }
+                LastDownloadNote = "这是 " + kind + " 压缩包（不是单个 vpk）：已按压缩包存好，解压/装配由库处理";
+            }
+            else
+            {
+                LastDownloadNote = "下到的文件不是标准 vpk/压缩包（未知格式），先原样留着";
             }
 
             if (File.Exists(dest)) File.Delete(dest);
             File.Move(part, dest);
+            LastSavedPath = dest;
         }
 
         /// <summary>是不是 vpk（看头 4 字节）。</summary>
@@ -749,23 +772,53 @@ namespace Installer
             catch { return false; }
         }
 
-        /// <summary>库认的三种容器：vpk（55 AA 12 34）、zip（PK）、rar（Rar!）。</summary>
-        static bool LooksLikeModFile(string path)
+        /// <summary>
+        /// 看头几个字节认容器：vpk / zip / rar / 7z / 图片 / 网页 / 其它。
+        /// 不信扩展名 —— 工坊上把 zip 命名成 .vpk 的包真实存在。
+        /// </summary>
+        static readonly Regex RxSharedId = new Regex(@"filedetails/?\?id=(\d+)", RegexOptions.IgnoreCase);
+
+        /// <summary>
+        /// 从描述里找"要同时订阅/安装"的配套 MOD 的工坊 ID —— 作者一般把链接或 ID 写在正文里。
+        /// 只做提示和可选的批量下载，不替用户判断"必须"。
+        /// </summary>
+        public static List<string> DepIds(string desc, string selfId)
+        {
+            List<string> list = new List<string>();
+            if (string.IsNullOrEmpty(desc)) return list;
+            foreach (Match m in RxSharedId.Matches(desc))
+            {
+                string id = m.Groups[1].Value;
+                if (id.Length == 0 || id == selfId) continue;
+                if (!list.Contains(id)) list.Add(id);
+                if (list.Count >= 8) break;
+            }
+            return list;
+        }
+
+        static string ContainerKind(string path)
         {
             try
             {
                 using (FileStream fs = File.OpenRead(path))
                 {
-                    byte[] h = new byte[4];
-                    int n = fs.Read(h, 0, 4);
-                    if (n < 4) return false;
-                    if (h[0] == 0x34 && h[1] == 0x12 && h[2] == 0xAA && h[3] == 0x55) return true;
-                    if (h[0] == 0x50 && h[1] == 0x4B) return true;
-                    if (h[0] == 0x52 && h[1] == 0x61 && h[2] == 0x72 && h[3] == 0x21) return true;
-                    return false;
+                    byte[] h = new byte[8];
+                    int n = fs.Read(h, 0, 8);
+                    if (n >= 4 && h[0] == 0x34 && h[1] == 0x12 && h[2] == 0xAA && h[3] == 0x55) return "vpk";
+                    if (n >= 4 && h[0] == 0x50 && h[1] == 0x4B) return "zip";
+                    if (n >= 4 && h[0] == 0x52 && h[1] == 0x61 && h[2] == 0x72 && h[3] == 0x21) return "rar";
+                    if (n >= 6 && h[0] == 0x37 && h[1] == 0x7A && h[2] == 0xBC && h[3] == 0xAF
+                        && h[4] == 0x27 && h[5] == 0x1C) return "7z";
+                    if (n >= 3 && h[0] == 0xFF && h[1] == 0xD8) return "image";
+                    if (n >= 4 && h[0] == 0x89 && h[1] == 0x50 && h[2] == 0x4E && h[3] == 0x47) return "image";
+                    if (n >= 3 && h[0] == 0x47 && h[1] == 0x49 && h[2] == 0x46) return "image";
+                    int i = 0;
+                    while (i < n && (h[i] == 0x20 || h[i] == 0x0A || h[i] == 0x0D || h[i] == 0x09)) i++;
+                    if (i < n && h[i] == 0x3C) return "html";
+                    return "other";
                 }
             }
-            catch { return false; }
+            catch { return "other"; }
         }
 
         // ---------------------------------------------------------- JSON（只够用）
@@ -2414,6 +2467,9 @@ namespace Installer
                         });
                         it.Ok = true;
                         ok++;
+                        // 容器不是 vpk 时 Download 会改扩展名，以实际落盘路径为准
+                        if (Workshop.LastSavedPath.Length > 0) dest = Workshop.LastSavedPath;
+                        string note = Workshop.LastDownloadNote;
                         // 自动改名：addoninfo 里的游戏内名 > 工坊标题。读不出就保留原名的
                         string rn = Workshop.RenameToAddonTitle(dest);
                         if (rn != null)
@@ -2430,7 +2486,8 @@ namespace Installer
                             WorkshopDownloads.Finish(it.Id, true, dest, sz, "");
                         }
                         done.Add(it);
-                        SetRowState(it, "已下载 " + Core.Human(it.Size) + (rn != null ? "，已改名 " + Clip(rn, 16) : ""));
+                        SetRowState(it, "已下载 " + Core.Human(it.Size) + (rn != null ? "，已改名 " + Clip(rn, 16) : "")
+                            + (note.Length > 0 ? "（" + note + "）" : ""));
                         Core.Log("OK", "工坊：已下载 " + it.Id + " → " + dest);
                     }
                     catch (Exception ex)
