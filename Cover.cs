@@ -14,7 +14,7 @@ namespace Installer
     ///   2. 工坊订阅的 MOD：图和 vpk 分开存放，同目录下同名不同扩展（&lt;publishedfileid&gt;.jpg/.png/.gif）
     ///   3. 都没有 → null
     ///
-    /// 解出来的图统一按 16:9 裁切缩放成 320×180 缓存到 _本地版记录\thumbs\，第二次就不用再解包。
+    /// 解出来的图统一按 16:9 裁切缩放成 320×180 缓存到 <程序目录>\_装机记录\thumbs\，第二次就不用再解包。
     /// 缓存键带上文件大小 + 修改时间：同名包被换掉会自动失效，不会一直拿旧图。
     /// </summary>
     internal static class Cover

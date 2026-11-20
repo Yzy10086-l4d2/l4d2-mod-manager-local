@@ -1038,6 +1038,26 @@ namespace Installer
             return DeleteModFile(m, gameRoot);
         }
 
+        /// <summary>
+        /// 同名伴随文件：vpk 旁边的 <名字>.jpg/.png 这类配图（工坊订阅就是图和包分开放的），
+        /// 还有工具自己可能留的 .meta。删包、改名时一起带走，别留一地孤儿图。
+        /// </summary>
+        internal static List<string> Sides(string vpkPath)
+        {
+            List<string> list = new List<string>();
+            if (string.IsNullOrEmpty(vpkPath)) return list;
+            string dir = Path.GetDirectoryName(vpkPath);
+            string stem = Path.GetFileNameWithoutExtension(vpkPath);
+            if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(stem)) return list;
+            string[] exts = new string[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".meta" };
+            foreach (string e in exts)
+            {
+                string p = Path.Combine(dir, stem + e);
+                try { if (File.Exists(p)) list.Add(p); } catch { }
+            }
+            return list;
+        }
+
         static string DeleteModFile(ModItem m, string addonListRoot)
         {
             // 最后一道防线：压缩包里的条目 FullPath 指向的是那个 rar/zip 本身，
@@ -1052,6 +1072,11 @@ namespace Installer
                 return ex.Message;
             }
             Core.Log("OK", "已删除 " + m.FullPath);
+            foreach (string side in Sides(m.FullPath))
+            {
+                try { File.Delete(side); Core.Log("OK", "已删除伴随文件 " + side); }
+                catch (Exception ex) { Core.Log("WARN", "伴随文件删不掉 " + side + ": " + ex.Message); }
+            }
             if (addonListRoot != null && addonListRoot.Length > 0)
             {
                 try { AddonList.Remove(addonListRoot, new string[] { m.Name }); }
@@ -1072,7 +1097,19 @@ namespace Installer
             if (!newName.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase)) newName = newName + ".vpk";
             string dst = Path.Combine(Path.GetDirectoryName(m.FullPath), newName);
             if (File.Exists(dst)) return "同目录已经有 " + newName;
+            List<string> sides = Sides(m.FullPath);
             File.Move(m.FullPath, dst);
+            string dstDir = Path.GetDirectoryName(dst);
+            foreach (string side in sides)
+            {
+                try
+                {
+                    string target = Path.Combine(dstDir, Path.GetFileNameWithoutExtension(dst) + Path.GetExtension(side));
+                    if (File.Exists(target)) File.Delete(target);
+                    File.Move(side, target);
+                }
+                catch (Exception ex) { Core.Log("WARN", "伴随文件跟着改名失败 " + side + ": " + ex.Message); }
+            }
             return null;
         }
 

@@ -2295,6 +2295,20 @@ namespace Installer
                     "正常人物模型仍归人物（界面排除没殃及本体）");
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/survivor_biker_portrait.vtf" }, "杂项", "UI 界面"),
                     "界面里引用角色名不算人物皮肤");
+
+                // 同名伴随文件：vpk 旁边的配图要认得出来（删/改名时一起带走），别把别人的图误收进来
+                string sideDir = Path.Combine(Path.GetTempPath(), "l4d2sides-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    Directory.CreateDirectory(sideDir);
+                    string vside = Path.Combine(sideDir, "a.vpk");
+                    File.WriteAllBytes(vside, new byte[] { 0x34, 0x12 });
+                    File.WriteAllBytes(Path.Combine(sideDir, "a.jpg"), new byte[] { 1 });
+                    File.WriteAllBytes(Path.Combine(sideDir, "a.meta"), new byte[] { 2 });
+                    File.WriteAllBytes(Path.Combine(sideDir, "b.jpg"), new byte[] { 3 });
+                    bad += RecogCheck(Work.Sides(vside).Count == 2, "同名伴随文件认得出（a.jpg + a.meta，不误收 b.jpg）");
+                }
+                finally { try { Directory.Delete(sideDir, true); } catch { } }
             }
             catch (Exception ex) { bad++; Core.Log("FAIL", "RECOGSELF 异常: " + ex.Message); }
             finally
