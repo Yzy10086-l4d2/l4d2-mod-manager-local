@@ -67,6 +67,7 @@ namespace Installer
             bool downsShot = false;
             bool mainShot = false;
             bool gallerySelf = false;
+            string galDetailId = null;   // --galdetail=ID：真实物件详情页截图（查配套/合集清单排布）
             bool langSelf = false;
             bool mapSelf = false;
             bool scanRace = false;
@@ -163,6 +164,7 @@ namespace Installer
                 // 诊断截图：打开工坊窗口、填假数据、存 workshop.png，不联网
                 else if (string.Equals(a, "--galleryui", StringComparison.OrdinalIgnoreCase)) { uiGallery = true; uiTest = true; }
                 else if (string.Equals(a, "--gallerself", StringComparison.OrdinalIgnoreCase)) { gallerySelf = true; uiTest = true; }
+                else if (a.StartsWith("--galdetail=", StringComparison.OrdinalIgnoreCase)) { galDetailId = a.Substring(12).Trim('"'); uiTest = true; }
                 else if (string.Equals(a, "--langself", StringComparison.OrdinalIgnoreCase)) { langSelf = true; uiTest = true; }
                 else if (a.StartsWith("--deskserve=", StringComparison.OrdinalIgnoreCase)) { int.TryParse(a.Substring(12), out deskServe); uiTest = true; }
                 else if (string.Equals(a, "--deskself", StringComparison.OrdinalIgnoreCase)) { deskSelf = true; uiTest = true; }
@@ -781,7 +783,8 @@ namespace Installer
                     }
                     
                     if (langSelf) { f.LangSelf(); System.Windows.Forms.Application.DoEvents(); return 0; }
-                    if (gallerySelf) { int badg = f.GallerySelf(); System.Windows.Forms.Application.DoEvents(); return badg == 0 ? 0 : 1; }
+                    if (galDetailId != null) { int badg2 = f.GalleryDetailShot(galDetailId); System.Windows.Forms.Application.DoEvents(); return badg2 == 0 ? 0 : 1; }
+            if (gallerySelf) { int badg = f.GallerySelf(); System.Windows.Forms.Application.DoEvents(); return badg == 0 ? 0 : 1; }
                     if (uiGallery) { f.GalleryShot(); System.Windows.Forms.Application.DoEvents(); return 0; }
                     if (uiFilter != null) { f.UiTestFilter(uiFilter); System.Windows.Forms.Application.DoEvents(); }
                     if (uiDeep != null) { f.UiTestFilter(uiDeep); System.Windows.Forms.Application.DoEvents(); f.UiTestDeep(); System.Windows.Forms.Application.DoEvents(); }

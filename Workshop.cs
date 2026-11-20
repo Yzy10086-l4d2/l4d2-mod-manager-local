@@ -622,7 +622,7 @@ namespace Installer
         /// 域名是 images.steamusercontent.com），当成正常物品下下来就是一张 JPG。
         /// 普通物品的 filename 一定以 .vpk 结尾，拿这个当主判据最稳。
         /// </summary>
-        static bool LooksLikeCollection(WsItem it)
+        internal static bool LooksLikeCollection(WsItem it)
         {
             string fn = it.FileName ?? "";
             if (fn.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase)) return false;

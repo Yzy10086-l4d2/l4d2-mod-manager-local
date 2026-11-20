@@ -409,13 +409,11 @@ namespace Installer
             barLoad.SetBounds(0, ty + S(104), dw, S(7));
             int descTop = ty + S(118);
             int btnY = dh - S(34);
-            // 配套清单：每条一行、可点进详情；有它时正文整体下移，别互相压
-            int depH = 0;
-            if (depList.Visible)
-            {
-                int rows = Math.Min(depItems.Count, 4) + (depItems.Count > 4 ? 1 : 0);
-                depH = Math.Min(S(118), rows * S(23));
-            }
+            // 配套/合集清单：每条一行、可点进详情；有它时正文整体下移，别互相压。
+            // 高度按条目数算，不看 Visible —— 列表是数据回来后才置 Visible，那时布局早跑过了。
+            int depN = depItems.Count;
+            depList.Visible = depN > 0;
+            int depH = depN > 0 ? Math.Min(S(118), (Math.Min(depN, 4) + (depN > 4 ? 1 : 0)) * S(23)) : 0;
             depList.SetBounds(0, descTop, dw, Math.Max(0, depH));
             int bodyTop = descTop + (depH > 0 ? depH + S(6) : 0);
             descBox.SetBounds(0, bodyTop, dw, Math.Max(S(60), btnY - S(10) - bodyTop));
@@ -780,6 +778,8 @@ namespace Installer
 
         private void ShowDetail(WsItem it)
         {
+            // 合集判定兜底：浏览页来的条目带 IsCollection，接口直查的没有 —— 按文件名/直链再判一次
+            if (it != null) it.IsCollection = it.IsCollection || Workshop.LooksLikeCollection(it);
             if (it == null) return;
             detailItem = it;
             int token = ++detailToken;
@@ -817,7 +817,7 @@ namespace Installer
             translating = false;
             langTouched = false;
             detailClean = WsText.Clean(it.Desc);
-            depItems.Clear(); depList.Controls.Clear(); depList.Visible = false; btnDeps.Visible = false;
+            depItems.Clear(); depList.Controls.Clear(); depList.Visible = false; btnDeps.Visible = false; ApplyLayout();
             detailZh = WsTranslate.ReadCache(it.Id, it.Updated);
             showZh = detailZh != null && detailZh.Length > 0;
             RenderDesc();
@@ -1092,6 +1092,7 @@ namespace Installer
                 depList.Controls.Add(more);
             }
             depList.Visible = depItems.Count > 0;
+            ApplyLayout();                    // 数据回来后才置 Visible，这里必须重排一次，否则高度还是 0（看不见）
         }
 
         /// <summary>
@@ -1564,6 +1565,25 @@ namespace Installer
         }
 
         /// <summary>自检用：直接打开第 index 个的详情页。超出范围就取最后一个（方便专门去看脏数据那条）。</summary>
+        /// <summary>自检用：拿一个真实物件（接口查来的）直接打开它的详情页。</summary>
+        /// <summary>自检探针：配套/合集清单到底有没有布局出来。</summary>
+        internal string DetailProbe()
+        {
+            try
+            {
+                return "deps=" + depItems.Count + " listVisible=" + depList.Visible + " listH=" + depList.Height
+                    + " rows=" + depList.Controls.Count + " btnDeps=" + btnDeps.Visible + ":" + btnDeps.Text
+                    + " descTop=" + descBox.Top;
+            }
+            catch (Exception ex) { return "ERR " + ex.Message; }
+        }
+
+        internal void ShowItemForTest(WsItem it)
+        {
+            if (it == null) return;
+            ShowDetail(it);
+        }
+
         internal void ShowDetailForTest(int index)
         {
             IList<WsItem> all = grid.Items;

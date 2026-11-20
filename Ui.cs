@@ -2162,6 +2162,29 @@ namespace Installer
             }
         }
 
+        /// <summary>自检截图：真实工坊物件（含配套/合集）的详情页，看清单有没有排出来。</summary>
+        internal int GalleryDetailShot(string id)
+        {
+            try
+            {
+                List<WsItem> one = Workshop.Fetch(new List<string>(new string[] { id }));
+                if (one == null || one.Count == 0) { Core.Log("FAIL", "GALSHOT 接口无返回 " + id); return 1; }
+                using (GalleryForm f = new GalleryForm(this))
+                {
+                    f.Show();
+                    Application.DoEvents();
+                    f.ShowItemForTest(one[0]);
+                    for (int i = 0; i < 60; i++) { Application.DoEvents(); System.Threading.Thread.Sleep(50); }
+                    Shot(f, "gallery-real-detail");
+                    Core.Log("INFO", "GALSHOT 探针 " + f.DetailProbe());
+                    Core.Log("INFO", "GALSHOT 已截图 gallery-real-detail.png（" + one[0].Title + "）");
+                    f.Close();
+                }
+                return 0;
+            }
+            catch (Exception ex) { Core.Log("FAIL", "GALSHOT 塌了: " + ex.Message); return 1; }
+        }
+
         internal void GalleryShot()
         {
             using (GalleryForm f = new GalleryForm(this))
