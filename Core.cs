@@ -25,7 +25,6 @@ namespace Installer
         public string GroupKey;           // 所属套装
         public string Role = "必装";       // 主体/必装/选配/可选
         public string Type;
-        public string TypeDetail;
         public string Subject = "";       // 改了什么（从 vpk 内容反推，不是看文件夹名）
         public string SubjectLevel = "";  // 依据：模型 / HUD图标 / 音效 / 材质
         public string SubjectKey = "";    // 被替换的模型名，用于同枪冲突检测
@@ -609,29 +608,6 @@ namespace Installer
         }
 
         /// <summary>
-        /// 切换 U 盘模式的主库。传程序所在盘的默认库时会清空覆盖项，
-        /// 这样 U 盘换盘符后仍能自动跟随，而不是记死旧盘符。
-        /// </summary>
-        public static bool SetLibraryRoot(string path, bool save)
-        {
-            string p = string.IsNullOrEmpty(path) ? DefaultModRoot : path.Trim().TrimEnd('\\');
-            if (!Directory.Exists(p)) return false;
-
-            if (string.Equals(p, DefaultModRoot.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
-            {
-                ModRoot = DefaultModRoot;
-                Cfg.LibraryRoot = "";
-            }
-            else
-            {
-                ModRoot = p;
-                Cfg.LibraryRoot = p;
-            }
-            if (save) SaveConfig();
-            return true;
-        }
-
-        /// <summary>
         /// 工坊下载位置。传空 = 恢复「跟随主库」。
         /// 目录不存在就建：用户常直接填 U 盘上的新文件夹，不该因为"还没建"就被拒。
         /// </summary>
@@ -874,43 +850,7 @@ namespace Installer
 
         // 文件夹名是给资源管理器看的（addons各类物品储藏库\AK47），界面上只说「是什么东西」。
         // 去掉 addons 前缀 + 别名，多级用「 · 」连起来：枪械 · AK47
-        public static string PrettyCat(string folder)
-        {
-            if (folder == null || folder.Length == 0) return "";
-            string[] parts = folder.Split('\\');
-            List<string> outs = new List<string>();
-            for (int i = 0; i < parts.Length; i++)
-            {
-                string p = parts[i];
-                if (p.Length == 0) continue;
-                if (i == 0 && p.StartsWith("addons", StringComparison.OrdinalIgnoreCase)) p = p.Substring(6);
-                p = CatAlias(p);
-                if (p.Length > 0) outs.Add(p);
-            }
-            return string.Join(" · ", outs.ToArray());
-        }
-
         // 单层目录名 → 人话。认不出来的就不动，别硬编一个错的名字上去。
-        public static string CatAlias(string n)
-        {
-            if (n == null) return "";
-            if (n.StartsWith("addons", StringComparison.OrdinalIgnoreCase)) n = n.Substring(6);
-            switch (n)
-            {
-                case "各类物品储藏库": return "物品库";
-                case "武器类": return "枪械";
-                case "枪械类": return "枪械";
-                case "喷漆扩展": return "喷漆";
-                case "喷图扩展": return "喷漆";
-                case "三方地图": return "地图";
-                case "医疗物品": return "医疗";
-                case "杂项功能": return "杂项";
-                // 工坊下载落的目录：下划线只是避免和用户的目录重名，界面上不该看见它
-                case "_创意工坊": return "创意工坊";
-            }
-            return n;
-        }
-
         // ---------------- 包检查 ----------------
         public static List<string> CheckPackages(out bool allOk)
         {
@@ -1088,31 +1028,6 @@ namespace Installer
         }
 
         // 不算哈希的纯复制：大包搬运（L4N / Skeeto / 素材包）不需要哈希
-        public static void CopyOnePlain(string src, string dst)
-        {
-            string d = Path.GetDirectoryName(dst);
-            if (!string.IsNullOrEmpty(d) && !Directory.Exists(d)) Directory.CreateDirectory(d);
-            if (_copyBuf == null) _copyBuf = new byte[2 * 1024 * 1024];
-            byte[] buf = _copyBuf;
-            string tmp = TempPathFor(dst);
-            try
-            {
-                using (FileStream fi = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan))
-                using (FileStream fo = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024))
-                {
-                    int n;
-                    while ((n = fi.Read(buf, 0, buf.Length)) > 0) fo.Write(buf, 0, n);
-                }
-                try { File.SetLastWriteTimeUtc(tmp, File.GetLastWriteTimeUtc(src)); } catch { }
-                Swap(tmp, dst);
-            }
-            catch
-            {
-                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
-                throw;
-            }
-        }
-
         // 文件名里不能出现的字符换成下划线，顺带掐掉路径分隔符，防止写到别的目录
         public static string SafeName(string s)
         {
@@ -1199,9 +1114,6 @@ namespace Installer
             catch (Exception ex) { why = ex.Message; return false; }
         }
 
-        public static void SelfTestCore(string gameRoot)
-        {
-        }
     }
 
     /// <summary>

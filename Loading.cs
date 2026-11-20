@@ -97,8 +97,6 @@ namespace Installer
             Visible = false;
         }
 
-        public bool IsFullMode { get { return fullMode; } }
-
         /// <summary>显示占位。fullMode=true 时铺满父容器，false 时只占顶部细条。</summary>
         public void ShowLoad(string text, string sub, bool fullMode)
         {
@@ -141,14 +139,6 @@ namespace Installer
             BringToFront();
             Pulse.Forget(this);
             Invalidate();
-        }
-
-        /// <summary>换文案但不重启动画（进度往前走时用）。</summary>
-        public void UpdateText(string text, string sub)
-        {
-            title = text ?? "";
-            if (sub != null) hint = sub;
-            if (Visible) Invalidate();
         }
 
         protected override void OnParentChanged(EventArgs e)

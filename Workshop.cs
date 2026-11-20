@@ -33,7 +33,6 @@ namespace Installer
         public string Creator = "";         // 作者 steamid
         public string Tags = "";            // "枪械 · 模型" 这种拼好的标签串
         public string Where = "";           // 下载后识别出来的「替换 AK-47 · 模型」
-        public string SavedAs = "";         // 落盘后的文件名（改名之后），用来回查识别结果
 
         public string State = "待下载";
         public bool Ok;                     // 已经落盘

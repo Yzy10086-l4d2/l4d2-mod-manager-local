@@ -48,59 +48,8 @@ namespace Installer
         }
 
         // ---------- 通用 ----------
-        public static void CopyTree(string src, string dst, Action<string> onFile)
-        {
-            foreach (string f in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
-            {
-                string rel = f.Substring(src.Length).TrimStart('\\');
-                string d = Path.Combine(dst, rel);
-                if (Core.SameFile(f, d)) continue;
-                Core.CopyOne(f, d);
-                if (onFile != null) onFile(rel);
-            }
-        }
-
-        public static void Unzip(string zip, string dst)
-        {
-            if (Directory.Exists(dst)) Directory.Delete(dst, true);
-            Directory.CreateDirectory(dst);
-            try
-            {
-                System.IO.Compression.ZipFile.ExtractToDirectory(zip, dst);
-            }
-            catch (Exception ex)
-            {
-                Core.Log("WARN", "内置解压不可用（" + ex.GetType().Name + "），改用系统解压");
-                ExtractWithShell(zip, dst);
-            }
-        }
-
         // 系统解压兜底：老系统 / 缺 .NET 4.5 时用资源管理器那套
-        private static void ExtractWithShell(string zip, string dst)
-        {
-            Type shellType = Type.GetTypeFromProgID("Shell.Application");
-            if (shellType == null) throw new Exception("系统解压也不可用");
-            object shell = Activator.CreateInstance(shellType);
-            object folder = shellType.InvokeMember("NameSpace", System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { dst });
-            object zipNs = shellType.InvokeMember("NameSpace", System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { zip });
-            object items = zipNs.GetType().InvokeMember("Items", System.Reflection.BindingFlags.InvokeMethod, null, zipNs, null);
-            folder.GetType().InvokeMember("CopyHere", System.Reflection.BindingFlags.InvokeMethod, null, folder, new object[] { items, 0x14 });
-            System.Threading.Thread.Sleep(1500);
-        }
-
         // 解压出来的第一层如果只是个壳目录（里面才是 bin），就往下钻一层
-        public static string ResolvePayloadRoot(string dir)
-        {
-            string hit = FindPayload(dir, 0);
-            if (hit != null)
-            {
-                if (!string.Equals(hit, dir, StringComparison.OrdinalIgnoreCase))
-                    Core.Log("INFO", "包里套了一层: " + Path.GetFileName(hit) + "，从这层开始覆盖");
-                return hit;
-            }
-            return dir;
-        }
-
         private static string FindPayload(string dir, int depth)
         {
             if (depth > 3) return null;
@@ -118,40 +67,6 @@ namespace Installer
         }
 
         // ---------- L4N ----------
-        /// <summary>平台文件复制的结果：失败几个是判定「这次到底装成没有」的唯一依据。</summary>
-        private class CopyStat
-        {
-            public int Total, Written, Skipped, Failed;
-            public bool Cancelled;
-        }
-
-        private static CopyStat CopyPayloadWithProgress(string payload, string gameRoot, Action<int, int> progress)
-        {
-            CopyStat st = new CopyStat();
-            string[] files = Directory.GetFiles(payload, "*", SearchOption.AllDirectories);
-            st.Total = files.Length;
-            int done = 0;
-            foreach (string f in files)
-            {
-                if (CancelRequested) { st.Cancelled = true; Core.Log("WARN", "收到停止请求：平台文件在本文件结束后停止复制"); break; }
-                try
-                {
-                    string rel = f.Substring(payload.Length).TrimStart('\\');
-                    string dst = Path.Combine(gameRoot, rel);
-                    if (!Core.SameFile(f, dst)) { Core.CopyOne(f, dst); st.Written++; }
-                    else if (Overwrite) { Core.CopyOne(f, dst); st.Written++; }   // 一样也照写：覆盖模式就是不信现状
-                    else st.Skipped++;
-                }
-                catch (Exception ex) { st.Failed++; Core.Log("WARN", "复制 " + Path.GetFileName(f) + " 失败: " + ex.Message); }
-                done++;
-                if (progress != null && (done % 10 == 0 || done == st.Total)) progress(done, st.Total);
-            }
-            Core.Log(st.Failed == 0 ? "INFO" : "WARN", "平台文件：写入 " + st.Written + " 个，已是最新跳过 " + st.Skipped + " 个"
-                + (st.Failed > 0 ? "，失败 " + st.Failed + " 个" : "")
-                + (Overwrite ? "（覆盖模式，全部重写）" : ""));
-            return st;
-        }
-
         // ---------- dxvk ----------
         // ---------- Skeeto ----------
         /// <summary>
@@ -186,79 +101,7 @@ namespace Installer
 
         // ---------- 素材包 ----------
         // ---------- autoexec.cfg ----------
-        public static bool InstallCfg(string gameRoot)
-        {
-            try
-            {
-                string src = Path.Combine(Core.ModRoot, "autoexec.cfg");
-                // 主库里没有这份 cfg 就是「这次不用搬」，不是失败。
-                // 以前返回 false，换过主库的人每次装机都被记成「部分完成」。
-                if (!File.Exists(src)) { Core.Log("INFO", "主库里没有 autoexec.cfg，这步跳过（不算失败）"); return true; }
-                string dir = Path.Combine(Path.Combine(gameRoot, "left4dead2"), "cfg");
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                string dst = Path.Combine(dir, "autoexec.cfg");
-                if (!Overwrite && Core.SameFile(src, dst)) { Core.Log("OK", "autoexec.cfg 已是最新，跳过"); return true; }
-                Core.CopyOne(src, dst);
-                Core.Log("OK", "autoexec.cfg 已放进 left4dead2\\cfg");
-                return true;
-            }
-            catch (Exception ex) { Core.Log("FAIL", "autoexec.cfg 搬运失败: " + ex.Message); return false; }
-        }
-
         // ---------- MQCam ----------
-        public static bool InstallMqcam(string gameRoot)
-        {
-            string dir = Path.Combine(Core.PkgRoot, "MQCam\\MQCam");
-            string tool = Path.Combine(dir, "mqcore_package_tool.exe");
-            string manifest = Path.Combine(dir, "payload.sha256");
-            string dll = Path.Combine(Path.Combine(Path.Combine(gameRoot, "bin"), "neko"), "mqcore\\mqcam.dll");
-            if (File.Exists(dll) && !Overwrite)
-            {
-                // 「已经装过」也得核一遍：mqcam.dll 在，旁边的 plugins / 脚本可能早就没了。
-                // 包里有 payload.sha256（哈希 + 相对路径），照着点一遍再说话。
-                int total, bad; string detail;
-                bool haveManifest = VerifyPayload(manifest, gameRoot, out total, out bad, out detail);
-                if ((haveManifest && bad == 0) || (!haveManifest && File.Exists(dll)))
-                {
-                    Core.Log("OK", "MQCam 已经装过"
-                        + (haveManifest ? "（" + total + " 个文件核对通过）" : "（没有清单，只看文件在不在）")
-                        + "，跳过，不动相机设置");
-                    return true;
-                }
-                Core.Log("WARN", "MQCam 文件对不上 " + bad + "/" + total + " 个：" + detail
-                    + "；勾「覆盖重装」可以补回来");
-                return false;
-            }
-            if (!File.Exists(tool)) { Core.Log("FAIL", "缺 mqcore_package_tool.exe"); return false; }
-            foreach (string cmd in new string[] { "install plan", "install apply" })
-            {
-                string output = RunCapture(tool, cmd + " \"" + gameRoot + "\"", dir, 120000);
-                foreach (string line in output.Split('\n'))
-                {
-                    string s2 = line.Trim();
-                    if (s2.Length > 0) Core.Log("INFO", "  | " + s2);
-                }
-            }
-            // 原来只判 mqcam.dll 在不在 —— 覆盖重装时它本来就在，装失败也照样报成功。
-            // 有清单就按清单核内容；没有清单退回「文件在不在」并明说这是弱判定。
-            int nTotal, nBad; string why;
-            bool ok;
-            if (VerifyPayload(manifest, gameRoot, out nTotal, out nBad, out why))
-            {
-                ok = nBad == 0;
-                Core.Log(ok ? "OK" : "FAIL", ok
-                    ? ("MQCam 装好，清单 " + nTotal + " 个文件全部核对通过")
-                    : ("MQCam 有 " + nBad + "/" + nTotal + " 个文件不对：" + why));
-            }
-            else
-            {
-                ok = File.Exists(dll);
-                Core.Log(ok ? "OK" : "FAIL", ok ? "mqcam.dll 到位（没有清单，只看文件在不在）" : "没看到 bin\\neko\\mqcore\\mqcam.dll");
-            }
-            if (ok) ResetCamState(gameRoot);
-            return ok;
-        }
-
         /// <summary>
         /// 按 payload.sha256 核对装到游戏里的文件（清单格式：SHA256 + TAB + 相对路径，路径用 /）。
         /// 配置文件（.ini）只要求存在：里面的值游戏/工具自己会改，按哈希比对必然误报。
@@ -295,20 +138,6 @@ namespace Installer
             if (wrong.Count > 0) bits.Add("内容不符 " + string.Join("、", wrong.ToArray()));
             detail = string.Join("；", bits.ToArray());
             return true;
-        }
-
-        private static void ResetCamState(string gameRoot)
-        {
-            try
-            {
-                string clean = Path.Combine(Core.PkgRoot, "MQCam\\mqcam_state_clean.ini");
-                string dst = Path.Combine(Path.Combine(Path.Combine(gameRoot, "bin\\neko"), "mqcore"), "mqcam_state.ini");
-                if (!File.Exists(clean)) { Core.Log("WARN", "没有 mqcam_state_clean.ini，跳过相机归零"); return; }
-                if (!Directory.Exists(Path.GetDirectoryName(dst))) return;
-                File.Copy(clean, dst, true);
-                Core.Log("OK", "相机偏移已归零（F2/F3 从默认位置开始）");
-            }
-            catch (Exception ex) { Core.Log("WARN", "相机配置写入失败: " + ex.Message); }
         }
 
         // ---------- 校验 ----------
@@ -3121,33 +2950,6 @@ namespace Installer
         }
 
         // ---------- 跑外部程序并抓输出 ----------
-        private static string RunCapture(string exe, string args, string workDir, int timeoutMs)
-        {
-            StringBuilder sb = new StringBuilder();
-            try
-            {
-                ProcessStartInfo psi = new ProcessStartInfo(exe, args);
-                psi.UseShellExecute = false;
-                psi.CreateNoWindow = true;
-                psi.RedirectStandardOutput = true;
-                psi.RedirectStandardError = true;
-                psi.WorkingDirectory = workDir;
-                psi.StandardOutputEncoding = Encoding.UTF8;
-                psi.StandardErrorEncoding = Encoding.UTF8;
-                using (Process p = Process.Start(psi))
-                {
-                    p.OutputDataReceived += delegate(object s, DataReceivedEventArgs e) { if (e.Data != null) sb.AppendLine(e.Data); };
-                    p.ErrorDataReceived += delegate(object s, DataReceivedEventArgs e) { if (e.Data != null) sb.AppendLine(e.Data); };
-                    p.BeginOutputReadLine();
-                    p.BeginErrorReadLine();
-                    if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch { } }
-                    else p.WaitForExit();
-                }
-            }
-            catch (Exception ex) { sb.AppendLine("调用失败: " + ex.Message); }
-            return sb.ToString();
-        }
-
         // ---------- 自检：插件对齐（--plugself 的后半段，临时假目录，不碰真游戏） ----------
 
         private static int SyncExpect(bool ok, string what)

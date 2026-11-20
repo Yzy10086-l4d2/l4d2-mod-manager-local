@@ -981,15 +981,6 @@ namespace Installer
         internal SlotTree Body { get { return body; } }
         /// <summary>台面用：树排好的位置表（顺序也在这上面，台面照它的顺序建卡）。</summary>
         internal List<Slot> Slots { get { return slots; } }
-        /// <summary>按分支名找分支槽（台面右键重命名用）。</summary>
-        internal Slot BranchByName(string name)
-        {
-            if (string.IsNullOrEmpty(name)) return null;
-            foreach (Slot s in slots)
-                if (IsBranchSlot(s) && string.Equals(s.Name, name, StringComparison.Ordinal)) return s;
-            return null;
-        }
-
         /// <summary>把每一行所有格子的底色对齐成整行那个色（行底色是按格子刷的，见 ApplyStateCells）。</summary>
         private static void SyncRowBacks(ListView v)
         {
@@ -4990,28 +4981,6 @@ namespace Installer
             }
         }
 
-        /// <summary>「扩」小角标：蓝底白字，挂在名字后面，表示这个位置有可叠加的扩展（信息蓝，不是冲突红）。</summary>
-        private static void DrawTag(Graphics g, int x, int y)
-        {
-            const int w = 17, h = 16;
-            int iy = y + (RowH - h) / 2;
-            using (SolidBrush b = new SolidBrush(Theme.Info))
-            {
-                using (GraphicsPath p = new GraphicsPath())
-                {
-                    int r = 3;
-                    p.AddArc(x, iy, r * 2, r * 2, 180, 90);
-                    p.AddArc(x + w - r * 2, iy, r * 2, r * 2, 270, 90);
-                    p.AddArc(x + w - r * 2, iy + h - r * 2, r * 2, r * 2, 0, 90);
-                    p.AddArc(x, iy + h - r * 2, r * 2, r * 2, 90, 90);
-                    p.CloseFigure();
-                    g.FillPath(b, p);
-                }
-            }
-            TextRenderer.DrawText(g, "扩", Theme.UISmall, new Rectangle(x, iy - 1, w, h + 2), Color.White,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        }
-
         private int IndexAt(int y)
         {
             // 绘制时第一行从 y=4 开始，命中区也必须扣除同样的顶部偏移。
@@ -5130,9 +5099,6 @@ namespace Installer
             owner.DropModOn(g, rows[row]);
             return "ok → " + RowDesc(rows[row]);
         }
-
-        /// <summary>自测用：外部 OLE 拖放悬停在某一行时的状态串。</summary>
-        internal string ExtState() { return "extDrag=" + extDrag + " extRow=" + extRow; }
 
         /// <summary>截图专用：摆成「正把未归类 MOD 悬在第 row 行」的样子，不动任何数据。</summary>
         public void SetExtDragFake(string name, int row)

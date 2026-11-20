@@ -320,13 +320,6 @@ namespace Installer
             if (lblLoading != null && lblLoading.Visible) lblLoading.BringToFront();
         }
 
-        /// <summary>切回方案树（台面右键 / 顶部「视图」按钮都走它）。</summary>
-        internal void ShowTreeView()
-        {
-            ShowTree();
-            if (treeView != null) treeView.Focus();
-        }
-
         /// <summary>桌面：开一个第一人称的 3D 桌面窗口（同一个 exe，画面在浏览器里）。</summary>
         internal void ShowDesk()
         {

@@ -28,7 +28,6 @@ namespace Installer
         internal bool WantReduceMotion { get { return tglMotion != null && tglMotion.Checked; } }
         /// <summary>true = 用包内 addoninfo 的标题当显示名；false = 用 vpk 文件名。</summary>
         internal bool WantNameByTitle { get { return segName != null && segName.SelectedIndex == 1; } }
-        internal ThemeMode WantAppearance { get { return segAppearance == null ? Theme.Mode : (ThemeMode)segAppearance.SelectedIndex; } }
         /// <summary>自测用：模拟在设置窗口里点「外观」分段（走的是真实的点击 + SelectedIndexChanged 路径）。</summary>
         internal void PreviewAppearance(ThemeMode m)
         {

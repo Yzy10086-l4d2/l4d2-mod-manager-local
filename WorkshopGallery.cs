@@ -276,13 +276,6 @@ namespace Installer
                 if (items[i].Id == id) { Invalidate(CardRect(i)); return; }
         }
 
-        /// <summary>预扫/本地标记：把某个 ID 标成已下载并刷新那一格。</summary>
-        public void MarkDownloaded(string id)
-        {
-            if (!DownloadedIds.Add(id)) return;
-            InvalidateCardById(id);
-        }
-
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);

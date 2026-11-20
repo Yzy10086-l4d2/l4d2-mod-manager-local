@@ -295,24 +295,6 @@ namespace Installer
             return "";
         }
 
-        public static bool HasManual(ModItem m)
-        {
-            Ensure();
-            if (m == null) return false;
-            if (modCat.ContainsKey(m.Key) || modSlot.ContainsKey(m.Key)) return true;
-            if (!string.IsNullOrEmpty(m.Fp) && (fpCat.ContainsKey(m.Fp) || fpSlot.ContainsKey(m.Fp))) return true;
-            return false;
-        }
-
-        /// <summary>人工改过大类没有？</summary>
-        public static bool HasCat(ModItem m)
-        {
-            Ensure();
-            if (m == null) return false;
-            if (modCat.ContainsKey(m.Key)) return true;
-            return !string.IsNullOrEmpty(m.Fp) && fpCat.ContainsKey(m.Fp);
-        }
-
         /// <summary>
         /// 扫描时把人工结论直接写到这个包上（认指纹，也认旧版的路径键）：
         /// 树、搜索、导出、识别明细看到的是同一个结论，不会出现「树里对、导出错」两套。

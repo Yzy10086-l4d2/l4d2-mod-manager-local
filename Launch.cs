@@ -22,9 +22,6 @@ namespace Installer
         public const string Default =
             "-heapsize 2096999 -high -l4n_use_neko_engine_post -skeeto_particle_platform 1 -novid";
 
-        /// <summary>v1.7 及更早的老默认值，只用来认老配置（现在配置里不再存启动项）。</summary>
-        public const string Legacy = "-novid -high";
-
         /// <summary>换行/多个空格折成一个空格，去首尾 —— Steam 那边只认一行。</summary>
         public static string Clean(string raw)
         {

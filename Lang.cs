@@ -42,8 +42,6 @@ namespace Installer
         private static readonly HashSet<string> missing = new HashSet<string>(StringComparer.Ordinal);
         public static IEnumerable<string> Missing { get { return missing; } }
         public static int MissingCount { get { return missing.Count; } }
-        public static void ClearMissing() { missing.Clear(); }
-
         /// <summary>取显示文案：英文模式下查词表，查不到就原样返回中文。</summary>
         public static string S(string zh)
         {

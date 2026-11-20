@@ -92,28 +92,6 @@ namespace Installer
             return hit;
         }
 
-        /// <summary>清掉过期缓存。扫完库调一次，别放启动路径上。</summary>
-        public static int Prune()
-        {
-            int n = 0;
-            try
-            {
-                DateTime cut = DateTime.Now.AddDays(-KeepDays);
-                foreach (string f in Directory.GetFiles(Dir, "*.jpg"))
-                {
-                    try
-                    {
-                        if (File.GetLastWriteTime(f) >= cut) continue;
-                        File.Delete(f);
-                        n++;
-                    }
-                    catch { }
-                }
-            }
-            catch { }
-            return n;
-        }
-
         /// <summary>
         /// 预览图优先用**工坊页那张**（下载时存成同名图片），包内自带的 addonimage 只当备用。
         /// 原因：作者打包进 vpk 的图常是旧图/低分辨率/没更新，工坊页那张才是最新最准的（用户 2026-11-21 明确）。

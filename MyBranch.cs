@@ -191,14 +191,6 @@ namespace Installer
 
         public static int Count { get { Ensure(); return names.Count; } }
 
-        public static List<string> ItemsOf(string branch)
-        {
-            Ensure();
-            List<string> l;
-            if (!items.TryGetValue(branch ?? "", out l)) return new List<string>();
-            return new List<string>(l);
-        }
-
         /// <summary>这个 vpk 在哪个分支里；不在任何分支返回 ""。</summary>
         public static string BranchOf(string vpk)
         {
@@ -232,24 +224,6 @@ namespace Installer
             if (p.Length > 0 && p != name && names.Contains(p)) parentOf[name] = p;
             Save();
             return null;
-        }
-
-        /// <summary>换个父分支；parent 传空 = 移到顶层。成环就别动。</summary>
-        public static void SetParent(string name, string parent)
-        {
-            Ensure();
-            if (string.IsNullOrEmpty(name) || !names.Contains(name)) return;
-            string p = CleanName(parent);
-            if (p.Length == 0 || !names.Contains(p) || p == name) { parentOf.Remove(name); Save(); return; }
-            // 不能挂到自己的子孙下面
-            string cur = p;
-            for (int guard = 0; guard < 32 && cur.Length > 0; guard++)
-            {
-                if (string.Equals(cur, name, StringComparison.OrdinalIgnoreCase)) return;
-                cur = ParentOf(cur);
-            }
-            parentOf[name] = p;
-            Save();
         }
 
         /// <summary>

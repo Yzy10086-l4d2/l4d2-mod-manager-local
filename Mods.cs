@@ -399,24 +399,6 @@ namespace Installer
             return names;
         }
 
-        public static List<Profile> LoadAll()
-        {
-            List<Profile> list = new List<Profile>();
-            try
-            {
-                string d = DirOf();
-                if (!Directory.Exists(d)) return list;
-                foreach (string f in Directory.GetFiles(d, "*.txt"))
-                {
-                    Profile p = Parse(f);
-                    if (p != null) list.Add(p);
-                }
-            }
-            catch { }
-            list.Sort(delegate(Profile a, Profile b) { return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase); });
-            return list;
-        }
-
         public static Profile Load(string name)
         {
             if (string.IsNullOrEmpty(name)) return null;
@@ -501,17 +483,6 @@ namespace Installer
         }
 
         // 另存为：复制一份，不动原件
-        public static string CopyAs(string from, string to)
-        {
-            to = Core.SafeName(to);
-            if (string.IsNullOrEmpty(to)) return "名字不能为空";
-            string a = Path.Combine(DirOf(), Core.SafeName(from) + ".txt");
-            string b = Path.Combine(DirOf(), to + ".txt");
-            if (!File.Exists(a)) return "原方案不存在";
-            if (File.Exists(b)) return "已经有叫这个名字的方案了";
-            File.Copy(a, b, false);
-            return null;
-        }
     }
 
     // 一组「体积完全相同」的 vpk。体积相同只是嫌疑，内容是否一样要算过才知道（DupVerify）。
@@ -612,11 +583,6 @@ namespace Installer
         }
 
         // 深度检查：只读 VPK 目录表，看这些 MOD 之间有没有同路径文件
-        public static List<string> Deep(List<ModItem> sel)
-        {
-            return DeepAll(sel);
-        }
-
         // 同一个路径被两个 MOD 提供，后果差很多：覆盖 .bsp/.nav/missions 是进图就崩，
         // 覆盖一张贴图只是「看谁生效」。分级表借自 LytVpk 的口径，按我们踩过的坑收窄。
         private static int ConflictSeverity(string p)

@@ -205,14 +205,6 @@ namespace Installer
             });
         }
 
-        /// <summary>初始化（扫库、找游戏）跑完了没有。自测截图要等它。</summary>
-        /// <summary>光标停在列表某一行时的完整名字（显示在窗口底部状态栏）。</summary>
-        internal void HoverName(string name)
-        {
-            if (lblStatus == null) return;
-            lblStatus.Text = string.IsNullOrEmpty(name) ? "" : "▸ " + name;
-        }
-
         internal bool Ready { get { return !initializing; } }
 
         private void BeginInit()
@@ -396,14 +388,6 @@ namespace Installer
             }
             lblStatus.Text = "";
             lblStatus.ForeColor = Theme.Ink2;
-        }
-
-        /// <summary>组件包目录改了之后重查一遍：缺的勾掉、状态栏跟着更新。只读探测，不扫库、不动文件。</summary>
-        internal void RefreshPackStatus()
-        {
-            bool ok;
-            List<string> packs = Core.CheckPackages(out ok);
-            ShowPackStatus(packs, ok);
         }
 
         /// <summary>组件名 → 左栏对应的勾选框。</summary>
@@ -918,15 +902,6 @@ namespace Installer
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
-        private CheckBox AddChk(Section p, string text, int x, int y, bool chk, bool enabled)
-        {
-            CheckBox c = new CheckBox();
-            c.Text = text; c.SetBounds(x, y, p.Width - x - 12, 22); c.Checked = chk; c.Enabled = enabled;
-            Theme.Dress(c);
-            p.Controls.Add(c);
-            return c;
-        }
-
         private void ApplyConfig()
         {
             foreach (string m in Core.Cfg.Mods)
@@ -1199,11 +1174,6 @@ namespace Installer
 
         internal string SearchText { get { return txtSearch == null ? "" : txtSearch.Text.Trim(); } }
 
-        internal void ClearSearchIfAny()
-        {
-            if (txtSearch != null && txtSearch.Text.Length > 0) txtSearch.Text = "";   // 会触发一次重新筛选
-        }
-
         /// <summary>行首的展开标记：套装才给三角，单 vpk 的行前面留空。</summary>
         internal string GroupRowText(ModGroup g, int sel)
         {
@@ -1212,119 +1182,6 @@ namespace Installer
         }
 
         internal string GroupRowText(ModGroup g) { return GroupRowText(g, CountChecked(g)); }
-
-        internal bool IsExpanded(ModGroup g) { return g != null && expanded.Contains(g.Key); }
-
-        /// <summary>双击套装行：就地展开/收起子件，不弹窗、不重建整张表。</summary>
-        internal void ToggleExpand(ModGroup g)
-        {
-            if (g == null || !g.IsSet) return;
-            if (!expanded.Remove(g.Key)) expanded.Add(g.Key);
-        }
-
-        /// <summary>把一条套装渲染成一行：类窗口和方案窗口共用同一套配色规则。</summary>
-        internal ListViewItem MakeRow(ModGroup g)
-        {
-            int sel = CountChecked(g);
-            ListViewItem li = new ListViewItem(GroupRowText(g, sel));
-            Color mk;
-            li.SubItems.Add(SchemeMark(g, out mk));           // 方案：方案内 / 已取消 / 新增
-            li.SubItems[1].ForeColor = mk;
-            li.SubItems[1].Font = Theme.UISmall;
-            li.SubItems.Add(g.Subject.Length > 0 ? g.Subject : "—");
-            if (g.Subject.Length > 0 && g.SubjectLevel == "材质") li.SubItems[2].ForeColor = Theme.Ink3;
-            li.SubItems.Add(Core.Human(g.Size));
-            li.SubItems.Add(WhereText(g));
-            li.SubItems[4].ForeColor = CatInk(g.Cat);
-            Color stInk, stBg;
-            li.SubItems.Add(StatusOf(g, out stInk, out stBg));      // 状态：已装·开 / 已装·关 / 未装 …
-            li.SubItems[5].ForeColor = stInk;
-            li.SubItems[5].Font = Theme.UISmall;
-            if (stBg != Theme.Surface) li.BackColor = stBg;
-            li.Tag = g;
-            li.Checked = sel > 0;
-            if (g.IsSet) li.ToolTipText = PartsTip(g);
-            foreach (ModItem p in g.Parts)
-                if (p.Installed)
-                {
-                    li.ToolTipText = (li.ToolTipText.Length > 0 ? li.ToolTipText + "\r\n" : "")
-                        + "游戏 addons 里已经有同名同大小的这一份，安装时会直接跳过复制。\r\n"
-                        + "addonlist.txt 里现在是「" + (p.AddonOn ? "1 · 开" : "0 · 关") + "」"
-                        + (p.AddonOn ? "，进游戏就能看到。" : "，文件在但没启用 —— 想开就在「已装 MOD 开关」里打开，或勾上它再装一次。");
-                    break;
-                }
-            return li;
-        }
-
-        /// <summary>展开后挂在套装下面的一个 vpk：勾这行只装这一个文件。</summary>
-        internal ListViewItem MakePartRow(ModGroup g, ModItem p)
-        {
-            ListViewItem li = new ListViewItem("      └ " + p.Name);
-            li.SubItems.Add("");
-            li.SubItems.Add(p.Subject.Length > 0 ? p.Subject : "—");
-            li.SubItems.Add(Core.Human(p.Size));
-            li.SubItems.Add(p.Role + " · 单件");
-            li.SubItems[4].ForeColor = Theme.Ink3;
-            Color pInk, pBg;
-            li.SubItems.Add(PartStatus(p, out pInk, out pBg));
-            li.SubItems[5].ForeColor = pInk;
-            li.SubItems[5].Font = Theme.UISmall;
-            if (pBg != Theme.Surface) li.BackColor = pBg;
-            li.Tag = p;
-            li.ForeColor = Theme.Ink3;
-            li.Checked = checkedKeys.Contains(p.Key);
-            li.ToolTipText = "这一个 vpk：" + p.Name + "\r\n勾上 = 只装它（" + p.Role + "）"
-                           + "\r\n现在：" + PartStatus(p, out pInk, out pBg);
-            return li;
-        }
-
-        /// <summary>任何窗口里勾了一行，都走这里：先改 checkedKeys，再把所有窗口同步一遍。</summary>
-        internal void OnRowChecked(ListView lv, ItemCheckedEventArgs e)
-        {
-            // 展开出来的单件行：勾哪个就装哪个，不动同套装的其他 vpk
-            ModItem part = e.Item.Tag as ModItem;
-            if (part != null)
-            {
-                // 刷新列表时 ListView 会把勾选状态再补发一遍；状态本来就一致就放过，否则会死循环
-                if (e.Item.Checked == checkedKeys.Contains(part.Key)) return;
-                if (e.Item.Checked) checkedKeys.Add(part.Key);
-                else checkedKeys.Remove(part.Key);
-
-                if (bulk) return;
-                // 组行的「已选 2/5」和子行勾状态统一由 SyncPicks → 树的 Sync 更新
-                SyncPicks();
-                UpdateSchemeLabel();
-                UpdateSel();
-                SaveChecks();
-                return;
-            }
-
-            ModGroup g = e.Item.Tag as ModGroup;
-            if (g == null) return;
-            // 刷新列表时 ListView 会把每一行的勾选状态再补发一遍消息；那时 checkedKeys 本来就是对的，
-            // 认了就变成「同步一次 → 又补发 → 再同步」的死循环，所以状态一致就直接放过
-            if (e.Item.Checked == (CountChecked(g) > 0)) return;
-            if (e.Item.Checked)
-            {
-                // 勾这一行 = 装默认部件（主体 + 必装 + 第一个选配）；想挑就双击展开
-                foreach (ModItem p in Catalog.DefaultParts(g)) checkedKeys.Add(p.Key);
-                noParts.Remove(g.Key);
-            }
-            else
-            {
-                foreach (ModItem p in g.Parts) checkedKeys.Remove(p.Key);
-                noParts.Add(g.Key);
-            }
-            if (g.IsSet) e.Item.Text = GroupRowText(g);
-            Color c;
-            e.Item.SubItems[1].Text = SchemeMark(g, out c);
-            e.Item.SubItems[1].ForeColor = c;
-            if (bulk) return;
-            SyncPicks();
-            UpdateSchemeLabel();
-            UpdateSel();
-            SaveChecks();
-        }
 
         /// <summary>
         /// 勾选清单写进配置，立刻落盘。
@@ -1577,16 +1434,6 @@ namespace Installer
             if (g == null) { MessageBox.Show("先右键点一行 MOD。"); return; }
             if (treeView == null) return;
             treeView.PutIntoBranch(g);
-        }
-
-        /// <summary>右键「放进新分支」：建一个新分支，顺手把这个 MOD 放进去（不用先有分支）。</summary>
-        internal void PutIntoNewBranchIn(ListView lv)
-        {
-            ListViewItem li = RowTarget(lv);
-            ModGroup g = li == null ? null : li.Tag as ModGroup;
-            if (g == null) { MessageBox.Show("先右键点一行 MOD。"); return; }
-            if (treeView == null) return;
-            treeView.PutIntoNewBranch(g);
         }
 
         /// <summary>右键「从这个分支移出」：只把这一条从分组里摘掉，文件和勾选都不动。</summary>
@@ -1952,26 +1799,6 @@ namespace Installer
         {
             base.OnActivated(e);
             QuietSyncAddonList();
-        }
-
-        /// <summary>「按游戏现状回填」：不动游戏里任何文件，只改界面上的勾选并记住。</summary>
-        private void DoSyncFromGame()
-        {
-            if (scanning) { SetStatus("正在扫库，扫完再回填"); return; }
-            RereadAddonList();                       // 先在游戏里调过开关的，这里当场对上
-            int n = SeedChecksFromGame(true);
-            if (n < 0)
-            {
-                SetStatus("游戏 addons 里还没认出 MOD，没得回填");
-                Core.Log("WARN", "回填跳过：游戏目录里没认出已装 MOD（目录不对？还是 addons 是空的？）");
-            }
-            else
-            {
-                SetStatus("已按游戏现状回填 " + n + " 个 MOD");
-                Core.Log("OK", "按游戏现状回填勾选：勾上 " + n + " 个（读 addons + addonlist.txt，没动任何文件）");
-            }
-            if (treeView != null) treeView.SyncIfSame();   // 开/关那一列跟着变
-            RefreshGameNow();
         }
 
         /// <summary>「刷新」：游戏外面被动过（工坊订阅、手拷 vpk、游戏里调过开关）时重读一遍。</summary>
@@ -2546,19 +2373,6 @@ namespace Installer
         }
 
         // 大类各一种颜色。只用来区分，不做装饰：同色系深浅差别够看就行。
-        internal static Color CatInk(string cat)
-        {
-            switch (cat)
-            {
-                case Catalog.CAT_MAP: return Color.FromArgb(24, 102, 133);
-                case Catalog.CAT_CHAR: return Color.FromArgb(107, 71, 148);
-                case Catalog.CAT_GUN: return Color.FromArgb(150, 88, 24);
-                case Catalog.CAT_MED: return Color.FromArgb(38, 116, 55);
-                case Catalog.CAT_SPRAY: return Color.FromArgb(160, 54, 116);
-                default: return Theme.Ink2;
-            }
-        }
-
         /// <summary>这条在不在当前方案里（套装里任意一个 vpk 在就算在）。</summary>
         internal bool InScheme(ModGroup g)
         {
@@ -2568,16 +2382,6 @@ namespace Installer
         }
 
         // 方案列：一句话说清「这条跟当前方案是什么关系」
-        private string SchemeMark(ModGroup g, out Color color)
-        {
-            bool inn = InScheme(g);
-            bool on = CountChecked(g) > 0;
-            if (inn && on) { color = Theme.Ok; return "方案内"; }    // 方案里有，这次也勾着
-            if (inn && !on) { color = Theme.Warn; return "已取消"; }  // 方案里有，这次被取消了
-            color = Theme.Accent;
-            return on ? "新增" : "";                                  // 方案里没有，这次新勾的
-        }
-
         // 把当前方案读进 schemeKeys（下拉换了 / 方案存过之后都要刷一次）
         private void LoadSchemeKeys()
         {
@@ -2606,11 +2410,6 @@ namespace Installer
 
         // 分类列只放得下 130 px：人物的「二代 · 西装Nick」取最后一段，省「人物 · 二代」那截
         // 装没装已经单独有一列（状态），这里不再拼「· 已装」，免得一格里塞两件事
-        private static string WhereText(ModGroup g)
-        {
-            return SubText(g);
-        }
-
         // ---------- 状态：两维 ----------
         // 第一维「文件在不在 addons 里」（Installed / FromGame），第二维「addonlist 里是 1 还是 0」（AddonOn）。
         // 只看第一维会把「装了但被关掉」和「装好了正开着」说成一样，机房里这两种要区别对待。
@@ -2659,49 +2458,6 @@ namespace Installer
             return "已装 · 开 " + on + "/" + inst;
         }
 
-        /// <summary>单个 vpk 的状态（套装展开后的子行用）。</summary>
-        internal static string PartStatus(ModItem p, out Color ink, out Color bg)
-        {
-            bg = Theme.Surface; ink = Theme.Ink3;
-            if (p.FromWorkshop)
-            {
-                ink = p.AddonOn ? Theme.Ok : Theme.Warn;
-                bg = p.AddonOn ? Theme.RowOn : Theme.RowOff;
-                return p.AddonOn ? "工坊 · 开" : "工坊 · 关";
-            }
-            if (p.FromGame)
-            {
-                // 本地模式没有「库」的概念，游戏里这份开着就是开启、关着就是关闭
-                if (Core.IsLocal)
-                {
-                    ink = p.AddonOn ? Theme.Ok : Theme.Warn;
-                    bg = p.AddonOn ? Theme.RowOn : Theme.RowOff;
-                    return p.AddonOn ? "开启" : "关闭";
-                }
-                ink = Theme.Ink2; bg = Theme.RowGame;
-                return p.AddonOn ? "游戏内 · 开" : "游戏内 · 关";
-            }
-            if (p.Installed)
-            {
-                ink = p.AddonOn ? Theme.Ok : Theme.Warn;
-                bg = p.AddonOn ? Theme.RowOn : Theme.RowOff;
-                return p.AddonOn ? "已装 · 开" : "已装 · 关";
-            }
-            return "未装";
-        }
-
-        /// <summary>页头「显示」下拉的过滤：0 全部 / 1 已装 / 2 未装 / 3 已装但关闭。</summary>
-        internal static bool MatchShow(ModGroup g, int show)
-        {
-            if (show <= 0) return true;
-            int total, inst, on, game;
-            CountState(g, out total, out inst, out on, out game);
-            if (show == 1) return inst > 0;
-            if (show == 2) return inst == 0;
-            if (show == 3) return inst > 0 && on == 0;
-            return true;
-        }
-
         // 分组标题已经写明大类了，这一列只留细分，别每行重复一遍「地图 ·」
         internal static string SubOf(ModItem it)
         {
@@ -2712,22 +2468,7 @@ namespace Installer
             return sub.Length == 0 ? "—" : sub;
         }
 
-        private static string SubText(ModGroup g)
-        {
-            if (g.Cat == g.Sub) return "—";
-            string sub = g.Sub;
-            int i = sub.LastIndexOf(" · ", StringComparison.Ordinal);
-            if (i >= 0) sub = sub.Substring(i + 3);
-            return sub;
-        }
-
         // 一行显示什么：套装在后面标「已选/共」，让人知道这行不止一个文件
-        private static string RowName(ModGroup g, int sel)
-        {
-            if (!g.IsSet) return g.Name;
-            return g.Name + "（" + (sel > 0 ? sel : 0) + "/" + g.Parts.Count + "）";
-        }
-
         private static string PartsTip(ModGroup g)
         {
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
@@ -2812,20 +2553,6 @@ namespace Installer
                 if (!string.IsNullOrEmpty(p.AddonAuthor) && p.AddonAuthor.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0) return true;
             }
             return false;
-        }
-
-        internal void SetAllIn(ListView lv, bool on)
-        {
-            lv.BeginUpdate();
-            bulk = true;
-            try
-            {
-                foreach (ListViewItem li in lv.Items) li.Checked = on;   // 勾选事件里统一处理部件
-            }
-            finally { bulk = false; }
-            lv.EndUpdate();
-            SyncPicks();
-            UpdateSel();
         }
 
         private List<ModItem> Selected()
@@ -2969,19 +2696,6 @@ namespace Installer
             if (treeView != null) treeView.RevealGroup(g);
         }
 
-        private void FindGame()
-        {
-            List<string> g = Core.FindGames();
-            if (g.Count == 0) { Log("没找到。请在「设置 → 游戏目录」里手动选一次。"); return; }
-            if (g.Count == 1) Log("找到: " + g[0]);
-            else
-            {
-                foreach (string s in g) Log("候选: " + s);
-                Log("找到多个，先用第一个（不对就用浏览改）");
-            }
-            SwitchGameRoot(g[0], "自动查找");
-        }
-
         /// <summary>
         /// 切换游戏目录只有这一条路：先更新唯一配置，再后台重扫，最后刷新列表。
         /// 以前浏览/自动找只改输入框，列表还按旧目录显示“已装/未装”，很容易看错。
@@ -3066,18 +2780,6 @@ namespace Installer
         }
 
         // 双击一行：套装 → 就地展开看每个 vpk；单件行 → 直接切勾选
-        internal void OpenRowAt(ListView lv)
-        {
-            if (lv.SelectedItems.Count == 0) return;
-            ListViewItem li = lv.SelectedItems[0];
-            ModItem p = li.Tag as ModItem;
-            if (p != null) { li.Checked = !li.Checked; return; }
-            ModGroup g = li.Tag as ModGroup;
-            if (g == null) return;
-            if (g.IsSet) { ToggleExpand(g); return; }
-            ShowModInfo(g);
-        }
-
         internal void PickPartsIn(ListView lv)
         {
             ModGroup g = FirstSelectedGroup(lv);
@@ -4278,31 +3980,6 @@ namespace Installer
         }
 
         // 方案管理窗口复用主界面的分类清单（同一个 cboCat，显示与主界面完全一致）
-        public List<CatChoice> CatChoices()
-        {
-            // 方案管理窗口要一个「大类 + 细分」的清单，跟以前分类下拉显示的一致
-            List<CatChoice> r = new List<CatChoice>();
-            r.Add(new CatChoice("", null, "(全部)"));
-            foreach (string cat in Catalog.Cats)
-            {
-                int n = 0;
-                Dictionary<string, int> subs = new Dictionary<string, int>(StringComparer.CurrentCulture);
-                List<string> order = new List<string>();
-                foreach (ModGroup g in Catalog.Groups)
-                {
-                    if (g.Cat != cat) continue;
-                    n++;
-                    if (!subs.ContainsKey(g.Sub)) { subs[g.Sub] = 0; order.Add(g.Sub); }
-                    subs[g.Sub] = subs[g.Sub] + 1;
-                }
-                if (n == 0) continue;
-                order.Sort(StringComparer.CurrentCulture);
-                r.Add(new CatChoice(cat, null, cat + "（" + n + "）"));
-                foreach (string sb in order) r.Add(new CatChoice(cat, sb, "    " + sb + "（" + subs[sb] + "）"));
-            }
-            return r;
-        }
-
         public void ApplyProfileByName(string name)
         {
             Profile p = ProfileStore.Load(name);
