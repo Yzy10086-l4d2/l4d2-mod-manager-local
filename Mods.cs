@@ -617,6 +617,22 @@ namespace Installer
             return DeepAll(sel);
         }
 
+        // 同一个路径被两个 MOD 提供，后果差很多：覆盖 .bsp/.nav/missions 是进图就崩，
+        // 覆盖一张贴图只是「看谁生效」。分级表借自 LytVpk 的口径，按我们踩过的坑收窄。
+        private static int ConflictSeverity(string p)
+        {
+            string s = (p ?? "").ToLowerInvariant();
+            if (s == "particles/particles_manifest.txt" || s == "scripts/soundmixers.txt") return 3;
+            if (s.EndsWith(".bsp") || s.EndsWith(".nav")) return 3;
+            if (s.StartsWith("missions/") && s.EndsWith(".txt")) return 3;
+            if (s.StartsWith("scripts/") && s.EndsWith(".txt") && !s.StartsWith("scripts/vscripts/")) return 3;
+            if (s.EndsWith(".nut") || s.EndsWith(".vscript") || s.EndsWith(".nuc")) return 2;
+            if (s.EndsWith(".phy") || s.EndsWith(".vtx") || s.EndsWith(".vvd") || s.EndsWith(".db")) return 2;
+            if (s.StartsWith("resource/") && s.EndsWith(".res")) return 2;
+            if (s.EndsWith(".ttf") || s.EndsWith(".otf")) return 2;
+            return 1;
+        }
+
         // 一次遍历同时给出「路径重叠」和「脚本库冲突」，同一批 vpk 不再解析两遍。
         // 只记“第一次出现是谁的”，出现第二次才建列表——否则每个路径都 new 一个 List，
         // 选一大套三方图就能把内存吃满。
@@ -692,9 +708,10 @@ namespace Installer
                 });
             }
             sw.Stop();
-            int overlap = 0, scriptHit = 0;
+            int overlap = 0, scriptHit = 0, critHit = 0;
             List<string> ex1 = new List<string>();
             List<string> ex2 = new List<string>();
+            List<string> ex3 = new List<string>();
             HashSet<int> involved = new HashSet<int>();
             foreach (KeyValuePair<string, List<int>> kv in dup)
             {
@@ -709,12 +726,23 @@ namespace Installer
                     scriptHit++;
                     if (ex2.Count < 3) ex2.Add(kv.Key + "（" + NamesOf(sel, kv.Value) + "）");
                 }
+                else if (ConflictSeverity(kv.Key) >= 3)
+                {
+                    // 覆盖就出事的几类（地图 / 导航 / mission / 清单 / 配置）单独一桶，别混进普通重叠
+                    critHit++;
+                    if (ex3.Count < 3) ex3.Add(kv.Key + "（" + NamesOf(sel, kv.Value) + "）");
+                }
                 else
                 {
                     overlap++;
                     if (ex1.Count < 3) ex1.Add(kv.Key + "（" + NamesOf(sel, kv.Value) + "）");
                 }
                 foreach (int i in kv.Value) involved.Add(i);
+            }
+            if (critHit > 0)
+            {
+                msgs.Add("有 " + critHit + " 个「覆盖就出事」的文件（地图/导航/mission/particles_manifest/soundmixers/scripts 配置），同时装大概率进图崩");
+                foreach (string e in ex3) msgs.Add("例: " + e);
             }
             if (overlap > 0)
             {

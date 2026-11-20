@@ -87,6 +87,7 @@ namespace Installer
             new Row { Sub = "特感", Name = "Tank", En = "Tank", Aliases = new string[0] },
             new Row { Sub = "特感", Name = "Witch", En = "Witch", Aliases = new string[0] },
             new Row { Sub = "普通感染者", Name = "普通感染者", En = "Common infected", Aliases = new string[0] },
+            new Row { Sub = "非普通感染者", Name = "非普通感染者", En = "Uncommon infected", Aliases = new string[] { "uncommon" } },
             new Row { Sub = "可搬道具", Name = "氧气瓶", En = "Oxygen Tank", Aliases = new string[0] },
             new Row { Sub = "可搬道具", Name = "煤气罐", En = "Gas Can", Aliases = new string[0] },
             new Row { Sub = "可搬道具", Name = "油桶", En = "Oil Barrel", Aliases = new string[0] },

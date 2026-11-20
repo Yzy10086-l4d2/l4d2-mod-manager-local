@@ -2287,6 +2287,14 @@ namespace Installer
                     "认不出对象的武器音效仍按音效兜底（对象名由识别另给）");
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/logos/spray_01.vtf" }, "喷漆", "喷漆"),
                     "动态喷漆归喷漆，不占 UI 界面");
+                bad += RecogCheck(Classified(new string[] { "models/infected/common_male_riot.mdl" }, "特感", "非普通感染者"),
+                    "非普通感染者（防暴）单列，不被普通感染者吃掉");
+                bad += RecogCheck(Classified(new string[] { "models/infected/common_male_clown.mdl" }, "特感", "非普通感染者"),
+                    "非普通感染者（小丑）单列");
+                bad += RecogCheck(Classified(new string[] { "models/survivors/survivor_biker.mdl" }, "人物", "弗朗西斯"),
+                    "正常人物模型仍归人物（界面排除没殃及本体）");
+                bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/survivor_biker_portrait.vtf" }, "杂项", "UI 界面"),
+                    "界面里引用角色名不算人物皮肤");
             }
             catch (Exception ex) { bad++; Core.Log("FAIL", "RECOGSELF 异常: " + ex.Message); }
             finally

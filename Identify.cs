@@ -56,6 +56,15 @@ namespace Installer
             // ---- 普通感染者（尸潮里那种小僵尸）：换皮肤最常见的对象，特感那几条接不住。
             //      模型名都是 common_male_* / common_female_*，比裸 "infected" 稳
             //      （infected 连特感目录、血贴图、高亮特效都沾，会误判）。
+            //      非普通（防暴/小丑/泥人/道路工/CEDA/堕落/吉米）必须先判：模型名同样是
+            //      common_male_*，排在下面就被普通感染者吃掉，装上去只剩一个槽。
+            {"common_male_riot",     "非普通感染者"},
+            {"common_male_ceda",     "非普通感染者"},
+            {"common_male_clown",    "非普通感染者"},
+            {"common_male_mud",      "非普通感染者"},
+            {"common_male_roadcrew", "非普通感染者"},
+            {"common_male_jimmy",    "非普通感染者"},
+            {"common_male_fallen",   "非普通感染者"},
             {"common_male",      "普通感染者"},
             {"common_female",    "普通感染者"},
 
@@ -242,6 +251,24 @@ namespace Installer
                   || p.StartsWith("materials/sprites/", StringComparison.Ordinal)
                   || p.StartsWith("materials/effects/", StringComparison.Ordinal)
                   || p.StartsWith("materials/detail/", StringComparison.Ordinal));
+        }
+
+        // 界面 / HUD 资源里的角色名不算「换了这个人」：血条、头像、计分板必然引用角色名，
+        // 不排除的话一套纯界面包会被判成人物皮肤（2026-11-21 借 LytVpk 口径）。
+        // 界面资源未必都在 vgui 下（materials/hud/ 这种），所以路径段叫 hud 的也一律不算。
+        private static bool IsUiAssetPath(string p)
+        {
+            string s = p.Replace('\\', '/').ToLowerInvariant();
+            if (s.EndsWith(".res", StringComparison.Ordinal)) return true;
+            if (s.StartsWith("materials/vgui/", StringComparison.Ordinal)
+                || s.StartsWith("materials/sprites/", StringComparison.Ordinal)
+                || s.StartsWith("resource/", StringComparison.Ordinal)
+                || s.StartsWith("scripts/", StringComparison.Ordinal)
+                || s.StartsWith("particles/", StringComparison.Ordinal)
+                || s.StartsWith("sound/ui/", StringComparison.Ordinal)) return true;
+            foreach (string seg in s.Split('/'))
+                if (seg == "hud") return true;
+            return false;
         }
 
         /// <summary>扫一个 vpk 的目录表，攒出「改了什么」。散装 vpk 和压缩包里的 vpk 走同一套。</summary>
@@ -1005,6 +1032,7 @@ namespace Installer
                 bool anySurv = false;
                 foreach (string p in ps)
                 {
+                    if (IsUiAssetPath(p)) continue;
                     if (p.IndexOf("survivor_", StringComparison.OrdinalIgnoreCase) < 0) continue;
                     anySurv = true;
                     for (int i = 0; i < CharKeys.GetLength(0); i++)
@@ -1019,6 +1047,19 @@ namespace Installer
                     else sub = "其他";
                     return true;
                 }
+            }
+
+            // 2.4) 非普通感染者（防暴 / 小丑 / 泥人 / 道路工 / CEDA / 堕落 / 吉米）：
+            //      模型同样在 models/infected/ 下、也以 common_male_* 起名，不单独判就会
+            //      掉进下面「特感」兜底、显示成一个泛特感位置（2026-11-21 用户要求单列）。
+            //      归哪个位置只查识别表，别在分类里再抄一份关键词。
+            foreach (string p in ps)
+            {
+                if (!p.EndsWith(".mdl", StringComparison.OrdinalIgnoreCase)) continue;
+                if (p.IndexOf("models/infected/", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                int sl = p.LastIndexOf('/');
+                if (Lookup(sl >= 0 ? p.Substring(sl + 1) : p) != "非普通感染者") continue;
+                cat = "特感"; sub = "非普通感染者"; return true;
             }
 
             // 2.5) 作用于多个特感（或只改材质、没有模型）的包 → 「特感 / 通用」。
