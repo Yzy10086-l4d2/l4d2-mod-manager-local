@@ -776,24 +776,47 @@ namespace Installer
         /// 看头几个字节认容器：vpk / zip / rar / 7z / 图片 / 网页 / 其它。
         /// 不信扩展名 —— 工坊上把 zip 命名成 .vpk 的包真实存在。
         /// </summary>
-        static readonly Regex RxSharedId = new Regex(@"filedetails/?\?id=(\d+)", RegexOptions.IgnoreCase);
+        static readonly Regex RxReqId = new Regex(@"filedetails/?\?id=(\d+)", RegexOptions.IgnoreCase);
+        static readonly Regex RxReqTitle = new Regex(@"class=""requiredItem""[^>]*>([\s\S]*?)</div>", RegexOptions.IgnoreCase);
 
         /// <summary>
-        /// 从描述里找"要同时订阅/安装"的配套 MOD 的工坊 ID —— 作者一般把链接或 ID 写在正文里。
-        /// 只做提示和可选的批量下载，不替用户判断"必须"。
+        /// 读工坊页面右侧的「Required items」区块 —— 这是 Steam 自己的配套物品声明，不是作者写的正文
+        /// （2026-11-21 用户指出：正文提取不对）。页面上有 author 设过的依赖才会出现这个区块。
+        /// 只用于提示和可选批量下载，抓不到就返回空。
         /// </summary>
-        public static List<string> DepIds(string desc, string selfId)
+        public static List<WsItem> RequiredItems(string id)
         {
-            List<string> list = new List<string>();
-            if (string.IsNullOrEmpty(desc)) return list;
-            foreach (Match m in RxSharedId.Matches(desc))
+            List<WsItem> list = new List<WsItem>();
+            if (string.IsNullOrEmpty(id)) return list;
+            string html = null;
+            try { html = WsNet.GetString("https://steamcommunity.com/sharedfiles/filedetails/?id=" + id, Ua, 20000); } catch { }
+            if (string.IsNullOrEmpty(html)) return list;
+            int at = html.IndexOf("requiredItemsContainer", StringComparison.OrdinalIgnoreCase);
+            if (at < 0) return list;
+            int end = html.IndexOf("rightSectionTopTitle", at + 30, StringComparison.OrdinalIgnoreCase);
+            string seg = end > at ? html.Substring(at, end - at) : html.Substring(at, Math.Min(20000, html.Length - at));
+            MatchCollection ids = RxReqId.Matches(seg);
+            MatchCollection titles = RxReqTitle.Matches(seg);
+            for (int i = 0; i < ids.Count && list.Count < 8; i++)
             {
-                string id = m.Groups[1].Value;
-                if (id.Length == 0 || id == selfId) continue;
-                if (!list.Contains(id)) list.Add(id);
-                if (list.Count >= 8) break;
+                string rid = ids[i].Groups[1].Value;
+                if (rid.Length == 0 || rid == id) continue;
+                string t = i < titles.Count ? CleanHtml(titles[i].Groups[1].Value) : "";
+                WsItem one = new WsItem();
+                one.Id = rid;
+                one.Title = t;
+                list.Add(one);
             }
             return list;
+        }
+
+        static string CleanHtml(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            string t = Regex.Replace(s, "<[^>]+>", " ");
+            t = System.Net.WebUtility.HtmlDecode(t);
+            t = Regex.Replace(t, "\\s+", " ").Trim();
+            return t;
         }
 
         static string ContainerKind(string path)

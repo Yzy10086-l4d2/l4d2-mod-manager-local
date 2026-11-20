@@ -38,6 +38,7 @@ namespace Installer
         private readonly FlatButton btnGet = new FlatButton();
         private readonly FlatButton btnDeps = new FlatButton();      // 配套 MOD（正文里写了工坊链接的）
         private List<string> depIds = new List<string>();
+        private List<string> depTitles = new List<string>();
         private readonly FlatButton btnLang = new FlatButton();   // 原文 / 译文 切换
 
         private readonly ComboBox cboCat = new ComboBox();
@@ -805,6 +806,7 @@ namespace Installer
             translating = false;
             langTouched = false;
             detailClean = WsText.Clean(it.Desc);
+            depIds.Clear(); depTitles.Clear(); btnDeps.Visible = false;
             detailZh = WsTranslate.ReadCache(it.Id, it.Updated);
             showZh = detailZh != null && detailZh.Length > 0;
             RenderDesc();
@@ -832,6 +834,9 @@ namespace Installer
             Thread t = new Thread(delegate()
             {
                 // 浏览页只有短介绍 —— 点开时按需补全详情接口（全文/直链），一次调用
+                // 配套 MOD：抓工坊页面的 Required items 区块（和正文无关）
+                List<WsItem> reqs = null;
+                try { reqs = Workshop.RequiredItems(it.Id); } catch { }
                 if (!it.DetailsLoaded && !it.IsCollection)
                 {
                     try
@@ -852,8 +857,15 @@ namespace Installer
                         if (token != detailToken) return;         // 换条目了：计数已被新条目重置，别碰
                         DetailBusy(false);
                         detailClean = WsText.Clean(it.Desc);      // 短介绍换成全文
-                        // 正文里写了工坊链接的 = 需要一起装的配套 MOD：给一个入口，装不装用户自己定
-                        depIds = Workshop.DepIds(it.Desc, it.Id);
+                        // 配套 MOD：工坊页面 Required items 区块（Steam 自己声明的依赖）
+                        depIds.Clear(); depTitles.Clear();
+                        if (reqs != null)
+                            foreach (WsItem rq in reqs)
+                            {
+                                if (rq == null || string.IsNullOrEmpty(rq.Id)) continue;
+                                depIds.Add(rq.Id);
+                                depTitles.Add(string.IsNullOrEmpty(rq.Title) ? rq.Id : rq.Title);
+                            }
                         btnDeps.Visible = depIds.Count > 0;
                         btnDeps.Text = Lang.F("配套 MOD（{0}）", depIds.Count);
                         // 全文里带着新的 time_updated：缓存要按它重判一次，别拿旧译文糊上去。
@@ -1019,8 +1031,8 @@ namespace Installer
         {
             if (depIds.Count == 0) return;
             if (MessageBox.Show(this,
-                Lang.F("正文里提到这些工坊物品，作者可能要求一起安装（{0} 个）：\r\n\r\n{1}\r\n\r\n现在一起下载？",
-                       depIds.Count, string.Join("\r\n", depIds.ToArray())),
+                Lang.F("Steam 工坊页面声明这个 MOD 需要以下配套物品（{0} 个），要一起下载吗？\r\n\r\n{1}",
+                       depIds.Count, string.Join("\r\n", depTitles.ToArray())),
                 Lang.S("配套 MOD"), MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
             string dir;
             try { dir = Workshop.DestDir(); }
