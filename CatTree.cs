@@ -3235,6 +3235,8 @@ namespace Installer
                 return;
             }
             lv.Visible = true;
+            // 骨架屏要跟着这次可见状态重排一次，否则 PrepareRecommend 里那次布局还按"列表不可见"算，推荐区被藏起来了
+            if (recPanel != null && recKey.Length > 0) LayoutSelf();
             Slot s = Current;
             // 分支页也给「指定位置…」：放进分支的包多半是认不出位置的，
             // 在这里选中它就能直接告诉程序「它替换的是什么」，不用再绕回未归类页。
@@ -6709,6 +6711,8 @@ namespace Installer
         private readonly List<Image> pics = new List<Image>();
         private bool skeleton;
         private int hover = -1;
+        private readonly Timer shimmer = new Timer();     // 骨架屏扫光：30ms 一动
+        private int shimmerX;
 
         public event Action<WsItem> Pick;
         public event Action<WsItem> HoverItem;
@@ -6724,6 +6728,13 @@ namespace Installer
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
                    | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
             BackColor = Theme.Surface;
+            shimmer.Interval = 33;
+            shimmer.Tick += delegate
+            {
+                shimmerX += Dpi.S(18);
+                if (shimmerX > Width + Dpi.S(240)) shimmerX = -Dpi.S(240);
+                Invalidate();
+            };
         }
 
         private int Cols { get { int w = Width - Pad * 2 + G; return Math.Max(0, w / (CW + G)); } }
@@ -6735,6 +6746,8 @@ namespace Installer
             skeleton = true; hover = -1;
             foreach (Image p in pics) { try { p.Dispose(); } catch { } }
             pics.Clear(); items.Clear();
+            shimmerX = -Dpi.S(240);
+            if (!shimmer.Enabled) shimmer.Start();
             Invalidate();
         }
 
@@ -6742,6 +6755,7 @@ namespace Installer
         {
             foreach (Image p in pics) { try { p.Dispose(); } catch { } }
             pics.Clear(); items.Clear();
+            if (shimmer.Enabled) shimmer.Stop();
             skeleton = false; hover = -1;
             int n = Math.Min(its.Count, imgs.Count);
             for (int i = 0; i < n; i++) { items.Add(its[i]); pics.Add(imgs[i]); }
@@ -6782,11 +6796,28 @@ namespace Installer
             g.Clear(BackColor);
             if (skeleton)
             {
+                Color baseCol = Theme.IsDark ? Color.FromArgb(44, 48, 54) : Color.FromArgb(232, 236, 242);
                 for (int i = 0; i < Capacity; i++)
                 {
                     Rectangle r = CardRect(i);
-                    using (SolidBrush b = new SolidBrush(Theme.IsDark ? Color.FromArgb(44, 48, 54) : Color.FromArgb(232, 236, 242)))
-                        g.FillRectangle(b, r);
+                    using (SolidBrush b = new SolidBrush(baseCol)) g.FillRectangle(b, r);
+                }
+                // 扫光：一道更亮的斜带从左往右扫过整块骨架，告诉人"在加载"而不是"画坏了"
+                if (Width > 0)
+                {
+                    int bandW = Math.Max(Dpi.S(90), Width / 5);
+                    Rectangle band = new Rectangle(shimmerX, -Dpi.S(40), bandW, Height + Dpi.S(80));
+                    Color bright = Theme.IsDark ? Color.FromArgb(70, 76, 84) : Color.FromArgb(247, 249, 252);
+                    Color clear = Color.FromArgb(0, bright);
+                    using (System.Drawing.Drawing2D.LinearGradientBrush lg = new System.Drawing.Drawing2D.LinearGradientBrush(
+                               band, clear, clear, System.Drawing.Drawing2D.LinearGradientMode.Horizontal))
+                    {
+                        System.Drawing.Drawing2D.ColorBlend cb = new System.Drawing.Drawing2D.ColorBlend(3);
+                        cb.Colors = new Color[] { clear, bright, clear };
+                        cb.Positions = new float[] { 0f, 0.5f, 1f };
+                        lg.InterpolationColors = cb;
+                        g.FillRectangle(lg, band);
+                    }
                 }
                 return;
             }
@@ -6806,6 +6837,12 @@ namespace Installer
                 using (SolidBrush tb = new SolidBrush(Theme.Ink2))
                     g.DrawString(t, Theme.UISmall, tb, new RectangleF(r.X, r.Bottom + 1, r.Width, TH));
             }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { try { shimmer.Stop(); shimmer.Dispose(); } catch { } }
+            base.Dispose(disposing);
         }
 
         protected override void OnMouseMove(MouseEventArgs e)

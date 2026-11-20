@@ -482,21 +482,9 @@ namespace Installer
                 }
                 if (data == null || data.Length < 64)
                 {
-                    ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
-                    req.Method = "GET";
-                    req.UserAgent = Ua;
-                    req.Timeout = 15000;
-                    req.ReadWriteTimeout = 15000;
-                    using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
-                    using (Stream s = r.GetResponseStream())
-                    using (MemoryStream ms = new MemoryStream())
-                    {
-                        byte[] buf = new byte[8192];
-                        int n;
-                        while ((n = s.Read(buf, 0, buf.Length)) > 0) ms.Write(buf, 0, n);
-                        data = ms.ToArray();
-                    }
+                    // 走联网层：优选 IP + 并发连接放宽；流式读完再落缓存
+                    data = WsNet.GetBytes(url, Ua, 15000);
+                    if (data == null || data.Length < 64) return null;
                     try
                     {
                         Directory.CreateDirectory(CacheDir);

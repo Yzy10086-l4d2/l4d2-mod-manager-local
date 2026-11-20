@@ -2,7 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Diagnostics;
+using System.Net.Security;
+using System.Net.Sockets;
 using System.Net;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -47,6 +51,175 @@ namespace Installer
     /// 文件夹式的物品（别的游戏居多）file_url 是空的，这类只能走 Steam 客户端订阅，
     /// 所以这里留着 Note 字段把它说清楚，而不是报一个看不懂的错。
     /// </summary>
+    /// <summary>
+    /// 工坊联网层（2026-11-21）：
+    ///   1. 一次性调好 .NET 的全局设置 —— 默认连接数只有 2，封面并发下载会被串成两条线；
+    ///      再把 IE 代理探测关掉（Proxy=null），那一步在有些机器上能卡好几秒。
+    ///   2. Steam 的几个域名先测一遍候选 IP（TCP 443 连一下看谁快），固定用最快的那个发请求，
+    ///      并用 Host 头保留原域名 —— 这就是 LytVpk「优选 IP」的做法，绕开解析到慢/被墙的地址。
+    ///   3. 优选 IP 那次失败就把它拉黑，退回正常域名重试一次，不让「加速」变成「连不上」。
+    /// </summary>
+    internal static class WsNet
+    {
+        static bool tuned;
+        static readonly object gate = new object();
+        static readonly Dictionary<string, string> pinned = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string, bool> skip = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        static readonly string[] PinHosts = new string[]
+        {
+            "steamcommunity.com", "cdn.steamusercontent.com",
+            "images.steamusercontent.com", "api.steampowered.com"
+        };
+
+        public static void Tune()
+        {
+            lock (gate) { if (tuned) return; tuned = true; }
+            try { ServicePointManager.DefaultConnectionLimit = 12; } catch { }
+            try { ServicePointManager.Expect100Continue = false; } catch { }
+            // .NET Framework 没有 ServicePointManager.Proxy；关掉的是默认代理（那一步会去问 IE 设置）
+            try { WebRequest.DefaultWebProxy = null; } catch { }
+            try
+            {
+                SecurityProtocolType t = SecurityProtocolType.Tls12;
+                try { t = t | (SecurityProtocolType)12288; } catch { }
+                ServicePointManager.SecurityProtocol = t;
+            }
+            catch { }
+            try { ServicePointManager.ServerCertificateValidationCallback = CertOk; } catch { }
+            System.Threading.Tasks.Task.Run(delegate
+            {
+                foreach (string h in PinHosts) { try { Dns.GetHostAddresses(h); } catch { } }
+                foreach (string h in PinHosts) { try { Pick(h); } catch { } }
+            });
+        }
+
+        /// <summary>优选 IP 时 URL 换成了 IP，证书名字必然对不上 —— 只对 Steam 那几个域名放行这一种错误。</summary>
+        static bool CertOk(object sender, X509Certificate cert, X509Chain chain, SslPolicyErrors err)
+        {
+            if (err == SslPolicyErrors.None) return true;
+            if ((err & SslPolicyErrors.RemoteCertificateNameMismatch) == 0) return false;
+            try
+            {
+                HttpWebRequest r = sender as HttpWebRequest;
+                return r != null && IsPinHost(r.Host ?? "");
+            }
+            catch { return false; }
+        }
+
+        static bool IsPinHost(string host)
+        {
+            foreach (string h in PinHosts) if (string.Equals(h, host, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        public static string GetString(string url, string ua, int timeoutMs)
+        {
+            byte[] b = GetBytes(url, ua, timeoutMs);
+            return b == null ? null : Encoding.UTF8.GetString(b);
+        }
+
+        public static byte[] GetBytes(string url, string ua, int timeoutMs)
+        {
+            Tune();
+            byte[] first = TryGet(url, ua, timeoutMs, true);
+            if (first != null) return first;
+            return TryGet(url, ua, timeoutMs, false);
+        }
+
+        static byte[] TryGet(string url, string ua, int timeoutMs, bool allowPin)
+        {
+            Uri u = null;
+            try { u = new Uri(url); } catch { }
+            try
+            {
+                string pinnedUrl = null;
+                if (allowPin && u != null)
+                {
+                    string ip = Pick(u.Host);
+                    if (!string.IsNullOrEmpty(ip))
+                    {
+                        UriBuilder ub = new UriBuilder(u);
+                        ub.Host = ip;
+                        pinnedUrl = ub.Uri.AbsoluteUri;
+                    }
+                }
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(pinnedUrl ?? url);
+                if (pinnedUrl != null) req.Host = u.Host;
+                req.Method = "GET";
+                req.UserAgent = ua;
+                req.Timeout = timeoutMs;
+                req.ReadWriteTimeout = timeoutMs;
+                req.KeepAlive = true;
+                try { req.Proxy = null; } catch { }
+                try { req.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate; } catch { }
+                using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
+                using (Stream s = r.GetResponseStream())
+                using (MemoryStream ms = new MemoryStream())
+                {
+                    byte[] buf = new byte[16 * 1024];
+                    int n;
+                    while ((n = s.Read(buf, 0, buf.Length)) > 0) ms.Write(buf, 0, n);
+                    byte[] data = ms.ToArray();
+                    if (data.Length == 0 && pinnedUrl != null) { if (u != null) DropPin(u.Host); return null; }
+                    return data;
+                }
+            }
+            catch
+            {
+                if (allowPin && u != null) DropPin(u.Host);
+                return null;
+            }
+        }
+
+        static string Pick(string host)
+        {
+            if (!IsPinHost(host)) return null;
+            lock (gate) { string ip; if (pinned.TryGetValue(host, out ip)) return ip; if (skip.ContainsKey(host)) return null; }
+            string best = Probe(host);
+            lock (gate) { if (best != null) pinned[host] = best; else skip[host] = true; }
+            if (best != null) { try { Core.Log("INFO", "工坊优选 IP: " + host + " → " + best); } catch { } }
+            return best;
+        }
+
+        static void DropPin(string host)
+        {
+            lock (gate) { pinned.Remove(host); skip[host] = true; }
+            try { Core.Log("WARN", "工坊优选 IP 失败，改用域名: " + host); } catch { }
+        }
+
+        /// <summary>候选 IP 各连一次 443，取毫秒数最小的（最多 4 个，单个上限 700ms）。</summary>
+        static string Probe(string host)
+        {
+            System.Net.IPAddress[] ips;
+            try { ips = Dns.GetHostAddresses(host); } catch { return null; }
+            if (ips == null || ips.Length == 0) return null;
+            int take = Math.Min(ips.Length, 4);
+            int[] ms = new int[take];
+            for (int i = 0; i < take; i++) ms[i] = -1;
+            System.Threading.Tasks.Parallel.For(0, take, delegate(int i) { ms[i] = TcpProbe(ips[i].ToString(), 443, 700); });
+            int best = -1;
+            for (int i = 0; i < take; i++)
+                if (ms[i] >= 0 && (best < 0 || ms[i] < ms[best])) best = i;
+            return best >= 0 ? ips[best].ToString() : null;
+        }
+
+        static int TcpProbe(string ip, int port, int timeoutMs)
+        {
+            try
+            {
+                Stopwatch sw = Stopwatch.StartNew();
+                using (TcpClient c = new TcpClient())
+                {
+                    System.Threading.Tasks.Task t = c.ConnectAsync(ip, port);
+                    if (!t.Wait(timeoutMs)) return -1;
+                    sw.Stop();
+                    return (int)sw.ElapsedMilliseconds;
+                }
+            }
+            catch { return -1; }
+        }
+    }
+
     internal static class Workshop
     {
         public const string AppId = "550";
@@ -96,15 +269,10 @@ namespace Installer
 
         static string Get(string url)
         {
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
-            req.Method = "GET";
-            req.UserAgent = Ua;
-            req.Timeout = 25000;
-            req.ReadWriteTimeout = 25000;
-            using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
-            using (StreamReader sr = new StreamReader(r.GetResponseStream(), Encoding.UTF8))
-                return sr.ReadToEnd();
+            // 走联网层：连接数/代理/协议调好，Steam 域名优选 IP，失败自动退回域名
+            string s = WsNet.GetString(url, Ua, 25000);
+            if (s == null) throw new WebException("工坊请求失败: " + url);
+            return s;
         }
 
         /// <summary>
@@ -271,6 +439,7 @@ namespace Installer
 
         static string Post(string path, string body)
         {
+            WsNet.Tune();                                   // 全局连接/代理设置先调好（POST 不走优选 IP）
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(ApiRoot + path);
             req.Method = "POST";
