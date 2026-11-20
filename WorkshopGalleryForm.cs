@@ -39,6 +39,7 @@ namespace Installer
         private readonly FlatButton btnLang = new FlatButton();   // 原文 / 译文 切换
 
         private readonly ComboBox cboCat = new ComboBox();
+        private bool syncCat;                        // 程序自己改分类选择时，别触发一次搜索
         private readonly TextBox txtQuery = new TextBox();
         private readonly ComboBox cboSort = new ComboBox();
         private readonly FlatButton btnSearch = new FlatButton();
@@ -116,11 +117,13 @@ namespace Installer
 
             cboCat.DropDownStyle = ComboBoxStyle.DropDownList;
             Theme.Dress(cboCat);
-            // 切分类 = 换了一批要看的 MOD，自动刷新（带骨架屏），不用再手动点搜索
+            // 切分类 = 换了一批要看的 MOD，自动刷新（带骨架屏），不用再手动点搜索。
+            // 以前会把分类的搜索词填进搜索框，用户随后再输入自己的词就变成「分类词 + 自己的词」，
+            // 看起来像"只能搜分类里的东西"（2026-11-21 用户反馈）。现在切分类只清空搜索框。
             cboCat.SelectedIndexChanged += delegate
             {
-                GalChoice c0 = cboCat.SelectedItem as GalChoice;
-                if (c0 != null) txtQuery.Text = c0.Query;
+                if (syncCat) return;
+                txtQuery.Text = "";
                 if (ready && !busy) DoSearch(1);
             };
             Controls.Add(cboCat);
@@ -131,14 +134,14 @@ namespace Installer
             txtQuery.KeyDown += delegate(object s, KeyEventArgs e)
             {
                 if (e.KeyCode != Keys.Enter) return;
-                DoSearch(1);
+                SearchFromBox();
                 e.Handled = true;
                 e.SuppressKeyPress = true;
             };
             Controls.Add(txtQuery);
 
             btnSearch.Text = Lang.S("搜索");
-            btnSearch.Click += delegate { DoSearch(1); };
+            btnSearch.Click += delegate { SearchFromBox(); };
             Controls.Add(btnSearch);
 
             cboSort.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -454,6 +457,20 @@ namespace Installer
             if (string.IsNullOrEmpty(q)) return;
             txtQuery.Text = q;
             if (ready && !busy) DoSearch(1);
+        }
+
+        /// <summary>
+        /// 搜索框里打字点搜索 = 全站搜，不受分类下拉限制：先把分类悄悄切回「全部物品」，再按框里的词搜。
+        /// </summary>
+        private void SearchFromBox()
+        {
+            string q = txtQuery.Text.Trim();
+            if (q.Length > 0 && cboCat.SelectedIndex > 0)
+            {
+                syncCat = true;
+                try { cboCat.SelectedIndex = 0; } finally { syncCat = false; }
+            }
+            DoSearch(1);
         }
 
         private void DoSearch(int p)
@@ -1122,6 +1139,9 @@ namespace Installer
         bool IMessageFilter.PreFilterMessage(ref Message m)
         {
             if (m.Msg != WM_MOUSEWHEEL) return false;
+            // 分类/排序下拉展开时滚轮归下拉列表自己：以前会被墙吃掉，列表翻不动、页面反而跟着跑
+            if (cboCat != null && cboCat.DroppedDown) return false;
+            if (cboSort != null && cboSort.DroppedDown) return false;
             if (host == null || !host.Visible || host.IsDisposed) return false;
             try
             {
