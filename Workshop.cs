@@ -2433,10 +2433,12 @@ namespace Installer
                     Annotate(doneFinal);
                     UpdatePickCount();
                     btnStart.Text = "开始下载";
-                    SetStatus((cancelled ? "已停止：" : "完成：") + "新下载 " + okFinal + " 个"
+                    SetStatus((cancelled ? "已停止：" : "完成：") + " 新下载 " + okFinal + " 个"
                             + (skipFinal > 0 ? "，已存在 " + skipFinal + " 个" : "")
                             + (failFinal > 0 ? "，失败 " + failFinal + " 个（原因见状态列）" : "")
-                            + "。关闭窗口后会重扫库。");
+                            + "。");
+                    // 下完立刻把主界面的库/方案树刷新，不用等关窗（用户 2026-11-21 反馈）
+                    if (okFinal > 0) { try { if (owner != null) owner.RefreshAfterImport(); } catch { } }
                 });
             });
             t.IsBackground = true;

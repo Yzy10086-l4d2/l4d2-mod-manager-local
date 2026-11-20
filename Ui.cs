@@ -2358,6 +2358,25 @@ namespace Installer
             try { if (galleryWindow != null && !galleryWindow.IsDisposed) galleryWindow.SetQuery(query); } catch { }
         }
 
+        /// <summary>
+        /// 工坊下载完成后自动刷新：重扫库 → 重建方案树 → 刷新列表/冲突/游戏现状。
+        /// 只重扫，**不动勾选** —— 勾选是用户自己的选择，不能因为一次下载被覆盖。
+        /// </summary>
+        internal void RefreshAfterImport()
+        {
+            try
+            {
+                Core.Log("INFO", "工坊下载完成：自动刷新库与方案树");
+                RescanMods();
+                RefreshConflicts(true);
+                if (treeView != null) { RebuildViews(); treeView.Sync(); }
+                RefreshMods();
+                RefreshGameNow();
+                Core.Log("OK", "自动刷新完成（勾选没动）");
+            }
+            catch (Exception ex) { Core.Log("WARN", "下载后自动刷新失败: " + ex.Message); }
+        }
+
         private void OpenWorkshop()
         {
             // 分类下拉要用方案树的位置表；树还没建的话这里先补上，否则下拉只有「全部物品」

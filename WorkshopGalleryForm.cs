@@ -989,7 +989,9 @@ namespace Installer
                         long sz = 0;
                         try { sz = new FileInfo(dest).Length; } catch { }
                         WorkshopDownloads.Finish(it.Id, true, dest, sz, "");
-                        lblState.Text = "已下载到库里：" + name + "（关窗后在方案树里找它）";
+                        lblState.Text = "已下载到库里：" + name + "（已自动刷新方案树）";
+                        // 下完立刻刷主界面，不用等关窗（用户 2026-11-21 反馈）
+                        try { if (owner != null) owner.RefreshAfterImport(); } catch { }
                     });
                     Core.Log("OK", "画廊：下载 " + it.Id + " → " + dest);
                 }
