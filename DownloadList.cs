@@ -17,6 +17,10 @@ namespace Installer
     internal sealed class DownloadListForm : Form
     {
         private readonly ListView lv = new ListView();
+        private readonly ListView tree = new ListView();       // 左侧分类（大类 / 小分类，带数量）
+        private string filterCat = "";
+        private string filterSub = "";
+        private readonly Dictionary<string, string[]> catOf = new Dictionary<string, string[]>(StringComparer.Ordinal);
         private readonly Label lblEmpty = new Label();
         private readonly Label lblSaveTo = new Label();
         private readonly Label lblDir = new Label();
@@ -90,6 +94,20 @@ namespace Installer
             lv.DoubleClick += delegate { Locate(); };
             lv.SelectedIndexChanged += delegate { UpdateButtons(); };
             Controls.Add(lv);
+
+            // 左侧分类：按"这个 MOD 在方案树里的位置"归档，和工坊首页的分类思路一致
+            tree.View = View.Details;
+            tree.HeaderStyle = ColumnHeaderStyle.None;
+            tree.FullRowSelect = true;
+            tree.MultiSelect = false;
+            tree.HideSelection = false;
+            tree.BorderStyle = BorderStyle.FixedSingle;
+            tree.BackColor = Theme.Surface;
+            tree.ForeColor = Theme.Ink;
+            tree.Font = Theme.UISmall;
+            tree.Columns.Add(Lang.S("分类"), S(160));
+            tree.SelectedIndexChanged += delegate { PickCatFilter(); };
+            Controls.Add(tree);
 
             lblEmpty.Font = Theme.UISmall;
             lblEmpty.ForeColor = Theme.Ink3;
@@ -171,13 +189,16 @@ namespace Installer
             lblSaveTo.SetBounds(m, y + S(6), S(48), S(18));
             lblDir.SetBounds(m + S(50), y + S(6), Math.Max(S(80), bx - (m + S(50))), S(18));
 
-            // 中间列表
+            // 中间：左分类树 + 右记录（分类和工坊首页同一套：大类 → 小分类）
             int top = S(54);
             int bottom = S(100);
             int listH = Math.Max(S(120), H - top - bottom);
-            int listW = W - 2 * m;
-            lv.SetBounds(m, top, listW, listH);
-            lblEmpty.SetBounds(m, top, listW, listH);
+            int treeW = Math.Max(S(150), Math.Min(S(210), (W - 2 * m) / 4));
+            tree.SetBounds(m, top, treeW, listH);
+            int lx = m + treeW + S(8);
+            int listW = Math.Max(S(240), W - m - lx);
+            lv.SetBounds(lx, top, listW, listH);
+            lblEmpty.SetBounds(lx, top, listW, listH);
 
             // 名称列吃掉剩余宽度，其余三列定宽 —— 窗口拉宽时不该只在右边留一条空白
             // 注意：构造里设置 ClientSize 就会触发 OnResize，那时列还没加，得先判个数
@@ -226,12 +247,26 @@ namespace Installer
             string keep = Selected() != null ? Selected().Id : "";
 
             List<WsDownload> all = WorkshopDownloads.All();
+            catOf.Clear();
+            foreach (WsDownload d0 in all) catOf[d0.Id] = CatOf(d0);
+
+            FillTree(all);
+
+            List<WsDownload> shownList = new List<WsDownload>();
+            foreach (WsDownload d0 in all)
+            {
+                string[] cs = catOf[d0.Id];
+                if (filterCat.Length > 0 && cs[0] != filterCat) continue;
+                if (filterSub.Length > 0 && cs[1] != filterSub) continue;
+                shownList.Add(d0);
+            }
+
             lv.BeginUpdate();
             lv.Items.Clear();
             int keepIdx = -1;
-            for (int i = 0; i < all.Count; i++)
+            for (int i = 0; i < shownList.Count; i++)
             {
-                WsDownload d = all[i];
+                WsDownload d = shownList[i];
                 ListViewItem li = new ListViewItem(d.Title.Length > 0 ? d.Title : ("workshop_" + d.Id));
                 li.SubItems.Add(d.SizeText);
                 li.SubItems.Add(d.StateText);
@@ -250,13 +285,123 @@ namespace Installer
                 lv.Items[keepIdx].Focused = true;
             }
 
-            bool empty = all.Count == 0;
+            bool empty = shownList.Count == 0;
             lv.Visible = true;
             lblEmpty.Visible = empty;
             if (empty) lblEmpty.BringToFront();
 
             UpdateButtons();
             UpdateFooterCount(all);
+        }
+
+        /// <summary>记录属于方案树的哪个位置：按落盘文件名和当前库对上；对不上算「未归类」。</summary>
+        private string[] CatOf(WsDownload d)
+        {
+            try
+            {
+                string fn = d.Path.Length > 0 ? Path.GetFileName(d.Path) : "";
+                if (fn.Length > 0)
+                {
+                    foreach (ModGroup g in Catalog.GroupByKey.Values)
+                    {
+                        foreach (ModItem p in g.Parts)
+                        {
+                            if (p == null || string.IsNullOrEmpty(p.FullPath)) continue;
+                            if (!string.Equals(Path.GetFileName(p.FullPath), fn, StringComparison.OrdinalIgnoreCase)) continue;
+                            return new string[] { g.Cat ?? "", g.Sub ?? "" };
+                        }
+                    }
+                }
+            }
+            catch { }
+            return new string[] { Lang.S("未归类"), "" };
+        }
+
+        /// <summary>
+        /// 左树：全部 → 各「大类」（加粗） → 各「小分类」（缩进）。
+        /// 数量是"这个分类下有多少条下载记录"，空分类不列，免得一屏全是 0。
+        /// </summary>
+        private void FillTree(List<WsDownload> all)
+        {
+            string keepCat = filterCat, keepSub = filterSub;
+            buildingTree = true;
+            tree.BeginUpdate();
+            tree.Items.Clear();
+
+            ListViewItem root = new ListViewItem(Lang.S("全部下载") + "  (" + all.Count + ")");
+            root.Tag = new string[] { "", "" };
+            root.Font = Theme.UIBold;
+            tree.Items.Add(root);
+
+            Dictionary<string, int> catCount = new Dictionary<string, int>(StringComparer.Ordinal);
+            Dictionary<string, Dictionary<string, int>> subCount = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
+            foreach (WsDownload d in all)
+            {
+                string[] cs = catOf.ContainsKey(d.Id) ? catOf[d.Id] : new string[] { Lang.S("未归类"), "" };
+                int n;
+                catCount.TryGetValue(cs[0], out n);
+                catCount[cs[0]] = n + 1;
+                if (cs[1].Length > 0)
+                {
+                    Dictionary<string, int> m2;
+                    if (!subCount.TryGetValue(cs[0], out m2)) { m2 = new Dictionary<string, int>(StringComparer.Ordinal); subCount[cs[0]] = m2; }
+                    m2.TryGetValue(cs[1], out n);
+                    m2[cs[1]] = n + 1;
+                }
+            }
+
+            foreach (KeyValuePair<string, int> kv in catCount)
+            {
+                ListViewItem ci = new ListViewItem(kv.Key + "  (" + kv.Value + ")");
+                ci.Tag = new string[] { kv.Key, "" };
+                ci.Font = Theme.UIBold;
+                tree.Items.Add(ci);
+                Dictionary<string, int> m2;
+                if (!subCount.TryGetValue(kv.Key, out m2)) continue;
+                foreach (KeyValuePair<string, int> sv in m2)
+                {
+                    ListViewItem si = new ListViewItem("    " + sv.Key + "  (" + sv.Value + ")");
+                    si.Tag = new string[] { kv.Key, sv.Key };
+                    si.ForeColor = Theme.Ink2;
+                    tree.Items.Add(si);
+                }
+            }
+
+            // 恢复之前的选中项（刷新不该把筛选弹回全部）
+            tree.Items[0].Selected = true;
+            foreach (ListViewItem it in tree.Items)
+            {
+                string[] cs = it.Tag as string[];
+                if (cs == null) continue;
+                if (cs[0] == keepCat && cs[1] == keepSub) { it.Selected = true; it.Focused = true; break; }
+            }
+            tree.EndUpdate();
+            buildingTree = false;
+        }
+
+        private bool buildingTree;
+
+        /// <summary>自检探针：左树/右表/底部按钮有没有互相压。</summary>
+        internal string LayoutProbe()
+        {
+            try
+            {
+                return "tree=" + tree.Bounds + " lv=" + lv.Bounds
+                    + " overlapTreeLv=" + (tree.Right > lv.Left)
+                    + " btnDeleteRight=" + btnDelete.Right + " btnClearLeft=" + btnClear.Left
+                    + " btnOverlap=" + (btnDelete.Right > btnClear.Left)
+                    + " treeItems=" + tree.Items.Count;
+            }
+            catch (Exception ex) { return "ERR " + ex.Message; }
+        }
+
+        private void PickCatFilter()
+        {
+            if (buildingTree) return;
+            string[] cs = tree.SelectedItems.Count == 0 ? null : tree.SelectedItems[0].Tag as string[];
+            filterCat = cs == null ? "" : (cs[0] ?? "");
+            filterSub = cs == null ? "" : (cs[1] ?? "");
+            RefreshList();
         }
 
         private void UpdateFooterCount(List<WsDownload> all)

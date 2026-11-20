@@ -2307,6 +2307,7 @@ namespace Installer
                 Application.DoEvents();
                 Application.DoEvents();
                 Shot(f, "downloads-real");      // 真实记录（有就显示，没有就是空态）
+                Core.Log("INFO", "DOWNSHOT 探针 " + f.LayoutProbe());
                 f.ShowEmptyForTest();
                 Application.DoEvents();
                 Shot(f, "downloads-empty");

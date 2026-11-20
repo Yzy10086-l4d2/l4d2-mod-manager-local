@@ -114,31 +114,37 @@ namespace Installer
             return n;
         }
 
-        /// <summary>包内图优先；包里没有再看同目录同名的工坊配图。</summary>
+        /// <summary>
+        /// 预览图优先用**工坊页那张**（下载时存成同名图片），包内自带的 addonimage 只当备用。
+        /// 原因：作者打包进 vpk 的图常是旧图/低分辨率/没更新，工坊页那张才是最新最准的（用户 2026-11-21 明确）。
+        /// </summary>
         private static byte[] LoadRaw(string vpkPath)
         {
             try
             {
-                byte[] b = Vpk.ReadAddonImage(vpkPath);
-                if (b != null) return b;
+                string folder = Path.GetDirectoryName(vpkPath);
+                string stem = Path.GetFileNameWithoutExtension(vpkPath);
+                if (folder != null && stem != null)
+                {
+                    // 工坊的图和 vpk 同名不同扩展，就放在同一层
+                    string[] exts = new string[] { ".jpg", ".jpeg", ".png", ".gif" };
+                    foreach (string ext in exts)
+                    {
+                        string p = Path.Combine(folder, stem + ext);
+                        if (!File.Exists(p)) continue;
+                        FileInfo fi = new FileInfo(p);
+                        if (fi.Length <= 0 || fi.Length > 16 * 1024 * 1024) continue;
+                        return File.ReadAllBytes(p);
+                    }
+                }
             }
             catch { }
 
+            // 备用：vpk 里打包的 addonimage
             try
             {
-                string folder = Path.GetDirectoryName(vpkPath);
-                string stem = Path.GetFileNameWithoutExtension(vpkPath);
-                if (folder == null || stem == null) return null;
-                // 工坊的图和 vpk 同名不同扩展，就放在同一层
-                string[] exts = new string[] { ".jpg", ".jpeg", ".png", ".gif" };
-                foreach (string ext in exts)
-                {
-                    string p = Path.Combine(folder, stem + ext);
-                    if (!File.Exists(p)) continue;
-                    FileInfo fi = new FileInfo(p);
-                    if (fi.Length <= 0 || fi.Length > 16 * 1024 * 1024) continue;
-                    return File.ReadAllBytes(p);
-                }
+                byte[] b = Vpk.ReadAddonImage(vpkPath);
+                if (b != null) return b;
             }
             catch { }
             return null;
@@ -153,7 +159,7 @@ namespace Installer
         {
             // 路径 + 大小 + 修改时间 一起进哈希：同名包被替换会换 key
             // v2：缩略图尺寸变了，键里带版本，别让旧的 320×180 缓存继续被用（会一直是糊的）
-            string s = "v2|" + ThumbW + "x" + ThumbH + "|" + path.ToLowerInvariant() + "|" + size.ToString() + "|" + ticks.ToString();
+            string s = "v3|" + ThumbW + "x" + ThumbH + "|" + path.ToLowerInvariant() + "|" + size.ToString() + "|" + ticks.ToString();
             using (System.Security.Cryptography.MD5 md5 = System.Security.Cryptography.MD5.Create())
             {
                 byte[] h = md5.ComputeHash(Encoding.UTF8.GetBytes(s));
