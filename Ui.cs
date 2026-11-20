@@ -46,7 +46,10 @@ namespace Installer
         // 原来是 116，按钮下面空出 68px，「下巴」明显偏厚；收到 76 之后按钮行和状态栏只隔 12px。
         // 底部动作区高度。曾经试过「没有一键还原就收到 56」——实测按钮被挤到窗口边缘、
         // 状态字被切掉，比原来更糟，已回退（2026-11-19）。要动这块得整块重排，不是改一个数。
-        private const int BottomBarH = 30;   // 2026-11-19 选方案 B：底部只留一行状态，「替换此方案」移到顶栏
+        // 2026-11-21：整条底栏撤掉（窗口底下那条"下巴"）。内容区一直长到窗口下沿，
+        // 状态文字 + 刷新按钮并进右栏页脚那一行，不再单独占一条横带。
+        private const int BottomBarH = 0;
+        private const int StatusRowH = 26;   // 右栏页脚：状态在左，刷新在右
         // 方案标记：当前下拉里那套方案包含哪些文件，用来在列表里一眼看出「这条属不属于方案」
         private Label lblScheme;
         private readonly HashSet<string> schemeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -430,8 +433,12 @@ namespace Installer
                 using (Pen p2 = new Pen(Color.FromArgb(a, 0, 0, 0))) g.DrawLine(p2, 0, top + i, W, top + i);
             }
 
-            int bottom = H - Dpi.S(BottomBarH);
-            using (Pen pen = new Pen(Theme.Line)) g.DrawLine(pen, 0, bottom, W, bottom);
+            // 底栏撤掉以后就不画那条横线了（BottomBarH=0 时它落在窗口最下沿，等于白画）
+            if (BottomBarH > 0)
+            {
+                int bottom = H - Dpi.S(BottomBarH);
+                using (Pen pen = new Pen(Theme.Line)) g.DrawLine(pen, 0, bottom, W, bottom);
+            }
         }
 
         private void BuildUi()
@@ -3545,9 +3552,19 @@ namespace Installer
             if (gMod != null && gMod.Parent == this)
                 gMod.Height = Math.Max(Dpi.S(160), top - gMod.Top);
             if (btnRestore != null) btnRestore.Top = top;
-            if (bar != null) bar.Top = top + Dpi.S(12);
-            if (btnCancel != null) btnCancel.Top = top + Dpi.S(6);
-            if (lblStatus != null) lblStatus.Top = physH - Dpi.S(34);   // 留 6px 余量，别贴着窗口下沿
+            // 进度条 / 停止：装在跑的时候临时占用页脚那一行
+            if (bar != null) bar.Top = top - Dpi.S(StatusRowH) + Dpi.S(7);
+            if (btnCancel != null) btnCancel.Top = top - Dpi.S(StatusRowH) + Dpi.S(1);
+            // 状态行 + 刷新按钮：钉在右栏页脚（贴窗口底边），不再单独占一条底栏
+            if (lblStatus != null)
+            {
+                int left = gMod != null ? gMod.Left + Dpi.S(12) : Dpi.S(Theme.M);
+                int wide = gMod != null ? gMod.Width - Dpi.S(24) - Dpi.S(88) : ClientSize.Width - Dpi.S(2 * Theme.M);
+                lblStatus.SetBounds(left, top - Dpi.S(StatusRowH), wide, Dpi.S(StatusRowH - 8));
+            }
+            if (btnRefreshLib != null && gMod != null)
+                btnRefreshLib.SetBounds(gMod.Left + gMod.Width - Dpi.S(96) - Dpi.S(12),
+                                        top - Dpi.S(StatusRowH), Dpi.S(96), Dpi.S(StatusRowH - 2));
         }
 
         private void ApplyResponsive()
@@ -3594,8 +3611,9 @@ namespace Installer
                 gMod.Top = Dpi.S(56);
                 gMod.Height = Dpi.S(modH);
                 viewHost.Top = Dpi.S(118);
-                viewHost.Height = Dpi.S(Math.Max(80, modH - 118 - 74));
-                lblConflict.Top = Dpi.S(modH - 40);
+                // 页脚只留 StatusRowH：原来底下那 74px 空白让给列表，内容一路长下来
+                viewHost.Height = Dpi.S(Math.Max(80, modH - 118 - 40));
+                lblConflict.Top = Dpi.S(modH - 66);
                 // 左栏纵向：安装选项搬进设置后，顶上那张卡没了 —— 切换按钮和「游戏现状」直接贴顶，
                 // 把原来空出来的半屏交给现状卡（它自己会按高度铺分类分布）。
                 int infoTop = H - BottomBarH - 24;
@@ -3655,9 +3673,9 @@ namespace Installer
                 btnInstall.Top = Dpi.S(16);
                 btnInstall.Left = Dpi.S(W - Theme.M - 132);
                 btnRestore.Top = Dpi.S(H - BottomBarH);
-                bar.Top = Dpi.S(H - BottomBarH + 12);
-                btnCancel.Top = Dpi.S(H - BottomBarH + 6);
-                lblStatus.Top = Dpi.S(H - 28);
+                bar.Top = Dpi.S(H - StatusRowH + 7);
+                btnCancel.Top = Dpi.S(H - StatusRowH + 1);
+                lblStatus.Top = Dpi.S(H - StatusRowH);
                 if (lblLibInfo != null)
                 {
                     lblLibInfo.SetBounds(Dpi.S(Theme.M + 8), Dpi.S(infoTop), Dpi.S(leftW - 16), Dpi.S(18));
@@ -3763,11 +3781,18 @@ namespace Installer
                 if (gMod.Left + gMod.Width > W) { bad++; Core.Log("FAIL", tag + "右栏超出窗口"); }
                 // 右栏底边必须停在按钮行上面。这一条专门抓「窗口变矮 / 高 DPI 下右栏一路长到底，
                 // 把开始安装那排整块盖住」——盖住之后按钮看得见文字、点不中，或者干脆整排消失。
-                if (gMod.Top + gMod.Height > lblStatus.Top)
+                // 底栏撤掉后右栏可以长到窗口下沿；但不许越过窗口，也不许列表压进页脚那一行
+                if (gMod.Top + gMod.Height > ClientSize.Height + 1)
                 {
                     bad++;
                     Core.Log("FAIL", tag + "右栏底边 " + (gMod.Top + gMod.Height)
-                        + "px 压到底栏状态行 " + lblStatus.Top + "px");
+                        + "px 越过窗口下沿（客户区高 " + ClientSize.Height + "px）");
+                }
+                if (gMod.Top + viewHost.Top + viewHost.Height > lblStatus.Top + Dpi.S(2))
+                {
+                    bad++;
+                    Core.Log("FAIL", tag + "候选列表压进页脚：列表底 "
+                        + (gMod.Top + viewHost.Top + viewHost.Height) + "px / 页脚顶 " + lblStatus.Top + "px");
                 }
                 if (viewHost.Width <= 0) { bad++; Core.Log("FAIL", tag + "台面宽度算成 0"); }
                 if (txtLog.Width <= 0) { bad++; Core.Log("FAIL", tag + "日志框宽度算成 0"); }
