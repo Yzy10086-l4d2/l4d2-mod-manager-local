@@ -1114,6 +1114,7 @@ namespace Installer
                     string note = Workshop.LastDownloadNote;
                     string rn = Workshop.RenameToAddonTitle(dest);
                     if (rn != null) dest = Path.Combine(dir, rn);
+                    Workshop.SavePreview(it, dest);                    // 库里的封面靠它（包里没有 addonimage 也能看）
                     string name = Path.GetFileName(dest);
                     Workshop.RememberDownload(it.Id, name);          // 记 id→文件名，下次打开画廊卡片直接标「已下载」
                     Ui(delegate()

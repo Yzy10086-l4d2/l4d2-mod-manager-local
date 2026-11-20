@@ -440,6 +440,7 @@ namespace Installer
                     if (Workshop.LastDownloadNote.Length > 0) SetMsg(Workshop.LastDownloadNote);
                     string rn = Workshop.RenameToAddonTitle(dest);
                     if (rn != null) dest = Path.Combine(dir, rn);
+                    Workshop.SavePreview(it, dest);
                     Workshop.RememberDownload(d.Id, Path.GetFileName(dest));
                     long size = 0;
                     try { size = new FileInfo(dest).Length; } catch { }

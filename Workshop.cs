@@ -1026,6 +1026,30 @@ namespace Installer
         }
 
         /// <summary>
+        /// 把工坊的预览图存到 MOD 旁边（同目录同名的 .jpg/.png）。
+        /// 库里的封面优先读包内 addonimage，包里没有就找同名图片 —— 下载时存一份，没打包封面图的作者也能有预览。
+        /// </summary>
+        public static void SavePreview(WsItem it, string savedPath)
+        {
+            if (it == null || string.IsNullOrEmpty(it.Preview) || string.IsNullOrEmpty(savedPath)) return;
+            try
+            {
+                string dir = Path.GetDirectoryName(savedPath);
+                string stem = Path.GetFileNameWithoutExtension(savedPath);
+                if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(stem)) return;
+                string low = it.Preview.ToLowerInvariant();
+                string ext = low.Contains(".png") ? ".png" : (low.Contains(".gif") ? ".gif" : ".jpg");
+                string dst = Path.Combine(dir, stem + ext);
+                if (File.Exists(dst) && new FileInfo(dst).Length > 1024) return;     // 已经在（重下同一份）就不重复拉
+                byte[] b = WsNet.GetBytes(it.Preview, Ua, 15000);
+                if (b == null || b.Length < 64) return;
+                File.WriteAllBytes(dst, b);
+                Core.Log("OK", "工坊：预览图已保存 " + Path.GetFileName(dst));
+            }
+            catch (Exception ex) { Core.Log("WARN", "工坊：预览图保存失败 " + ex.Message); }
+        }
+
+        /// <summary>
         /// 给下载下来的 vpk 起名。用标题而不是 ID：库里按名字浏览，一串数字没法看。
         /// 非法字符换成空格，过长截断，全空时退回 ID。
         /// </summary>
@@ -1071,6 +1095,8 @@ namespace Installer
 
                 string dir = Path.GetDirectoryName(dest);
                 string cand = Path.Combine(dir, want);
+                // 改名时把同名预览图（.jpg/.png/.gif）一起带走，不然封面会挂在旧文件名上
+                string oldStem = Path.GetFileNameWithoutExtension(dest);
                 if (File.Exists(cand))
                 {
                     string stem = Path.GetFileNameWithoutExtension(want);
@@ -1081,6 +1107,15 @@ namespace Installer
                     }
                 }
                 File.Move(dest, cand);
+                // 同名预览图一起改名（.jpg/.jpeg/.png/.gif），不然封面还挂在旧文件名上
+                string newStem = Path.GetFileNameWithoutExtension(cand);
+                foreach (string e0 in new string[] { ".jpg", ".jpeg", ".png", ".gif" })
+                {
+                    string a = Path.Combine(dir, oldStem + e0);
+                    if (!File.Exists(a)) continue;
+                    string b2 = Path.Combine(dir, newStem + e0);
+                    try { if (File.Exists(b2)) File.Delete(b2); File.Move(a, b2); } catch { }
+                }
                 return Path.GetFileName(cand);
             }
             catch { return null; }
@@ -1432,6 +1467,15 @@ namespace Installer
                 else Core.Log("INFO", "WSNET 没改名（addoninfo 没有标题或名字一致），保留「" + Path.GetFileName(tmp) + "」");
                 string gone = File.Exists(tmp) ? Path.GetFileName(tmp) : rn;
                 if (gone != null) Core.Log("INFO", "WSNET 最终文件名「" + gone + "」");
+                // 顺手验一遍预览图落盘（库里没打包 addonimage 时，封面就靠这张同名图）
+                string finalPath = rn != null ? Path.Combine(Path.GetDirectoryName(tmp), rn) : tmp;
+                SavePreview(it, finalPath);
+                string fs0 = Path.GetFileNameWithoutExtension(finalPath);
+                string side = null;
+                foreach (string e0 in new string[] { ".jpg", ".jpeg", ".png", ".gif" })
+                { string cand = Path.Combine(Path.GetDirectoryName(finalPath), fs0 + e0); if (File.Exists(cand)) { side = cand; break; } }
+                if (side != null) Core.Log("INFO", "WSNET 预览图已保存 " + new FileInfo(side).Length + " 字节");
+                else Core.Log("WARN", "WSNET 预览图没存下来");
             }
             catch (Exception ex)
             {
@@ -1443,6 +1487,9 @@ namespace Installer
                 try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
                 try { if (File.Exists(tmp + ".part")) File.Delete(tmp + ".part"); } catch { }
                 try { if (rn != null) File.Delete(Path.Combine(Path.GetDirectoryName(tmp), rn)); } catch { }
+                try { string fs1 = Path.GetFileNameWithoutExtension(rn != null ? Path.Combine(Path.GetDirectoryName(tmp), rn) : tmp);
+                      foreach (string e0 in new string[] { ".jpg", ".jpeg", ".png", ".gif" })
+                      { string cand = Path.Combine(Path.GetDirectoryName(tmp), fs1 + e0); if (File.Exists(cand)) File.Delete(cand); } } catch { }
             }
             return bad;
         }
@@ -2501,6 +2548,7 @@ namespace Installer
                                 + "（游戏内名，工坊标题是「" + Clip(it.Title, 40) + "」）");
                             dest = Path.Combine(dir, rn);
                         }
+                        Workshop.SavePreview(it, dest);
                         it.SavedAs = Path.GetFileName(dest);
                         Workshop.RememberDownload(it.Id, it.SavedAs);
                         {
