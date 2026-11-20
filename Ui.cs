@@ -747,13 +747,13 @@ namespace Installer
             btnRestore.Visible = false;
             tips.SetToolTip(btnRestore, Lang.S("危险操作：删掉装进游戏的文件。执行前会再次确认。\r\n故意放在最左下角，离「替换为当前设定」最远的地方。"));
 
-            // 快捷刷新：只重扫 MOD 库（库里新加 / 删掉的 vpk 立刻出现），勾选一条都不动。
-            // 和左栏的「刷新游戏现状」分开 —— 那个会按 addonlist 把勾选盖成游戏里的状态，用户只是想看新文件时不能那么干。
+            // 快捷刷新 = 「刷新游戏现状」那个动作，常驻底栏，省得展开左栏去找。
+            // 一套逻辑两个入口，不另写一份：重扫库 + 重读 addonlist + 勾选对齐游戏现状。
             btnRefreshLib = new FlatButton(); btnRefreshLib.Soft = true;
-            btnRefreshLib.Text = Lang.S("刷新库");
+            btnRefreshLib.Text = Lang.S("刷新");
             btnRefreshLib.SetBounds(Theme.M, CH - BottomBarH, 96, Theme.HP);
-            btnRefreshLib.Click += delegate { DoRefreshLibrary(); };
-            tips.SetToolTip(btnRefreshLib, Lang.S("只重扫 MOD 库：新加或删掉的 vpk 立刻出现在左边的树里。\r\n勾选一条都不动，也不碰游戏目录。"));
+            btnRefreshLib.Click += delegate { DoRefreshGame(); };
+            tips.SetToolTip(btnRefreshLib, Lang.S("刷新游戏现状：重扫 MOD 库 + 重读 addons 与 addonlist.txt，\r\n勾选对齐成游戏里实际开着的那些。只读，不动游戏文件。"));
             Controls.Add(btnRefreshLib);
 
             // 进度条和「停止剩余」跟着让位：起点从还原按钮右边开始
@@ -1900,33 +1900,10 @@ namespace Installer
         }
 
         /// <summary>「刷新」：游戏外面被动过（工坊订阅、手拷 vpk、游戏里调过开关）时重读一遍。</summary>
-        /// <summary>
-        /// 只重扫 MOD 库：新加 / 删掉的 vpk 立刻进树、进列表，勾选一条都不动。
-        /// 「刷新游戏现状」会按 addonlist 把勾选覆盖成游戏里的状态，两种刷新别混用。
-        /// </summary>
-        internal void DoRefreshLibrary()
-        {
-            if (scanning) { SetStatus("正在扫库，稍等一下"); return; }
-            btnRefreshLib.Enabled = false;
-            try
-            {
-                Core.Log("INFO", "刷新库：只重扫 MOD 库，不动勾选");
-                RescanMods();
-                RefreshConflicts(true);
-                if (treeView != null) treeView.Sync();
-                RefreshMods();
-                RefreshGameNow();
-                Core.Log("OK", "刷新库完成，勾选没动");
-            }
-            finally
-            {
-                btnRefreshLib.Enabled = true;
-            }
-        }
-
         private void DoRefreshGame()
         {
             if (scanning) { SetStatus("正在扫库，稍等一下"); return; }
+            if (btnRefreshLib != null) btnRefreshLib.Enabled = false;
             btnNowRefresh.Enabled = false;
             try
             {
@@ -1939,6 +1916,7 @@ namespace Installer
             }
             finally
             {
+                if (btnRefreshLib != null) btnRefreshLib.Enabled = true;
                 btnNowRefresh.Enabled = true;
             }
             RefreshGameNow();
