@@ -1270,6 +1270,7 @@ namespace Installer
                 SyncPicks();
                 UpdateSchemeLabel();
                 UpdateSel();
+                SaveChecks();
                 return;
             }
 
@@ -1295,6 +1296,18 @@ namespace Installer
             SyncPicks();
             UpdateSchemeLabel();
             UpdateSel();
+            SaveChecks();
+        }
+
+        /// <summary>
+        /// 勾选清单写进配置，立刻落盘。
+        /// 不落盘的话重开程序会回到「默认部件」—— 用户 2026-11-21 实测：知更鸟那套有两个 vpk，
+        /// 挑完其中一个、关掉再开，选择又变回默认那个。
+        /// </summary>
+        private void SaveChecks()
+        {
+            Core.Cfg.Mods = new List<string>(checkedKeys);
+            Core.SaveConfig();
         }
 
         /// 方案树右边那张候选表用的菜单：只留对「一个位置挑一个 MOD」有用的事。
@@ -2927,6 +2940,7 @@ namespace Installer
                 foreach (ModItem p in g.Parts) checkedKeys.Remove(p.Key);
                 foreach (ModItem p in f.Result) checkedKeys.Add(p.Key);
             }
+            SaveChecks();
             RefreshMods();
             if (treeView != null && treeView.SlotCount > 0) treeView.Sync();   // 树上的状态点、右侧明细一起对齐
         }
