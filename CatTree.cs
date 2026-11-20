@@ -4720,10 +4720,10 @@ namespace Installer
 
                     int nx = bx + 30;
                     int nameW = 86;
-                    // 「步枪」小分类下又有个位置叫「步枪」= 认不出具体型号的那一堆，改个说法免得看着像重复。
-                    // 空位不套这条：空位本来就叫得准（手枪 / 近战武器），改成「未分型号」反而看不懂。
-                    // 平台那一栏只有一个位置，名字本来就叫「平台」：别套「未分型号」，那是给枪种泛称用的。
-                    string showName = (s.Name == s.Sub && !s.Empty && s.Cat != "平台") ? Lang.S("未分型号") : Lang.S(s.Name);
+                    // 位置名一律用方案表里的名字，不随 MOD 内容变。
+                    // 以前「位置名 == 小分类名 且里面装了 MOD」会改显示成「未分型号」，
+                    // 结果同一个位置空着叫「手枪」、装了包叫「未分型号」—— 系统自带的树名不该这么被改（用户 2026-11-21 反馈）。
+                    string showName = Lang.S(s.Name);
                     // 空位的名字压暗一档：一眼分得出「这里还缺 MOD」和「这里有包没选」
                     TextRenderer.DrawText(g, showName, sel ? Theme.UIBold : Theme.UI,
                         new Rectangle(nx, y, nameW, RowH), s.Empty ? Theme.Ink3 : Theme.Ink,
