@@ -784,12 +784,40 @@ namespace Installer
         /// （2026-11-21 用户指出：正文提取不对）。页面上有 author 设过的依赖才会出现这个区块。
         /// 只用于提示和可选批量下载，抓不到就返回空。
         /// </summary>
+        static readonly Dictionary<string, List<WsItem>> reqCache = new Dictionary<string, List<WsItem>>(StringComparer.Ordinal);
+
+        /// <summary>抓详情页：WsNet 的优选 IP 偶尔连不上，这里再退一次最朴素的请求。</summary>
+        static string FetchItemPage(string id)
+        {
+            string url = "https://steamcommunity.com/sharedfiles/filedetails/?id=" + id;
+            string h = null;
+            try { h = WsNet.GetString(url, Ua, 20000); } catch { }
+            if (!string.IsNullOrEmpty(h) && h.Length > 200) return h;
+            try
+            {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
+                req.UserAgent = Ua;
+                req.Timeout = 20000;
+                req.ReadWriteTimeout = 20000;
+                using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
+                using (StreamReader sr = new StreamReader(r.GetResponseStream(), Encoding.UTF8))
+                    return sr.ReadToEnd();
+            }
+            catch { return null; }
+        }
+
         public static List<WsItem> RequiredItems(string id)
         {
             List<WsItem> list = new List<WsItem>();
             if (string.IsNullOrEmpty(id)) return list;
+            lock (reqCache) { List<WsItem> c; if (reqCache.TryGetValue(id, out c)) return c; }
             string html = null;
-            try { html = WsNet.GetString("https://steamcommunity.com/sharedfiles/filedetails/?id=" + id, Ua, 20000); } catch { }
+            for (int attempt = 0; attempt < 2 && string.IsNullOrEmpty(html); attempt++)
+            {
+                if (attempt > 0) { try { System.Threading.Thread.Sleep(250); } catch { } }
+                try { html = FetchItemPage(id); } catch { }
+            }
             if (string.IsNullOrEmpty(html)) return list;
             int at = html.IndexOf("requiredItemsContainer", StringComparison.OrdinalIgnoreCase);
             if (at < 0) return list;
@@ -807,6 +835,7 @@ namespace Installer
                 one.Title = t;
                 list.Add(one);
             }
+            lock (reqCache) reqCache[id] = list;
             return list;
         }
 

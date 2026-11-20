@@ -37,7 +37,8 @@ namespace Installer
         private readonly FlatButton btnOpen = new FlatButton();
         private readonly FlatButton btnGet = new FlatButton();
         private readonly FlatButton btnDeps = new FlatButton();      // 配套 MOD（正文里写了工坊链接的）
-        private List<WsItem> depItems = new List<WsItem>();          // 配套 MOD（工坊 Required items）
+        private List<WsItem> depItems = new List<WsItem>();          // 配套 MOD / 合集子项
+        private bool depIsCollection;                                // 这一栏是"合集子项"而不是"配套"
         private readonly FlowLayoutPanel depList = new FlowLayoutPanel();  // 每条可点：进它自己的详情页
         private readonly FlatButton btnLang = new FlatButton();   // 原文 / 译文 切换
 
@@ -860,7 +861,19 @@ namespace Installer
                 // 浏览页只有短介绍 —— 点开时按需补全详情接口（全文/直链），一次调用
                 // 配套 MOD：抓工坊页面的 Required items 区块（和正文无关）
                 List<WsItem> reqs = null;
-                try { reqs = Workshop.RequiredItems(it.Id); } catch { }
+                if (!it.IsCollection) { try { reqs = Workshop.RequiredItems(it.Id); } catch { } }
+                // 合集：把子项列出来（点哪条看哪条），按钮变成"下载合集"
+                List<WsItem> kids = null;
+                if (it.IsCollection)
+                {
+                    try
+                    {
+                        string ctitle;
+                        List<string> cids = Workshop.CollectionChildren(it.Id, out ctitle);
+                        if (cids != null && cids.Count > 0) kids = Workshop.Fetch(cids);
+                    }
+                    catch { }
+                }
                 if (!it.DetailsLoaded && !it.IsCollection)
                 {
                     try
@@ -881,14 +894,6 @@ namespace Installer
                         if (token != detailToken) return;         // 换条目了：计数已被新条目重置，别碰
                         DetailBusy(false);
                         detailClean = WsText.Clean(it.Desc);      // 短介绍换成全文
-                        // 配套 MOD：工坊页面 Required items 区块（Steam 自己声明的依赖）
-                        depItems.Clear();
-                        if (reqs != null)
-                            foreach (WsItem rq in reqs)
-                                if (rq != null && !string.IsNullOrEmpty(rq.Id)) depItems.Add(rq);
-                        RebuildDepList();
-                        btnDeps.Visible = depItems.Count > 0;
-                        btnDeps.Text = Lang.F("配套 MOD（{0}）", depItems.Count);
                         // 全文里带着新的 time_updated：缓存要按它重判一次，别拿旧译文糊上去。
                         // 但如果用户已经自己点过「看原文」，就别替他改回来。
                         detailZh = WsTranslate.ReadCache(it.Id, it.Updated);
@@ -898,6 +903,23 @@ namespace Installer
                         if (it.Url.Length > 0 && !it.IsCollection) btnGet.Enabled = true;
                     });
                 }
+                // 配套 / 合集列表：不管详情是不是已经加载过都要刷（以前塞在"补全文"分支里，二次打开永远不显示）
+                Ui(delegate()
+                {
+                    if (token != detailToken) return;
+                    depIsCollection = it.IsCollection;
+                    depItems.Clear();
+                    List<WsItem> src = it.IsCollection ? kids : reqs;
+                    if (src != null)
+                        foreach (WsItem one in src)
+                            if (one != null && !string.IsNullOrEmpty(one.Id)) depItems.Add(one);
+                    RebuildDepList();
+                    btnDeps.Visible = depItems.Count > 0;
+                    btnDeps.Text = it.IsCollection
+                        ? Lang.F("下载合集（{0}）", depItems.Count)
+                        : Lang.F("配套 MOD（{0}）", depItems.Count);
+                });
+
                 Image img = WsThumb.Load(it.Preview, it.Id, pw * 2, ph * 2);   // 放大上限翻倍，小图也能铺满，Zoom 负责等比
                 Ui(delegate()
                 {
@@ -1102,8 +1124,11 @@ namespace Installer
             }
             if (ids.Count == 0) return;
             if (!alreadyConfirmed && MessageBox.Show(this,
-                Lang.F("Steam 工坊页面声明这个 MOD 需要以下配套物品（{0} 个），要一起下载吗？{1}", ids.Count, names),
-                Lang.S("配套 MOD"), MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
+                depIsCollection
+                    ? Lang.F("这个合集包含 {0} 个子项，要全部下载吗？{1}", ids.Count, names)
+                    : Lang.F("Steam 工坊页面声明这个 MOD 需要以下配套物品（{0} 个），要一起下载吗？{1}", ids.Count, names),
+                depIsCollection ? Lang.S("下载合集") : Lang.S("配套 MOD"),
+                MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
             string dir;
             try { dir = Workshop.DestDir(); }
             catch (Exception ex) { lblState.Text = ex.Message; return; }

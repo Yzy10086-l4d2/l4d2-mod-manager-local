@@ -104,7 +104,8 @@ namespace Installer
             string dumpIdTo = null;      // --dumpid=文件：把识别快照写成基线
             string idCheckTo = null;     // --idcheck=文件：拿当前结果跟基线比，改判就报
             string vpkCheck = null;
-            bool updCheck = false;      // --updatecheck：跑一遍检查更新，只打印结果      // --vpkcheck=文件：单独验一个 vpk 的结构完整性（下载后"残缺"排查用）
+            bool updCheck = false;
+            string reqCheck = null;     // --reqcheck=工坊ID：打印页面 Required items 解析结果      // --updatecheck：跑一遍检查更新，只打印结果      // --vpkcheck=文件：单独验一个 vpk 的结构完整性（下载后"残缺"排查用）
             bool dumpTree = false;
             bool ovDump = false;
             bool recogSelf = false;
@@ -183,6 +184,7 @@ namespace Installer
             else if (a.StartsWith("--idcheck=", StringComparison.OrdinalIgnoreCase)) idCheckTo = a.Substring(10).Trim('"');
             else if (a.StartsWith("--vpkcheck=", StringComparison.OrdinalIgnoreCase)) vpkCheck = a.Substring(11).Trim('"');
             else if (string.Equals(a, "--updatecheck", StringComparison.OrdinalIgnoreCase)) updCheck = true;
+            else if (a.StartsWith("--reqcheck=", StringComparison.OrdinalIgnoreCase)) reqCheck = a.Substring(11).Trim('"');
                 else if (string.Equals(a, "--dumptree", StringComparison.OrdinalIgnoreCase)) dumpTree = true;
                 else if (string.Equals(a, "--ovdump", StringComparison.OrdinalIgnoreCase)) ovDump = true;
                 else if (string.Equals(a, "--recogself", StringComparison.OrdinalIgnoreCase)) recogSelf = true;
@@ -203,7 +205,7 @@ namespace Installer
             // 必须在下面这些分支 return **之前** 置位 —— 它们一样会跑扫描、开界面，一样会改到配置；
             // 以前这行写在所有自检分支后面，等于对它们全部无效。
             Core.SelfTesting = selfTest || uiTest || copyTest || launchSelf || dupSelf
-                            || addonSelf || safeSelf || dumpId || dumpTree || ovDump || recogSelf || plugSelf || plugTry != null || vpkCheck != null || updCheck
+                            || addonSelf || safeSelf || dumpId || dumpTree || ovDump || recogSelf || plugSelf || plugTry != null || vpkCheck != null || updCheck || reqCheck != null
                             || dumpIdTo != null || idCheckTo != null
                             || mapShot || mapSelf || scanRace || layoutSelf || imgSelf || wsSelf || wsNet != null || wsSearch != null;
 
@@ -453,6 +455,13 @@ namespace Installer
                 int bad = Catalog.SelfTestRecognition();
                 Console.WriteLine("recogself failures = " + bad);
                 return bad == 0 ? 0 : 1;
+            }
+            if (reqCheck != null)
+            {
+                System.Collections.Generic.List<WsItem> reqs = Workshop.RequiredItems(reqCheck);
+                Console.WriteLine("reqcheck: " + reqs.Count + " 个");
+                foreach (WsItem rq in reqs) Console.WriteLine("  " + rq.Id + " | " + rq.Title);
+                return 0;
             }
             if (updCheck)
             {
