@@ -2024,6 +2024,10 @@ namespace Installer
             ModItem main = g.Main;
             if (main != null) { g.Subject = main.Subject; g.SubjectLevel = main.SubjectLevel; }
 
+            // 战役素材卷（只有 missions/*.txt、没有 bsp）：名字后面标一句，别和真地图混在一起看不出区别。
+            if (g.Cat == CAT_MAP && (g.Sub ?? "") == "配套素材" && g.Name.IndexOf("战役素材卷") < 0)
+                g.Name = g.Name + "（战役素材卷）";
+
             Groups.Add(g);
             GroupByKey[g.Key] = g;
         }
