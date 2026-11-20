@@ -681,6 +681,35 @@ namespace Installer
 
         // ---------------------------------------------------------- 两个页面之间切换
 
+        /// <summary>
+        /// 回退语义（2026-11-21 用户反馈「回退即关闭」是 bug）：
+        /// 详情页里按 Esc / Alt+← / 鼠标侧键「后退」= 回卡片墙，不能直接把整个窗口关了；
+        /// 卡片墙上按 Esc 才是关窗（那才是 CancelButton 的本意）。
+        /// </summary>
+        protected override bool ProcessDialogKey(Keys keyData)
+        {
+            if (detail != null && detail.Visible)
+            {
+                if (keyData == Keys.Escape || keyData == (Keys.Alt | Keys.Left))
+                {
+                    ShowGallery();
+                    return true;                     // 吃掉，别交给 CancelButton 去关窗
+                }
+            }
+            return base.ProcessDialogKey(keyData);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_XBUTTONUP = 0x020C;
+            if (m.Msg == WM_XBUTTONUP && detail != null && detail.Visible)
+            {
+                int btn = (int)(((long)m.WParam >> 16) & 0xFFFF);
+                if (btn == 1) { ShowGallery(); return; }   // XBUTTON1 = 鼠标侧键「后退」
+            }
+            base.WndProc(ref m);
+        }
+
         private void ShowGallery()
         {
             detail.Visible = false;
