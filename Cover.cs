@@ -19,8 +19,9 @@ namespace Installer
     /// </summary>
     internal static class Cover
     {
-        public const int ThumbW = 320;
-        public const int ThumbH = 180;
+        // 2026-11-21：320×180 在右侧详情里是放大显示的，糊；放到 640×360（16:9 不变）
+        public const int ThumbW = 640;
+        public const int ThumbH = 360;
 
         /// <summary>缓存最多留多久。封面只是加速用的，过期了重新解一次就行。</summary>
         private const int KeepDays = 30;
@@ -151,7 +152,8 @@ namespace Installer
         private static string KeyOf(string path, long size, long ticks)
         {
             // 路径 + 大小 + 修改时间 一起进哈希：同名包被替换会换 key
-            string s = path.ToLowerInvariant() + "|" + size.ToString() + "|" + ticks.ToString();
+            // v2：缩略图尺寸变了，键里带版本，别让旧的 320×180 缓存继续被用（会一直是糊的）
+            string s = "v2|" + ThumbW + "x" + ThumbH + "|" + path.ToLowerInvariant() + "|" + size.ToString() + "|" + ticks.ToString();
             using (System.Security.Cryptography.MD5 md5 = System.Security.Cryptography.MD5.Create())
             {
                 byte[] h = md5.ComputeHash(Encoding.UTF8.GetBytes(s));
@@ -171,7 +173,19 @@ namespace Installer
                 using (Bitmap bmp = Fit(src, ThumbW, ThumbH))
                 {
                     string tmp = outPath + ".part";
-                    bmp.Save(tmp, ImageFormat.Jpeg);
+                    // 默认 JPEG 质量约 75，放到 640 宽再用会发糊；这里明确写 88
+                    System.Drawing.Imaging.ImageCodecInfo codec = null;
+                    foreach (System.Drawing.Imaging.ImageCodecInfo c in System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders())
+                        if (c.FormatID == ImageFormat.Jpeg.Guid) { codec = c; break; }
+                    if (codec != null)
+                    {
+                        using (System.Drawing.Imaging.EncoderParameters ep = new System.Drawing.Imaging.EncoderParameters(1))
+                        {
+                            ep.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 88L);
+                            bmp.Save(tmp, codec, ep);
+                        }
+                    }
+                    else bmp.Save(tmp, ImageFormat.Jpeg);
                     if (File.Exists(outPath)) File.Delete(outPath);
                     File.Move(tmp, outPath);
                     return true;

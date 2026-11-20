@@ -942,6 +942,8 @@ namespace Installer
         private RecGrid recGrid;                               // 自绘卡片墙：带边框、悬停高亮、没有滚动条
         private int recGen;                                    // 换位置后，在途的旧结果作废
         private string recKey = "";
+        private int recDetailToken;                     // 悬停换条目后，在途的大图作废
+        private Image recBigPic;                        // 详情栏当前那张大图（我们自己管释放）
         // 每次开程序推荐不同的东西：搜索页码随机（1~3），不落缓存；缓存只留一份防同一次会话重复拉
         private static readonly Random recRnd = new Random();
         private readonly SlotTree body;
@@ -4072,12 +4074,35 @@ namespace Installer
             if (peek == null || it == null) return;
             Image pic = null;
             try { pic = recGrid.PicOf(it); } catch { }
+            int dtok = ++recDetailToken;
             string meta = it.Subs > 0
                 ? Lang.F("订阅 {0} · 浏览 {1}", WsText.Compact(it.Subs), WsText.Compact(it.Views))
                 : Lang.F("浏览 {0}", WsText.Compact(it.Views));
             string desc = WsText.Clean(it.Desc ?? "");
             if (desc.Length > 700) desc = desc.Substring(0, 700) + "…";
             peek.ShowImage(it.Title ?? "", meta, Lang.S("来源：Steam 创意工坊"), pic, "", desc);
+
+            // 卡片图只有 104×58，塞进详情栏必然糊；后台按详情尺寸再取一张大的换上去
+            string url = it.Preview, id = it.Id, title = it.Title ?? "";
+            if (string.IsNullOrEmpty(url)) return;
+            int w = Math.Max(320, Dpi.S(560)), h = w * 9 / 16;
+            System.Threading.Tasks.Task.Run(delegate
+            {
+                Image big = null;
+                try { big = WsThumb.LoadCover(url, id, w, h); } catch { }
+                if (big == null) return;
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (dtok != recDetailToken) { try { big.Dispose(); } catch { } return; }
+                        if (recBigPic != null) { try { recBigPic.Dispose(); } catch { } }
+                        recBigPic = big;
+                        peek.ShowImage(title, meta, Lang.S("来源：Steam 创意工坊"), big, "", desc);
+                    });
+                }
+                catch { try { big.Dispose(); } catch { } }
+            });
         }
 
         /// <summary>把搜到的东西交给卡片墙：能放几个就画几个（没有滚动条）。</summary>
