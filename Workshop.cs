@@ -959,14 +959,114 @@ namespace Installer
         /// </summary>
         internal static string IdMapPath { get { return Path.Combine(Core.LogDir, "workshop-idmap.txt"); } }
 
+        internal sealed class DownloadRec
+        {
+            public string Id = "";
+            public string File = "";
+            public long Updated;          // 下载时接口给的 time_updated（0 = 老记录没存）
+            public long Size;             // 下载时接口给的 file_size
+        }
+
+        internal sealed class UpdateInfo
+        {
+            public WsItem Item;
+            public DownloadRec Rec;
+            public string Why = "";
+        }
+
         internal static void RememberDownload(string id, string fileName)
+        {
+            RememberDownload(id, fileName, 0, 0);
+        }
+
+        /// <summary>记一条下载记录：id|文件名|接口更新时间|接口大小（后两项 0 = 老格式没有）。</summary>
+        internal static void RememberDownload(string id, string fileName, long updated, long size)
         {
             try
             {
                 Directory.CreateDirectory(Core.LogDir);
-                File.AppendAllText(IdMapPath, (id ?? "").Trim() + "|" + (fileName ?? "").Trim() + "\r\n", Encoding.UTF8);
+                File.AppendAllText(IdMapPath, (id ?? "").Trim() + "|" + (fileName ?? "").Trim()
+                    + "|" + updated + "|" + size + "\r\n", Encoding.UTF8);
             }
             catch { }
+        }
+
+        /// <summary>读下载记录：同一个 id 以最后一行为准；旧格式（只有两列）时间/大小按 0 处理。</summary>
+        public static List<DownloadRec> LoadIndex()
+        {
+            Dictionary<string, DownloadRec> map = new Dictionary<string, DownloadRec>(StringComparer.Ordinal);
+            try
+            {
+                if (!File.Exists(IdMapPath)) return new List<DownloadRec>();
+                foreach (string line in File.ReadAllLines(IdMapPath, Encoding.UTF8))
+                {
+                    string[] p = line.Split('|');
+                    if (p.Length < 2) continue;
+                    string id = p[0].Trim(), file = p[1].Trim();
+                    if (id.Length == 0 || file.Length == 0) continue;
+                    DownloadRec r = new DownloadRec();
+                    r.Id = id;
+                    r.File = file;
+                    long v;
+                    if (p.Length > 2 && long.TryParse(p[2].Trim(), out v)) r.Updated = v;
+                    if (p.Length > 3 && long.TryParse(p[3].Trim(), out v)) r.Size = v;
+                    map[id] = r;
+                }
+            }
+            catch { }
+            return new List<DownloadRec>(map.Values);
+        }
+
+        /// <summary>
+        /// 检查已下载的工坊 MOD 有没有新版本：拉接口比对 time_updated / file_size。
+        /// 老记录没存时间/大小（=0）时只按大小差异判，查不出来就算未知，不冒充"有更新"。
+        /// </summary>
+        public static List<UpdateInfo> CheckUpdates(Action<int, int> progress)
+        {
+            List<UpdateInfo> list = new List<UpdateInfo>();
+            List<DownloadRec> alive = new List<DownloadRec>();
+            string dir;
+            try { dir = DestDir(); } catch { dir = ""; }
+            foreach (DownloadRec r in LoadIndex())
+            {
+                try
+                {
+                    if (dir.Length == 0) continue;
+                    string p = Path.Combine(dir, r.File);
+                    if (!File.Exists(p)) continue;                 // 文件已删：不算更新
+                    if (r.Size <= 0) r.Size = new FileInfo(p).Length;
+                    alive.Add(r);
+                }
+                catch { }
+            }
+            List<string> ids = alive.ConvertAll(delegate(DownloadRec r) { return r.Id; });
+            int done = 0;
+            for (int from = 0; from < ids.Count; from += 100)
+            {
+                List<string> part = ids.GetRange(from, Math.Min(100, ids.Count - from));
+                List<WsItem> items = Fetch(part);
+                foreach (WsItem it in items)
+                {
+                    if (it == null || it.Id.Length == 0) continue;
+                    int ix = alive.FindIndex(delegate(DownloadRec r) { return r.Id == it.Id; });
+                    if (ix < 0) continue;
+                    DownloadRec rec = alive[ix];
+                    string why = "";
+                    if (rec.Updated > 0 && it.Updated > rec.Updated)
+                        why = Lang.F("更新于 {0}", WsText.Ago(it.Updated));
+                    else if (it.Size > 0 && rec.Size > 0 && it.Size != rec.Size)
+                        why = Lang.F("大小变了：{0} → {1}", Core.Human(rec.Size), Core.Human(it.Size));
+                    if (why.Length == 0) continue;
+                    UpdateInfo u = new UpdateInfo();
+                    u.Item = it;
+                    u.Rec = rec;
+                    u.Why = why;
+                    list.Add(u);
+                }
+                done += part.Count;
+                if (progress != null) progress(done, ids.Count);
+            }
+            return list;
         }
 
         internal static HashSet<string> LoadDownloadedIds()
@@ -2550,7 +2650,9 @@ namespace Installer
                         }
                         Workshop.SavePreview(it, dest);
                         it.SavedAs = Path.GetFileName(dest);
-                        Workshop.RememberDownload(it.Id, it.SavedAs);
+                        long savedSz = 0;
+                        try { savedSz = new FileInfo(dest).Length; } catch { }
+                        Workshop.RememberDownload(it.Id, it.SavedAs, it.Updated, savedSz);
                         {
                             long sz = 0;
                             try { sz = new FileInfo(dest).Length; } catch { }

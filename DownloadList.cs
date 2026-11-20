@@ -441,7 +441,9 @@ namespace Installer
                     string rn = Workshop.RenameToAddonTitle(dest);
                     if (rn != null) dest = Path.Combine(dir, rn);
                     Workshop.SavePreview(it, dest);
-                    Workshop.RememberDownload(d.Id, Path.GetFileName(dest));
+                    long savedSz2 = 0;
+                    try { savedSz2 = new FileInfo(dest).Length; } catch { }
+                    Workshop.RememberDownload(d.Id, Path.GetFileName(dest), it.Updated, savedSz2);
                     long size = 0;
                     try { size = new FileInfo(dest).Length; } catch { }
                     WorkshopDownloads.Finish(d.Id, true, dest, size, "");

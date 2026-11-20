@@ -48,6 +48,7 @@ namespace Installer
         private readonly FlatButton btnSearch = new FlatButton();
         private readonly FlatButton btnList = new FlatButton();
         private readonly FlatButton btnDowns = new FlatButton();   // 下载列表 + 保存位置
+        private readonly FlatButton btnUpdates = new FlatButton(); // 检查已下载 MOD 有没有新版
         private DownloadListForm downsWindow;
         private readonly FlatButton btnClose = new FlatButton();
         private readonly FlatButton btnTop = new FlatButton();       // 回到顶部
@@ -159,6 +160,10 @@ namespace Installer
             btnList.Text = Lang.S("批量下载");
             btnList.Click += delegate { OpenList(); };
             Controls.Add(btnList);
+
+            btnUpdates.Text = Lang.S("检查更新");
+            btnUpdates.Click += delegate { CheckUpdatesClicked(); };
+            Controls.Add(btnUpdates);
 
             btnDowns.Text = Lang.S("下载列表");
             btnDowns.Click += delegate { OpenDowns(); };
@@ -378,6 +383,9 @@ namespace Installer
             btnClose.SetBounds(bx - S(72), y, S(72), S(30)); bx -= S(72) + S(8);
             btnList.SetBounds(bx - S(96), y, S(96), S(30)); bx -= S(96) + S(8);
             btnDowns.SetBounds(bx - S(92), y, S(92), S(30)); bx -= S(92) + S(8);
+            // 窄窗放不下就藏起来（搜索框不能被挤到和「搜索」按钮重叠）
+            btnUpdates.Visible = W >= S(1060);
+            if (btnUpdates.Visible) { btnUpdates.SetBounds(bx - S(96), y, S(96), S(30)); bx -= S(96) + S(8); }
             cboSort.SetBounds(bx - S(104), y + S(2), S(104), S(26)); bx -= S(104) + S(8);
             btnSearch.SetBounds(bx - S(64), y, S(64), S(30)); bx -= S(64) + S(8);
             int qx = m + S(40) + S(160) + S(8);
@@ -1135,6 +1143,86 @@ namespace Installer
             t.Start();
         }
 
+        /// <summary>
+        /// 检查更新：按下载记录里的 id 拉接口，比对 time_updated / file_size。
+        /// 结果弹一个「像应用商店」的列表，自己勾要更新哪些。
+        /// </summary>
+        private void CheckUpdatesClicked()
+        {
+            if (updating) return;
+            updating = true;
+            btnUpdates.Enabled = false;
+            lblStatus.Text = Lang.S("正在检查更新…");
+            Thread t = new Thread(delegate()
+            {
+                List<Workshop.UpdateInfo> list = null;
+                string err = null;
+                try { list = Workshop.CheckUpdates(null); }
+                catch (Exception ex) { err = ex.Message; }
+                Ui(delegate()
+                {
+                    updating = false;
+                    btnUpdates.Enabled = true;
+                    if (err != null) { lblStatus.Text = Lang.S("检查更新失败：") + err; return; }
+                    if (list == null || list.Count == 0)
+                    {
+                        lblStatus.Text = Lang.S("检查完成：已下载的 MOD 都是最新的");
+                        MessageBox.Show(this, Lang.S("检查完成：已下载的 MOD 都是最新的。"), Lang.S("检查更新"),
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+                    lblStatus.Text = Lang.F("检查完成：{0} 个 MOD 有更新", list.Count);
+                    using (UpdateForm uf = new UpdateForm(list))
+                    {
+                        if (uf.ShowDialog(this) == DialogResult.OK) StartUpdates(uf.Selected);
+                    }
+                });
+            });
+            t.IsBackground = true;
+            t.Priority = ThreadPriority.BelowNormal;
+            t.Start();
+        }
+
+        private bool updating;
+
+        /// <summary>把勾中的更新逐个下下来（覆盖原来的文件名，档位不变），完事刷新主界面。</summary>
+        private void StartUpdates(List<Workshop.UpdateInfo> todo)
+        {
+            if (todo == null || todo.Count == 0) return;
+            string dir;
+            try { dir = Workshop.DestDir(); }
+            catch (Exception ex) { lblStatus.Text = ex.Message; return; }
+            Thread t = new Thread(delegate()
+            {
+                int ok = 0, fail = 0;
+                foreach (Workshop.UpdateInfo u in todo)
+                {
+                    try
+                    {
+                        string dest = Path.Combine(dir, u.Rec.File);
+                        Workshop.Download(u.Item, dest, null);
+                        if (Workshop.LastSavedPath.Length > 0) dest = Workshop.LastSavedPath;
+                        Workshop.RenameToAddonTitle(dest);
+                        Workshop.SavePreview(u.Item, dest);
+                        long sz = 0;
+                        try { sz = new FileInfo(dest).Length; } catch { }
+                        Workshop.RememberDownload(u.Item.Id, Path.GetFileName(dest), u.Item.Updated, sz);
+                        ok++;
+                    }
+                    catch { fail++; }
+                }
+                int okF = ok, failF = fail;
+                Ui(delegate()
+                {
+                    lblStatus.Text = Lang.F("更新完成：成功 {0} / 失败 {1}", okF, failF);
+                    try { if (owner != null) owner.RefreshAfterImport(); } catch { }
+                });
+            });
+            t.IsBackground = true;
+            t.Priority = ThreadPriority.BelowNormal;
+            t.Start();
+        }
+
         private void DownloadOne()
         {
             WsItem it = detailItem;
@@ -1193,7 +1281,9 @@ namespace Installer
                     if (rn != null) dest = Path.Combine(dir, rn);
                     Workshop.SavePreview(it, dest);                    // 库里的封面靠它（包里没有 addonimage 也能看）
                     string name = Path.GetFileName(dest);
-                    Workshop.RememberDownload(it.Id, name);          // 记 id→文件名，下次打开画廊卡片直接标「已下载」
+                    long savedSize = 0;
+                    try { savedSize = new FileInfo(dest).Length; } catch { }
+                    Workshop.RememberDownload(it.Id, name, it.Updated, savedSize);   // 记 id→文件名/更新时间/大小：检查更新要用
                     Ui(delegate()
                     {
                         busy = false;
@@ -1476,6 +1566,92 @@ namespace Installer
             if (index < 0) index = 0;
             if (index >= all.Count) index = all.Count - 1;
             ShowDetail(all[index]);
+        }
+    }
+
+    /// <summary>
+    /// 「检查更新」的结果窗口：像应用商店的更新列表 —— 每条一个 MOD，自己勾要更新哪些。
+    /// 勾完点「开始更新」，只覆盖原文件，分类/档位不动。
+    /// </summary>
+    internal sealed class UpdateForm : Form
+    {
+        private readonly CheckedListBox lb = new CheckedListBox();
+        private readonly List<Workshop.UpdateInfo> all;
+        public readonly List<Workshop.UpdateInfo> Selected = new List<Workshop.UpdateInfo>();
+
+        public UpdateForm(List<Workshop.UpdateInfo> items)
+        {
+            all = items;
+            Text = Lang.S("检查更新");
+            Theme.UseDpi(this);
+            ClientSize = Dpi.Sz(760, 480);
+            Font = Theme.UI;
+            BackColor = Theme.Bg;
+            StartPosition = FormStartPosition.CenterParent;
+            MinimizeBox = false;
+            MaximizeBox = false;
+            ShowInTaskbar = false;
+
+            Label hint = new Label();
+            hint.Text = Lang.S("勾选要更新的 MOD，然后点「开始更新」。更新会覆盖原文件，分类和档位不变。");
+            hint.Font = Theme.UISmall;
+            hint.ForeColor = Theme.Ink3;
+            hint.SetBounds(12, 10, ClientSize.Width - 24, 20);
+            Controls.Add(hint);
+
+            lb.SetBounds(12, 34, ClientSize.Width - 24, ClientSize.Height - 96);
+            lb.CheckOnClick = true;
+            lb.BorderStyle = BorderStyle.FixedSingle;
+            lb.BackColor = Theme.Surface;
+            lb.ForeColor = Theme.Ink;
+            lb.Font = Theme.UI;
+            foreach (Workshop.UpdateInfo u in items)
+            {
+                string name = (u.Item == null || u.Item.Title.Length == 0) ? (u.Item == null ? "" : u.Item.Id) : u.Item.Title;
+                lb.Items.Add(name + "   ·   " + u.Why, true);
+            }
+            Controls.Add(lb);
+
+            FlatButton allOn = new FlatButton();
+            allOn.Text = Lang.S("全选");
+            allOn.SetBounds(12, ClientSize.Height - 52, 72, Theme.H);
+            allOn.Click += delegate { for (int i = 0; i < lb.Items.Count; i++) lb.SetItemChecked(i, true); };
+            Controls.Add(allOn);
+
+            FlatButton allOff = new FlatButton();
+            allOff.Text = Lang.S("全不选");
+            allOff.SetBounds(92, ClientSize.Height - 52, 84, Theme.H);
+            allOff.Click += delegate { for (int i = 0; i < lb.Items.Count; i++) lb.SetItemChecked(i, false); };
+            Controls.Add(allOff);
+
+            FlatButton go = new FlatButton();
+            go.Text = Lang.S("开始更新");
+            go.Primary = true;
+            go.SetBounds(ClientSize.Width - 224, ClientSize.Height - 52, 112, Theme.H);
+            go.Click += delegate { Accept(); };
+            Controls.Add(go);
+
+            FlatButton no = new FlatButton();
+            no.Text = Lang.S("取消");
+            no.SetBounds(ClientSize.Width - 104, ClientSize.Height - 52, 92, Theme.H);
+            no.DialogResult = DialogResult.Cancel;
+            Controls.Add(no);
+            CancelButton = no;
+            AcceptButton = go;
+        }
+
+        private void Accept()
+        {
+            Selected.Clear();
+            for (int i = 0; i < all.Count && i < lb.Items.Count; i++)
+                if (lb.GetItemChecked(i)) Selected.Add(all[i]);
+            if (Selected.Count == 0)
+            {
+                MessageBox.Show(this, Lang.S("一个都没勾。"), Lang.S("检查更新"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            DialogResult = DialogResult.OK;
+            Close();
         }
     }
 }
