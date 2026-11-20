@@ -939,12 +939,11 @@ namespace Installer
         // ---- 工坊推荐区（2026-11-21 用户定：中间候选列的下半截用来推荐工坊里同类的 MOD）----
         private Panel recPanel;
         private Label recTitle;
-        private ListView recList;
-        private ImageList recImgs;
+        private RecGrid recGrid;                               // 自绘卡片墙：带边框、悬停高亮、没有滚动条
         private int recGen;                                    // 换位置后，在途的旧结果作废
         private string recKey = "";
-        private static readonly Dictionary<string, List<WsItem>> recCache =
-            new Dictionary<string, List<WsItem>>(StringComparer.OrdinalIgnoreCase);
+        // 每次开程序推荐不同的东西：搜索页码随机（1~3），不落缓存；缓存只留一份防同一次会话重复拉
+        private static readonly Random recRnd = new Random();
         private readonly SlotTree body;
         private readonly ListView lv;
         private readonly ListView lvExtra;                 // 下半：可叠加的扩展
@@ -1182,27 +1181,10 @@ namespace Installer
             recTitle.Text = Lang.S("工坊推荐");
             recPanel.Controls.Add(recTitle);
 
-            recImgs = new ImageList();
-            recImgs.ImageSize = new Size(Dpi.S(104), Dpi.S(58));
-            recImgs.ColorDepth = ColorDepth.Depth32Bit;
-
-            recList = new ListView();
-            recList.View = View.LargeIcon;
-            recList.MultiSelect = false;
-            recList.HideSelection = false;
-            recList.BorderStyle = BorderStyle.None;
-            recList.BackColor = Theme.Surface;
-            recList.ForeColor = Theme.Ink2;
-            recList.Font = Theme.UISmall;
-            recList.LargeImageList = recImgs;
-            recList.ShowItemToolTips = true;
-            recList.SelectedIndexChanged += delegate { ShowRecDetail(); };
-            recList.DoubleClick += delegate { OpenRecPick(); };
-            recList.KeyDown += delegate(object s2, KeyEventArgs e2)
-            {
-                if (e2.KeyCode == Keys.Enter) { OpenRecPick(); e2.Handled = true; }
-            };
-            recPanel.Controls.Add(recList);
+            recGrid = new RecGrid();
+            recGrid.HoverItem += delegate(WsItem it) { ShowRecDetail(it); };
+            recGrid.Pick += delegate(WsItem it) { OpenRecPick(it); };
+            recPanel.Controls.Add(recGrid);
             lblExtraTitle = new Label();
             lblExtraTitle.Visible = false;
             Controls.Add(lblExtraTitle);
@@ -3982,7 +3964,7 @@ namespace Installer
                         recPanel.SetBounds(lv.Left, lv.Top + lv.Height + Dpi.S(6), lv.Width, recH);
                         recPanel.Visible = true;
                         recTitle.SetBounds(Dpi.S(4), 0, Math.Max(60, recPanel.Width - 8), Dpi.S(16));
-                        recList.SetBounds(Dpi.S(2), Dpi.S(17), Math.Max(60, recPanel.Width - 4), Math.Max(40, recH - Dpi.S(20)));
+                        recGrid.SetBounds(Dpi.S(2), Dpi.S(17), Math.Max(60, recPanel.Width - 4), Math.Max(40, recH - Dpi.S(20)));
                     }
                 }
             }
@@ -4028,17 +4010,14 @@ namespace Installer
             System.Threading.Tasks.Task.Run(delegate
             {
                 List<WsItem> got = null;
-                try { lock (recGate) { List<WsItem> c; if (recCache.TryGetValue(key, out c)) got = c; } } catch { }
-                if (got == null)
-                {
-                    try { got = Workshop.SearchItems(key, "trend", 1); } catch { }
-                    if (got != null) { try { lock (recGate) recCache[key] = got; } catch { } }
-                }
+                // 每次开程序都换一批：页码随机，不落磁盘、不跨会话缓存
+                try { got = Workshop.SearchItems(key, "trend", recRnd.Next(1, 4)); } catch { }
+                if (got != null) { try { got = new List<WsItem>(got); } catch { } }
                 List<Image> pics = new List<Image>();
                 if (got != null)
                     foreach (WsItem it in got)
                     {
-                        if (pics.Count >= 8) break;
+                        if (pics.Count >= 24) break;
                         if (it == null || string.IsNullOrEmpty(it.Preview)) continue;
                         Image pic = null;
                         try { pic = WsThumb.LoadCover(it.Preview, it.Id, tw, th); } catch { }
@@ -4064,78 +4043,48 @@ namespace Installer
         /// </summary>
         private void ShowRecSkeleton()
         {
-            recList.Items.Clear();
-            recImgs.Images.Clear();
-            int w = Math.Max(64, Dpi.S(104)), h = Math.Max(36, Dpi.S(58));
-            for (int i = 0; i < 8; i++)
-            {
-                Bitmap bmp = new Bitmap(w, h);
-                using (Graphics g = Graphics.FromImage(bmp))
-                {
-                    g.Clear(Theme.IsDark ? Color.FromArgb(44, 48, 54) : Color.FromArgb(232, 236, 242));
-                    using (SolidBrush b2 = new SolidBrush(Theme.IsDark ? Color.FromArgb(52, 56, 63) : Color.FromArgb(242, 245, 249)))
-                        g.FillRectangle(b2, 0, 0, w, h);
-                }
-                recImgs.Images.Add(bmp);
-                recList.Items.Add(new ListViewItem("", recImgs.Images.Count - 1));
-            }
+            recGrid.ShowSkeleton();
         }
 
-        /// <summary>选中一张推荐：右侧详情栏按「已选 MOD」同一套排版显示它（封面/标题/订阅数/简介）。</summary>
-        private void ShowRecDetail()
+        /// <summary>
+        /// 鼠标悬停到一张推荐上：右侧详情栏按「已选 MOD」同一套排版显示它（封面/标题/订阅数/简介）。
+        /// 底部那句"双击去工坊…"用户说白占位置，不给了；点一下就直接开窗口。
+        /// </summary>
+        private void ShowRecDetail(WsItem it)
         {
-            if (peek == null || recList == null || recList.SelectedItems.Count == 0) return;
-            ListViewItem li = recList.SelectedItems[0];
-            WsItem it = li.Tag as WsItem;
-            if (it == null) return;                       // 骨架卡还没数据
+            if (peek == null || it == null) return;
             Image pic = null;
-            try
-            {
-                int idx = li.ImageIndex;
-                if (idx >= 0 && idx < recImgs.Images.Count) pic = recImgs.Images[idx];
-            }
-            catch { }
+            try { pic = recGrid.PicOf(it); } catch { }
             string meta = it.Subs > 0
                 ? Lang.F("订阅 {0} · 浏览 {1}", WsText.Compact(it.Subs), WsText.Compact(it.Views))
                 : Lang.F("浏览 {0}", WsText.Compact(it.Views));
             string desc = WsText.Clean(it.Desc ?? "");
-            if (desc.Length > 600) desc = desc.Substring(0, 600) + "…";
-            peek.ShowImage(it.Title ?? "", meta, Lang.S("来源：Steam 创意工坊"), pic,
-                           Lang.S("双击去工坊查看 / 下载"), desc);
+            if (desc.Length > 700) desc = desc.Substring(0, 700) + "…";
+            peek.ShowImage(it.Title ?? "", meta, Lang.S("来源：Steam 创意工坊"), pic, "", desc);
         }
 
-        /// <summary>把搜到的东西铺成卡片：封面 + 名字，悬停看订阅数，双击去工坊。</summary>
+        /// <summary>把搜到的东西交给卡片墙：能放几个就画几个（没有滚动条）。</summary>
         private void FillRecUi(string q, List<WsItem> items, List<Image> pics)
         {
-            recList.Items.Clear();
-            recImgs.Images.Clear();
-            int shown = 0;
-            for (int i = 0; i < items.Count && shown < 8; i++)
+            List<WsItem> okItems = new List<WsItem>();
+            List<Image> okPics = new List<Image>();
+            for (int i = 0; i < items.Count && i < pics.Count; i++)
             {
-                WsItem it = items[i];
-                if (it == null) continue;
-                Image pic = i < pics.Count ? pics[i] : null;
-                if (pic == null) continue;
-                recImgs.Images.Add(pic);
-                string t = it.Title ?? "";
-                if (t.Length > 16) t = t.Substring(0, 15) + "…";
-                ListViewItem li = new ListViewItem(t, recImgs.Images.Count - 1);
-                li.Tag = it;
-                li.ToolTipText = (it.Subs > 0 ? Lang.F("订阅 {0} · ", it.Subs) : "") + (it.Title ?? "");
-                recList.Items.Add(li);
-                shown++;
+                if (items[i] == null || pics[i] == null) continue;
+                okItems.Add(items[i]);
+                okPics.Add(pics[i]);
             }
-            recTitle.Text = shown > 0 ? Lang.S("工坊推荐 · ") + q
-                                      : Lang.S("工坊里没搜到相关 MOD：") + q;
+            recGrid.SetItems(okItems, okPics);
+            recTitle.Text = okItems.Count > 0 ? Lang.S("工坊推荐 · ") + q
+                                              : Lang.S("工坊里没搜到相关 MOD：") + q;
         }
 
-        private void OpenRecPick()
+        /// <summary>点一张推荐 = 单开一个工坊窗口，按这个词看（推荐区本身不是搜索页）。</summary>
+        private void OpenRecPick(WsItem it)
         {
-            if (recList == null || recList.SelectedItems.Count == 0) return;
-            if (mf != null) mf.OpenWorkshopFor(recKey);
+            if (it == null || mf == null) return;
+            mf.OpenWorkshopFor(recKey);
         }
-
-        private static readonly object recGate = new object();
 
         private void LayoutCols()
         {
@@ -6747,6 +6696,141 @@ namespace Installer
             }
             catch (Exception ex) { Core.Log("FAIL", "ADDONSW 截图失败: " + ex.Message); }
             finally { try { System.IO.Directory.Delete(tmp, true); } catch { } }
+        }
+    }
+
+    /// <summary>
+    /// 工坊推荐的卡片墙：自绘（细边框 + 悬停高亮），**不放滚动条** —— 一屏能放几个就放几个。
+    /// 悬停 → HoverItem（右侧详情跟着换）；单击 → Pick（单开一个工坊窗口看）。
+    /// </summary>
+    internal sealed class RecGrid : Control
+    {
+        private readonly List<WsItem> items = new List<WsItem>();
+        private readonly List<Image> pics = new List<Image>();
+        private bool skeleton;
+        private int hover = -1;
+
+        public event Action<WsItem> Pick;
+        public event Action<WsItem> HoverItem;
+
+        private int G { get { return Dpi.S(8); } }
+        private int CW { get { return Dpi.S(104); } }
+        private int CH { get { return Dpi.S(58); } }
+        private int TH { get { return Dpi.S(18); } }
+        private int Pad { get { return Dpi.S(2); } }
+
+        public RecGrid()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
+                   | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            BackColor = Theme.Surface;
+        }
+
+        private int Cols { get { int w = Width - Pad * 2 + G; return Math.Max(0, w / (CW + G)); } }
+        private int Rows { get { int h = Height - Pad * 2 + G; return Math.Max(0, h / (CH + TH + G)); } }
+        public int Capacity { get { return Cols * Rows; } }
+
+        public void ShowSkeleton()
+        {
+            skeleton = true; hover = -1;
+            foreach (Image p in pics) { try { p.Dispose(); } catch { } }
+            pics.Clear(); items.Clear();
+            Invalidate();
+        }
+
+        public void SetItems(List<WsItem> its, List<Image> imgs)
+        {
+            foreach (Image p in pics) { try { p.Dispose(); } catch { } }
+            pics.Clear(); items.Clear();
+            skeleton = false; hover = -1;
+            int n = Math.Min(its.Count, imgs.Count);
+            for (int i = 0; i < n; i++) { items.Add(its[i]); pics.Add(imgs[i]); }
+            imgs.Clear();                       // 所有权转过来，调用方别再释放
+            Invalidate();
+        }
+
+        public Image PicOf(WsItem it)
+        {
+            int i = items.IndexOf(it);
+            return i >= 0 && i < pics.Count ? pics[i] : null;
+        }
+
+        private Rectangle CardRect(int i)
+        {
+            int cols = Math.Max(1, Cols);
+            int r = i / cols, c = i % cols;
+            return new Rectangle(Pad + c * (CW + G), Pad + r * (CH + TH + G), CW, CH);
+        }
+
+        private int HitTest(Point p)
+        {
+            int cap = Math.Min(items.Count, Capacity);
+            for (int i = 0; i < cap; i++)
+            {
+                Rectangle r = CardRect(i);
+                r.Height += TH;
+                if (r.Contains(p)) return i;
+            }
+            return -1;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.Clear(BackColor);
+            if (skeleton)
+            {
+                for (int i = 0; i < Capacity; i++)
+                {
+                    Rectangle r = CardRect(i);
+                    using (SolidBrush b = new SolidBrush(Theme.IsDark ? Color.FromArgb(44, 48, 54) : Color.FromArgb(232, 236, 242)))
+                        g.FillRectangle(b, r);
+                }
+                return;
+            }
+            int cap = Math.Min(items.Count, Capacity);
+            for (int i = 0; i < cap; i++)
+            {
+                Rectangle r = CardRect(i);
+                bool hot = i == hover;
+                if (hot)
+                    using (SolidBrush b = new SolidBrush(Theme.SurfaceAlt))
+                        g.FillRectangle(b, new Rectangle(r.X - 1, r.Y - 1, r.Width + 2, r.Height + TH + 2));
+                if (i < pics.Count && pics[i] != null) { try { g.DrawImage(pics[i], r); } catch { } }
+                using (Pen pen = new Pen(hot ? Theme.Ink3 : Theme.LineSoft))
+                    g.DrawRectangle(pen, r);
+                string t = items[i].Title ?? "";
+                if (t.Length > 14) t = t.Substring(0, 13) + "…";
+                using (SolidBrush tb = new SolidBrush(Theme.Ink2))
+                    g.DrawString(t, Theme.UISmall, tb, new RectangleF(r.X, r.Bottom + 1, r.Width, TH));
+            }
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            int i = HitTest(e.Location);
+            if (i == hover) return;
+            hover = i;
+            Invalidate();
+            if (i >= 0 && i < items.Count && HoverItem != null) HoverItem(items[i]);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            if (hover < 0) return;
+            hover = -1;
+            Invalidate();
+        }
+
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            base.OnMouseClick(e);
+            int i = HitTest(e.Location);
+            if (i >= 0 && i < items.Count && Pick != null) Pick(items[i]);
         }
     }
 }
