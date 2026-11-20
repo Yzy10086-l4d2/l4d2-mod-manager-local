@@ -4006,13 +4006,22 @@ namespace Installer
             return q ?? "";
         }
 
+        /// <summary>推荐用的工坊标签：地图=Campaigns、特感=Special Infected … 和工坊分类下拉同一套。</summary>
+        private string RecTag()
+        {
+            if (mf != null && !string.IsNullOrEmpty(mf.SearchText)) return "";
+            if (!string.IsNullOrEmpty(selKey) && selKey[0] == '#') return "";
+            Slot s = Current;
+            if (s == null) return "";
+            return Workshop.TagFor(s.Cat, s.Sub) ?? "";
+        }
+
         /// <summary>换位置刷一次推荐；同一位置不重复拉网。搜不到/连不上只改标题那行，不弹窗。</summary>
         /// <summary>「换一换」：清掉当前键强制重拉一批（页码会避开上一批）。</summary>
         private void RefreshRecommend()
         {
             if (recPanel == null) return;
-            string q = RecQuery();
-            if (q.Length == 0) return;
+            if (RecQuery().Length == 0 && RecTag().Length == 0) return;
             recKey = "";
             PrepareRecommend();
         }
@@ -4021,9 +4030,11 @@ namespace Installer
         {
             if (recPanel == null) return;
             string q = RecQuery();
-            if (q.Length == 0) { recGen++; recKey = ""; recPanel.Visible = false; return; }
-            if (q == recKey) return;
-            recKey = q;
+            string tag = RecTag();
+            if (q.Length == 0 && tag.Length == 0) { recGen++; recKey = ""; recPanel.Visible = false; return; }
+            string want = q + "\u0001" + tag;
+            if (want == recKey) return;
+            recKey = want;
             int gen = ++recGen;
             recPanel.Visible = true;
             recTitle.Text = Lang.S("工坊推荐：正在搜…");
@@ -4032,6 +4043,7 @@ namespace Installer
 
             int tw = Math.Max(64, Dpi.S(104)), th = Math.Max(36, Dpi.S(58));
             string key = q;
+            string keyTag = tag;
             System.Threading.Tasks.Task.Run(delegate
             {
                 List<WsItem> got = null;
@@ -4039,7 +4051,7 @@ namespace Installer
                 int pg = recRnd.Next(1, 4);
                 if (pg == recPage) pg = pg % 3 + 1;      // 换一换别撞回同一页
                 recPage = pg;
-                try { got = Workshop.SearchItems(key, "trend", pg); } catch { }
+                try { got = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { }
                 if (got != null) { try { got = new List<WsItem>(got); } catch { } }
                 // 缩略图并发取（6 路）：单线程下 8 张图就是 8 个往返
                 List<WsItem> cand = new List<WsItem>();

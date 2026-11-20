@@ -91,6 +91,7 @@ namespace Installer
         {
             public string Label = "";
             public string Query = "";
+            public string Tag = "";          // 工坊标签过滤（地图=Campaigns / 特感=Special Infected …）
             public string Sort = "";
             public override string ToString() { return Label; }
         }
@@ -441,7 +442,20 @@ namespace Installer
             {
                 if (s == null || string.IsNullOrEmpty(s.Cat)) continue;
                 if (cats.Add(s.Cat))
-                    cboCat.Items.Add(new GalChoice { Label = "【" + s.Cat + "】", Query = Workshop.CatWord(s.Cat) });
+                    cboCat.Items.Add(new GalChoice { Label = "【" + s.Cat + "】", Query = Workshop.CatWord(s.Cat), Tag = Workshop.TagFor(s.Cat, null) });
+            }
+            // 小分类（枪械 → 步枪、僵尸 → 特感）：比大类准，又比单个位置宽
+            HashSet<string> subs = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Slot s in slots)
+            {
+                if (s == null || string.IsNullOrEmpty(s.Sub)) continue;
+                if (!subs.Add(s.Cat + "\u0001" + s.Sub)) continue;
+                cboCat.Items.Add(new GalChoice
+                {
+                    Label = (s.Cat.Length > 0 ? s.Cat + " · " : "") + s.Sub,
+                    Query = Workshop.SubWord(s.Sub),
+                    Tag = Workshop.TagFor(s.Cat, s.Sub)
+                });
             }
             foreach (Slot s in slots)
             {
@@ -449,7 +463,8 @@ namespace Installer
                 cboCat.Items.Add(new GalChoice
                 {
                     Label = (s.Cat.Length > 0 ? s.Cat + " · " : "") + s.Name,
-                    Query = Workshop.SearchWord(s.Name, s.Key)
+                    Query = Workshop.SearchWord(s.Name, s.Key),
+                    Tag = Workshop.TagFor(s.Cat, s.Sub)
                 });
             }
         }
@@ -538,7 +553,8 @@ namespace Installer
             if (busy) return;
             GalChoice c = cboCat.SelectedItem as GalChoice;
             string q = txtQuery.Text.Trim();
-            if (q.Length == 0 && c != null) q = c.Query;
+            string tag = "";
+            if (q.Length == 0 && c != null) { q = c.Query; tag = c.Tag; }   // 自己打字的搜索不带分类标签
             GalChoice s = cboSort.SelectedItem as GalChoice;
             string sort = s == null ? "mostsubscribed" : s.Sort;
 
@@ -562,7 +578,7 @@ namespace Installer
                 string err = null;
                 try
                 {
-                    got = Workshop.SearchItems(q, sort, p);   // 浏览页直解：省掉详情接口整趟往返
+                    got = Workshop.SearchItems(q, sort, p, tag);   // 浏览页直解：省掉详情接口整趟往返
                     idCount = got.Count;
                 }
                 catch (Exception ex) { err = ex.Message; }

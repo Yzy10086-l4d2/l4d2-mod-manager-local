@@ -105,7 +105,8 @@ namespace Installer
             string idCheckTo = null;     // --idcheck=文件：拿当前结果跟基线比，改判就报
             string vpkCheck = null;
             bool updCheck = false;
-            string reqCheck = null;     // --reqcheck=工坊ID：打印页面 Required items 解析结果      // --updatecheck：跑一遍检查更新，只打印结果      // --vpkcheck=文件：单独验一个 vpk 的结构完整性（下载后"残缺"排查用）
+            string reqCheck = null;
+            string wsProbe = null;      // --wsprobe=词1,词2：跑一遍工坊搜索，打印前几条标题（检查搜索词准不准）     // --reqcheck=工坊ID：打印页面 Required items 解析结果      // --updatecheck：跑一遍检查更新，只打印结果      // --vpkcheck=文件：单独验一个 vpk 的结构完整性（下载后"残缺"排查用）
             bool dumpTree = false;
             bool ovDump = false;
             bool recogSelf = false;
@@ -185,6 +186,7 @@ namespace Installer
             else if (a.StartsWith("--vpkcheck=", StringComparison.OrdinalIgnoreCase)) vpkCheck = a.Substring(11).Trim('"');
             else if (string.Equals(a, "--updatecheck", StringComparison.OrdinalIgnoreCase)) updCheck = true;
             else if (a.StartsWith("--reqcheck=", StringComparison.OrdinalIgnoreCase)) reqCheck = a.Substring(11).Trim('"');
+            else if (a.StartsWith("--wsprobe=", StringComparison.OrdinalIgnoreCase)) wsProbe = a.Substring(10).Trim('"');
                 else if (string.Equals(a, "--dumptree", StringComparison.OrdinalIgnoreCase)) dumpTree = true;
                 else if (string.Equals(a, "--ovdump", StringComparison.OrdinalIgnoreCase)) ovDump = true;
                 else if (string.Equals(a, "--recogself", StringComparison.OrdinalIgnoreCase)) recogSelf = true;
@@ -205,7 +207,7 @@ namespace Installer
             // 必须在下面这些分支 return **之前** 置位 —— 它们一样会跑扫描、开界面，一样会改到配置；
             // 以前这行写在所有自检分支后面，等于对它们全部无效。
             Core.SelfTesting = selfTest || uiTest || copyTest || launchSelf || dupSelf
-                            || addonSelf || safeSelf || dumpId || dumpTree || ovDump || recogSelf || plugSelf || plugTry != null || vpkCheck != null || updCheck || reqCheck != null
+                            || addonSelf || safeSelf || dumpId || dumpTree || ovDump || recogSelf || plugSelf || plugTry != null || vpkCheck != null || updCheck || reqCheck != null || wsProbe != null
                             || dumpIdTo != null || idCheckTo != null
                             || mapShot || mapSelf || scanRace || layoutSelf || imgSelf || wsSelf || wsNet != null || wsSearch != null;
 
@@ -455,6 +457,21 @@ namespace Installer
                 int bad = Catalog.SelfTestRecognition();
                 Console.WriteLine("recogself failures = " + bad);
                 return bad == 0 ? 0 : 1;
+            }
+            if (wsProbe != null)
+            {
+                foreach (string q0 in wsProbe.Split(','))
+                {
+                    string[] parts = q0.Split('|');
+                    string q = parts[0].Trim();
+                    string tg = parts.Length > 1 ? parts[1].Trim() : "";
+                    if (q.Length == 0 && tg.Length == 0) continue;
+                    System.Collections.Generic.List<WsItem> got = null;
+                    try { got = Workshop.SearchItems(q, "trend", 1, tg); } catch (Exception ex) { Console.WriteLine("PROBE [" + q + "|" + tg + "] → ERR " + ex.Message); continue; }
+                    Console.WriteLine("PROBE [" + q + "|" + tg + "] → " + (got == null ? "null" : got.Count + " 条"));
+                    if (got != null) for (int i = 0; i < got.Count && i < 3; i++) Console.WriteLine("    " + got[i].Title);
+                }
+                return 0;
             }
             if (reqCheck != null)
             {

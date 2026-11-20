@@ -360,13 +360,15 @@ namespace Installer
         /// 以前只抽 ID 再去详情接口批量换元数据，白白多一趟网络（每页 1~2 秒）。
         /// 解析失败时回退老路径（Search + Fetch），保证功能不退化。
         /// </summary>
-        internal static List<WsItem> SearchItems(string query, string sort, int page)
+        internal static List<WsItem> SearchItems(string query, string sort, int page, string tag = null)
         {
             StringBuilder u = new StringBuilder();
             u.Append("https://steamcommunity.com/workshop/browse/?appid=").Append(AppId);
             u.Append("&section=readytouseitems");
             if (!string.IsNullOrEmpty(sort)) u.Append("&browsesort=").Append(sort);
             if (!string.IsNullOrEmpty(query)) u.Append("&searchtext=").Append(Uri.EscapeDataString(query));
+            // 标签过滤比文本准：地图只有 Campaigns 标签、特感只有 Special Infected 标签，光靠文本词搜不准
+            if (!string.IsNullOrEmpty(tag)) u.Append("&requiredtags%5B%5D=").Append(Uri.EscapeDataString(tag));
             if (page > 1) u.Append("&p=").Append(page);
             List<WsItem> outp = ParseBrowseItems(Get(u.ToString()));
             if (outp.Count > 0) return outp;
@@ -491,9 +493,54 @@ namespace Installer
                 case "投掷物": return "grenade";
                 case "弹药升级": return "ammo";
                 case "人物": return "survivor";
-                case "医疗": return "medkit";
-                case "地图": return "map";
+                case "药品": return "medkit";
+                case "地图": return "";              // 靠 Campaigns 标签，文本搜 "map" 全是杂物
                 case "喷漆": return "spray";
+                default: return "";
+            }
+        }
+
+        /// <summary>小分类 → 搜索词（大类/位置没覆盖时用）。</summary>
+        internal static string SubWord(string sub)
+        {
+            switch (sub ?? "")
+            {
+                case "步枪": return "rifle";
+                case "冲锋枪": return "smg";
+                case "霰弹枪": return "shotgun";
+                case "狙击枪": return "sniper";
+                case "机枪": return "machine gun";
+                case "手枪": return "pistols";
+                case "近战": return "melee weapon";
+                case "投掷物": return "grenade";
+                case "弹药升级": return "ammo";
+                case "药品": return "medkit";
+                case "特感": return "special infected";
+                case "小僵尸": return "common infected";
+                case "人物": return "survivor";
+                case "地图": return "campaign";
+                case "喷漆": return "spray";
+                default: return "";
+            }
+        }
+
+        /// <summary>
+        /// 分类 → 工坊标签过滤。只给"标签能准确指代这一大类"的：
+        /// 枪械=Weapons、地图=Campaigns、人物=Survivors、特感=Special Infected；
+        /// 其它大类（近战/投掷物/药品…）混在 Weapons 里会带进一堆枪，就不加标签、只靠文本。
+        /// </summary>
+        internal static string TagFor(string cat, string sub)
+        {
+            switch (cat ?? "")
+            {
+                case "枪械":
+                case "近战":
+                case "投掷物":
+                case "弹药升级":
+                case "药品": return "Weapons";
+                case "地图": return "Campaigns";
+                case "人物": return "Survivors";
+                case "僵尸": return sub == "特感" ? "Special Infected" : "";
                 default: return "";
             }
         }
