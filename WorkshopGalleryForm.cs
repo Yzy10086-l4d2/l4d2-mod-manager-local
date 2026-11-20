@@ -1124,6 +1124,7 @@ namespace Installer
             Thread t = new Thread(delegate()
             {
                 int ok = 0, fail = 0;
+                List<string> gotNames = new List<string>();
                 try
                 {
                     List<WsItem> items = Workshop.Fetch(ids);
@@ -1135,7 +1136,9 @@ namespace Installer
                             string dest = Path.Combine(dir, Workshop.SafeFileName(one.Title, one.Id));
                             Workshop.Download(one, dest, null);
                             if (Workshop.LastSavedPath.Length > 0) dest = Workshop.LastSavedPath;
+                            Workshop.SavePreview(one, dest);
                             Workshop.RenameToAddonTitle(dest);
+                            if (File.Exists(dest)) gotNames.Add(Path.GetFileName(dest));
                             ok++;
                         }
                         catch { fail++; }
@@ -1143,11 +1146,12 @@ namespace Installer
                 }
                 catch { }
                 int okF = ok, failF = fail;
+                string[] gotArr = gotNames.ToArray();
                 Ui(delegate()
                 {
                     btnDeps.Enabled = true;
                     lblState.Text = Lang.F("配套 MOD 下载完成：成功 {0} / 失败 {1}", okF, failF);
-                    try { if (owner != null) owner.RefreshAfterImport(); } catch { }
+                    try { if (owner != null) owner.RefreshAfterImport(gotArr); } catch { }
                 });
             });
             t.IsBackground = true;
@@ -1207,6 +1211,7 @@ namespace Installer
             Thread t = new Thread(delegate()
             {
                 int ok = 0, fail = 0;
+                List<string> gotNames = new List<string>();
                 foreach (Workshop.UpdateInfo u in todo)
                 {
                     try
@@ -1219,15 +1224,17 @@ namespace Installer
                         long sz = 0;
                         try { sz = new FileInfo(dest).Length; } catch { }
                         Workshop.RememberDownload(u.Item.Id, Path.GetFileName(dest), u.Item.Updated, sz);
+                        if (File.Exists(dest)) gotNames.Add(Path.GetFileName(dest));
                         ok++;
                     }
                     catch { fail++; }
                 }
                 int okF = ok, failF = fail;
+                string[] gotArr = gotNames.ToArray();
                 Ui(delegate()
                 {
                     lblStatus.Text = Lang.F("更新完成：成功 {0} / 失败 {1}", okF, failF);
-                    try { if (owner != null) owner.RefreshAfterImport(); } catch { }
+                    try { if (owner != null) owner.RefreshAfterImport(gotArr); } catch { }
                 });
             });
             t.IsBackground = true;
@@ -1308,7 +1315,7 @@ namespace Installer
                         WorkshopDownloads.Finish(it.Id, true, dest, sz, "");
                         lblState.Text = "已下载到库里：" + name + (note.Length > 0 ? "（" + note + "）" : "（已自动刷新方案树）");
                         // 下完立刻刷主界面，不用等关窗（用户 2026-11-21 反馈）
-                        try { if (owner != null) owner.RefreshAfterImport(); } catch { }
+                        try { if (owner != null) owner.RefreshAfterImport(name); } catch { }
                         // 用户在提示里选了「连配套一起下」：主件落库后接着下配套
                         if (withDeps) DownloadDeps(true);
                     });

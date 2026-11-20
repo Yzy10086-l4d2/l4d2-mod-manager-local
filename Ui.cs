@@ -2347,9 +2347,9 @@ namespace Installer
 
         /// <summary>
         /// 工坊下载完成后自动刷新：重扫库 → 重建方案树 → 刷新列表/冲突/游戏现状。
-        /// 只重扫，**不动勾选** —— 勾选是用户自己的选择，不能因为一次下载被覆盖。
+        /// 传了刚下载的文件名就把它们**自动启用**（写 addonlist=1）；没传就只重扫，不动别的勾选。
         /// </summary>
-        internal void RefreshAfterImport()
+        internal void RefreshAfterImport(params string[] downloaded)
         {
             try
             {
@@ -2358,10 +2358,37 @@ namespace Installer
                 RefreshConflicts(true);
                 if (treeView != null) { RebuildViews(); treeView.Sync(); }
                 RefreshMods();
+                if (downloaded != null && downloaded.Length > 0) EnableDownloaded(downloaded);
                 RefreshGameNow();
-                Core.Log("OK", "自动刷新完成（勾选没动）");
+                Core.Log("OK", "自动刷新完成");
             }
             catch (Exception ex) { Core.Log("WARN", "下载后自动刷新失败: " + ex.Message); }
+        }
+
+        /// <summary>刚下载落库的 MOD 直接启用：勾上默认部件 + addonlist 写 1，进游戏马上生效。</summary>
+        private void EnableDownloaded(string[] fileNames)
+        {
+            HashSet<string> names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string n in fileNames)
+            {
+                if (string.IsNullOrEmpty(n)) continue;
+                string b = Path.GetFileName(n);
+                if (b.Length > 0) names.Add(b);
+            }
+            if (names.Count == 0) return;
+            int hits = 0;
+            foreach (ModGroup g in new List<ModGroup>(Catalog.GroupByKey.Values))
+            {
+                bool hit = false;
+                foreach (ModItem p in g.Parts)
+                {
+                    if (p == null || string.IsNullOrEmpty(p.FullPath)) continue;
+                    if (names.Contains(Path.GetFileName(p.FullPath))) { hit = true; break; }
+                }
+                if (!hit) continue;
+                try { if (ApplyGroupPick(g, true)) hits++; else hits++; } catch { }
+            }
+            if (hits > 0) { try { SaveChecks(); } catch { } Core.Log("OK", "新下载的 " + hits + " 套 MOD 已自动启用"); }
         }
 
         private void OpenWorkshop()

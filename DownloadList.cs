@@ -494,6 +494,16 @@ namespace Installer
                     long size = 0;
                     try { size = new FileInfo(dest).Length; } catch { }
                     WorkshopDownloads.Finish(d.Id, true, dest, size, "");
+                    string gotName = Path.GetFileName(dest);
+                    try
+                    {
+                        if (owner != null)
+                            BeginInvoke(new MethodInvoker(delegate
+                            {
+                                try { owner.RefreshAfterImport(gotName); } catch { }
+                            }));
+                    }
+                    catch { }
                     Core.Log("OK", "工坊：重新下载完成 " + d.Id + " → " + dest);
                 }
                 catch (Exception ex)

@@ -3989,8 +3989,9 @@ namespace Installer
         {
             if (mf != null && !string.IsNullOrEmpty(mf.SearchText)) return "";
             if (!string.IsNullOrEmpty(selKey) && selKey[0] == '#') return "";
+            // 空分类也照样推荐：用户点进「这个位置一个 MOD 都没有」时，最需要的就是"去看看工坊有什么"
             Slot s = Current;
-            if (s == null || s.Empty) return "";
+            if (s == null || string.IsNullOrEmpty(s.Name)) return "";
             string q = Workshop.SearchWord(s.Name ?? "", s.Key ?? "");
             return q ?? "";
         }
