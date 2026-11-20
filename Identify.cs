@@ -126,7 +126,7 @@ namespace Installer
             {"shotgun_spas",     "二代连喷"},{"spas",             "二代连喷"},{"scattergun",       "二代连喷"},
             {"pumpshotgun",      "木喷"},
             {"autoshotgun",      "一代连喷"},
-            {"shotgun",          "木喷"},        // 裸 shotgun = v_shotgun = 一代木喷的模型
+            {"shotgun",          "铁喷"},        // 裸 shotgun = w_shotgun.mdl = 铁喷的官方世界模型（木喷是 pumpshotgun）
             {"rifle",            "M16"},         // 裸 rifle = v_rifle = M16
             {"machinegun",       "M60"},
             {"pistol_magnum",    "马格南"},
@@ -340,9 +340,15 @@ namespace Installer
                     r.Assets = string.Join(";", Assets.ToArray());
                 }
 
-                // 1) 模型文件名 —— 最硬的证据，换的就是它
+                // 1) 模型文件名 —— 最硬的证据，换的就是它。
+                //    先看 v_（视角模型）：世界模型是多个变体共用的（比如铁喷和木喷都可能带 w_pumpshotgun_a），
+                //    视角模型才指名是哪一个变体。2026-11-21 用户下的铁喷包带 w_pumpshotgun_a + v_shotgun_chrome，
+                //    按文件顺序先撞上世界模型就被判成木喷了。
+                List<string> modelOrder = new List<string>();
+                foreach (string m in Mdls) if (m.IndexOf("v_", StringComparison.OrdinalIgnoreCase) >= 0) modelOrder.Add(m);
+                foreach (string m in Mdls) if (m.IndexOf("v_", StringComparison.OrdinalIgnoreCase) < 0) modelOrder.Add(m);
                 List<string> found = new List<string>();
-                foreach (string m in Mdls)
+                foreach (string m in modelOrder)
                 {
                     string n = Lookup(m);
                     if (n != null)
