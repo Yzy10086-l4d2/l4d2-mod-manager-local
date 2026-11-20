@@ -1997,6 +1997,10 @@ namespace Installer
                 g.AutoCat = g.Cat;
                 g.Sub = groupMain.Sub;
             }
+            // 一张（套）地图是包级身份：一套里只要有一卷带 maps/*.bsp，整套就按地图算。
+            // 多分卷战役常见「Part1 地图 + Part2 素材」，主件是谁不该改变它是不是地图。
+            foreach (ModItem it in parts)
+                if (it.Cat == CAT_MAP) { g.Cat = CAT_MAP; g.AutoCat = g.Cat; g.Sub = it.Sub; break; }
             g.Evidence = GroupEvidence(parts);
 
             string baseName;

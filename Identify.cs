@@ -495,6 +495,8 @@ namespace Installer
                 }
                 // 覆盖 ≥2 种特感的包（高亮、彩色、红头巾这类通用效果）：对象就叫「通用」，
                 // 否则槽位按第一个特感（Smoker）建，位置会显得很奇怪。
+                // 地图除外：地图包里天然带一堆特感/角色素材，写「通用」会把地图的身份盖掉
+                // （河南二七广场实测被写成「地图 · 通用」）。地图的对象一直是空的。
                 try
                 {
                     HashSet<string> tset = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -506,7 +508,7 @@ namespace Installer
                             if (a.IndexOf(InfectKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
                                 tset.Add(InfectKeys[i, 1]);
                     }
-                    if (tset.Count > 1) { r.Subject = "通用"; r.Key = "c:通用"; }
+                    if (tset.Count > 1 && !Map) { r.Subject = "通用"; r.Key = "c:通用"; }
                 }
                 catch { }
                 return r;
