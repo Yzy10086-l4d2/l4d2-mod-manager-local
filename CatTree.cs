@@ -942,6 +942,8 @@ namespace Installer
         private RecGrid recGrid;                               // 自绘卡片墙：带边框、悬停高亮、没有滚动条
         private int recGen;                                    // 换位置后，在途的旧结果作废
         private string recKey = "";
+        private int recPage;                                   // 上一批推荐用的页码（换一换要避开它）
+        private readonly FlatButton btnRecShuffle = new FlatButton();
         private int recDetailToken;                     // 悬停换条目后，在途的大图作废
         private Image recBigPic;                        // 详情栏当前那张大图（我们自己管释放）
         // 每次开程序推荐不同的东西：搜索页码随机（1~3），不落缓存；缓存只留一份防同一次会话重复拉
@@ -1187,6 +1189,12 @@ namespace Installer
             recGrid.HoverItem += delegate(WsItem it) { ShowRecDetail(it); };
             recGrid.Pick += delegate(WsItem it) { OpenRecPick(it); };
             recPanel.Controls.Add(recGrid);
+
+            btnRecShuffle.Text = Lang.S("换一换");
+            btnRecShuffle.Soft = true;
+            btnRecShuffle.Font = Theme.UISmall;
+            btnRecShuffle.Click += delegate { RefreshRecommend(); };
+            recPanel.Controls.Add(btnRecShuffle);
             lblExtraTitle = new Label();
             lblExtraTitle.Visible = false;
             Controls.Add(lblExtraTitle);
@@ -3967,8 +3975,10 @@ namespace Installer
                         lv.Height = whole - recH - Dpi.S(6);
                         recPanel.SetBounds(lv.Left, lv.Top + lv.Height + Dpi.S(6), lv.Width, recH);
                         recPanel.Visible = true;
-                        recTitle.SetBounds(Dpi.S(4), 0, Math.Max(60, recPanel.Width - 8), Dpi.S(16));
-                        recGrid.SetBounds(Dpi.S(2), Dpi.S(17), Math.Max(60, recPanel.Width - 4), Math.Max(40, recH - Dpi.S(20)));
+                        int sw = Dpi.S(64);
+                        btnRecShuffle.SetBounds(Math.Max(Dpi.S(4), recPanel.Width - sw - Dpi.S(4)), 0, sw, Dpi.S(18));
+                        recTitle.SetBounds(Dpi.S(4), 0, Math.Max(60, recPanel.Width - sw - Dpi.S(12)), Dpi.S(16));
+                        recGrid.SetBounds(Dpi.S(2), Dpi.S(21), Math.Max(60, recPanel.Width - 4), Math.Max(40, recH - Dpi.S(24)));
                     }
                 }
             }
@@ -3997,6 +4007,16 @@ namespace Installer
         }
 
         /// <summary>换位置刷一次推荐；同一位置不重复拉网。搜不到/连不上只改标题那行，不弹窗。</summary>
+        /// <summary>「换一换」：清掉当前键强制重拉一批（页码会避开上一批）。</summary>
+        private void RefreshRecommend()
+        {
+            if (recPanel == null) return;
+            string q = RecQuery();
+            if (q.Length == 0) return;
+            recKey = "";
+            PrepareRecommend();
+        }
+
         private void PrepareRecommend()
         {
             if (recPanel == null) return;
@@ -4016,7 +4036,10 @@ namespace Installer
             {
                 List<WsItem> got = null;
                 // 每次开程序都换一批：页码随机，不落磁盘、不跨会话缓存
-                try { got = Workshop.SearchItems(key, "trend", recRnd.Next(1, 4)); } catch { }
+                int pg = recRnd.Next(1, 4);
+                if (pg == recPage) pg = pg % 3 + 1;      // 换一换别撞回同一页
+                recPage = pg;
+                try { got = Workshop.SearchItems(key, "trend", pg); } catch { }
                 if (got != null) { try { got = new List<WsItem>(got); } catch { } }
                 // 缩略图并发取（6 路）：单线程下 8 张图就是 8 个往返
                 List<WsItem> cand = new List<WsItem>();

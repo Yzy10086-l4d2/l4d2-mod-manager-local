@@ -395,6 +395,7 @@ namespace Installer
             Add(d, "配套 MOD（{0}）", "Required items ({0})");
             Add(d, "下载合集（{0}）", "Download collection ({0})");
             Add(d, "下载合集", "Download collection");
+            Add(d, "换一换", "Shuffle");
             Add(d, "开始更新", "Update selected");
             Add(d, "全选", "Select all");
             Add(d, "全不选", "Select none");
