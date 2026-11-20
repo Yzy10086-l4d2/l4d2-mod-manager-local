@@ -49,7 +49,7 @@ namespace Installer
         // 2026-11-21：整条底栏撤掉（窗口底下那条"下巴"）。内容区一直长到窗口下沿，
         // 状态文字 + 刷新按钮并进右栏页脚那一行，不再单独占一条横带。
         private const int BottomBarH = 0;
-        private const int StatusRowH = 26;   // 右栏页脚：状态在左，刷新在右
+        private const int StatusRowH = 20;   // 右栏页脚只留一行状态（刷新已挪到顶栏），越矮内容越长
         // 方案标记：当前下拉里那套方案包含哪些文件，用来在列表里一眼看出「这条属不属于方案」
         private Label lblScheme;
         private readonly HashSet<string> schemeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -464,11 +464,13 @@ namespace Installer
             const int panelW = 56;      // 左栏抽屉
             const int wsW = 64;         // 工坊导入
             const int installW = 132;   // 「替换此方案」：主操作上顶栏最右（方案 B）
+            const int refreshW = 60;    // 「刷新」：常驻顶栏，和主操作同一排
             const int topGap = 8;
             // 顶栏分三组：游戏目录 | 启动项·工坊（对象操作）| 总览·面板（视图）| 主操作 · 设置
             const int groupGap = 22;
             int installX = W - Theme.M - installW;
-            int settingsX = installX - groupGap - settingsW;
+            int refreshX = installX - groupGap - refreshW;
+            int settingsX = refreshX - groupGap - settingsW;
             int panelX = settingsX - groupGap - panelW;
             int viewX = panelX - topGap - viewW;
             int wsX = viewX - groupGap - wsW;
@@ -754,11 +756,12 @@ namespace Installer
             btnRestore.Visible = false;
             tips.SetToolTip(btnRestore, Lang.S("危险操作：删掉装进游戏的文件。执行前会再次确认。\r\n故意放在最左下角，离「替换为当前设定」最远的地方。"));
 
-            // 快捷刷新 = 「刷新游戏现状」那个动作，常驻底栏，省得展开左栏去找。
+            // 快捷刷新 = 「刷新游戏现状」那个动作，常驻顶栏主操作那一排（2026-11-21 用户定：放右上看得到）。
             // 一套逻辑两个入口，不另写一份：重扫库 + 重读 addonlist + 勾选对齐游戏现状。
             btnRefreshLib = new FlatButton(); btnRefreshLib.Soft = true;
             btnRefreshLib.Text = Lang.S("刷新");
-            btnRefreshLib.SetBounds(Theme.M, CH - BottomBarH, 96, Theme.HP);
+            btnRefreshLib.SetBounds(refreshX, 16, refreshW, Theme.H);
+            btnRefreshLib.AccessibleName = "刷新游戏现状";
             btnRefreshLib.Click += delegate { DoRefreshGame(); };
             tips.SetToolTip(btnRefreshLib, Lang.S("刷新游戏现状：重扫 MOD 库 + 重读 addons 与 addonlist.txt，\r\n勾选对齐成游戏里实际开着的那些。只读，不动游戏文件。"));
             Controls.Add(btnRefreshLib);
@@ -3555,16 +3558,13 @@ namespace Installer
             // 进度条 / 停止：装在跑的时候临时占用页脚那一行
             if (bar != null) bar.Top = top - Dpi.S(StatusRowH) + Dpi.S(7);
             if (btnCancel != null) btnCancel.Top = top - Dpi.S(StatusRowH) + Dpi.S(1);
-            // 状态行 + 刷新按钮：钉在右栏页脚（贴窗口底边），不再单独占一条底栏
+            // 状态行：右栏页脚贴着窗口底边的一行（刷新按钮已经挪到顶栏，这里整行给文字）
             if (lblStatus != null)
             {
                 int left = gMod != null ? gMod.Left + Dpi.S(12) : Dpi.S(Theme.M);
-                int wide = gMod != null ? gMod.Width - Dpi.S(24) - Dpi.S(88) : ClientSize.Width - Dpi.S(2 * Theme.M);
-                lblStatus.SetBounds(left, top - Dpi.S(StatusRowH), wide, Dpi.S(StatusRowH - 8));
+                int wide = gMod != null ? gMod.Width - Dpi.S(24) : ClientSize.Width - Dpi.S(2 * Theme.M);
+                lblStatus.SetBounds(left, top - Dpi.S(StatusRowH), wide, Dpi.S(StatusRowH - 4));
             }
-            if (btnRefreshLib != null && gMod != null)
-                btnRefreshLib.SetBounds(gMod.Left + gMod.Width - Dpi.S(96) - Dpi.S(12),
-                                        top - Dpi.S(StatusRowH), Dpi.S(96), Dpi.S(StatusRowH - 2));
         }
 
         private void ApplyResponsive()
@@ -3611,9 +3611,9 @@ namespace Installer
                 gMod.Top = Dpi.S(56);
                 gMod.Height = Dpi.S(modH);
                 viewHost.Top = Dpi.S(118);
-                // 页脚只留 StatusRowH：原来底下那 74px 空白让给列表，内容一路长下来
-                viewHost.Height = Dpi.S(Math.Max(80, modH - 118 - 40));
-                lblConflict.Top = Dpi.S(modH - 66);
+                // 页脚只剩一行状态：候选列表一路贴到页脚上沿（原来留 74px，第二次收到 40，现在 22）
+                viewHost.Height = Dpi.S(Math.Max(80, modH - 118 - 22));
+                lblConflict.Top = Dpi.S(modH - 46);
                 // 左栏纵向：安装选项搬进设置后，顶上那张卡没了 —— 切换按钮和「游戏现状」直接贴顶，
                 // 把原来空出来的半屏交给现状卡（它自己会按高度铺分类分布）。
                 int infoTop = H - BottomBarH - 24;
@@ -3696,8 +3696,10 @@ namespace Installer
             const int topGap = 8;
             const int groupGap = 22;
             const int installW = 132;
+            const int refreshW = 60;
             int installX = W - Theme.M - installW;
-            int settingsX = installX - groupGap - settingsW;
+            int refreshX = installX - groupGap - refreshW;
+            int settingsX = refreshX - groupGap - settingsW;
             int panelX = settingsX - groupGap - panelW;
             int viewX = panelX - topGap - viewW;
             int wsX = viewX - groupGap - wsW;
@@ -3705,6 +3707,7 @@ namespace Installer
             txtGame.Width = Dpi.S(findX - topGap - 8 - 80);
             btnLaunch.Left = Dpi.S(findX);
             btnSettings.Left = Dpi.S(settingsX);
+            if (btnRefreshLib != null) btnRefreshLib.Left = Dpi.S(refreshX);
             btnView.Left = Dpi.S(viewX);
             btnPanel.Left = Dpi.S(panelX);
             if (btnWorkshop != null) btnWorkshop.Left = Dpi.S(wsX);
@@ -3771,7 +3774,7 @@ namespace Installer
                 { bad++; Core.Log("FAIL", tag + "「停止剩余」跑出右边距"); }
 
                 // 顶部：设置 ← 工坊 ← 抽屉 ← 台面 ← 启动项 ← 浏览（从左到右依次右移）
-                FlatButton[] top = new FlatButton[] { btnLaunch, btnWorkshop, btnView, btnPanel, btnSettings, btnInstall };
+                FlatButton[] top = new FlatButton[] { btnLaunch, btnWorkshop, btnView, btnPanel, btnSettings, btnRefreshLib, btnInstall };
                 if (btnSettings.Left + Dpi.S(60) > W - m + 1) { bad++; Core.Log("FAIL", tag + "「设置」出窗"); }
                 for (int i = 1; i < top.Length; i++)
                     if (top[i].Left <= top[i - 1].Left + Dpi.S(56)) { bad++; Core.Log("FAIL", tag + "顶部按钮叠在一起：" + top[i].Text); }
