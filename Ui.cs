@@ -1970,7 +1970,7 @@ namespace Installer
                 {
                     df.Show();
                     for (int i = 0; i < 6; i++) { Application.DoEvents(); System.Threading.Thread.Sleep(60); }
-                    CollectCjk(df, found, "下载列表");
+                    CollectCjk(df, found, "下载管理");
                     Shot(df, "lang-downloads");
                     df.Close();
                 }
@@ -2111,55 +2111,15 @@ namespace Installer
             catch (Exception ex) { Core.Log("FAIL", "LOAD 截图失败: " + ex.Message); }
         }
 
-        /// <summary>诊断截图：把导入窗口填满假数据存一张 PNG，不发请求。</summary>
-        internal void WorkshopShot()
-        {
-            using (WorkshopForm f = new WorkshopForm(this))
-            {
-                f.FillSample();
-                f.Show();
-                Application.DoEvents();
-                Application.DoEvents();
-                try
-                {
-                    using (Bitmap b = new Bitmap(f.Width, f.Height))
-                    {
-                        f.DrawToBitmap(b, new Rectangle(0, 0, b.Width, b.Height));
-                        b.Save(System.IO.Path.Combine(Core.LogDir, "workshop.png"),
-                               System.Drawing.Imaging.ImageFormat.Png);
-                    }
-                    Core.Log("INFO", "WS 截图已保存 workshop.png（" + f.Width + "x" + f.Height + "）");
-                }
-                catch (Exception ex) { Core.Log("FAIL", "WS 截图失败: " + ex.Message); }
-                f.Close();
-            }
-        }
-
         /// <summary>
-        /// 工坊窗口冒烟：构造 + 填样例 + 换两次尺寸，不联网、不截图。
+        /// 工坊页面冒烟：构造 + 填样例 + 换尺寸 + 详情页，不联网。
         /// 加这条是因为 v2.53.1 真栽在这儿 —— 构造函数里一个字段忘了 new，编译器不报，
         /// --layoutself 又不构造工坊窗口，结果一点「工坊」就 NRE 崩掉。
         /// </summary>
         internal int WorkshopSmoke()
         {
-            try
-            {
-                using (WorkshopForm f = new WorkshopForm(this))
-                {
-                    f.FillSample();
-                    f.ClientSize = new Size(Dpi.S(940), Dpi.S(600));
-                    f.ClientSize = new Size(Dpi.S(1360), Dpi.S(820));
-                    Application.DoEvents();
-                }
-                Core.Log("INFO", "WSM 工坊窗口：构造 / 填样例 / 两种尺寸重排 都正常");
-            }
-            catch (Exception ex)
-            {
-                Core.Log("FAIL", "WSM 工坊窗口塌了: " + ex.GetType().Name + " " + ex.Message);
-                return 1;
-            }
-
-            // 画廊是新页面，同样得在自检里真的构造一次 —— 上一次工坊窗口就是漏了这步，
+            // 工坊页面同样得在自检里真的构造一次 —— 漏了这步，「字段忘了 new」这种 NRE
+            // 会一路混到 release 才被截图发现。
             // 结果「字段忘了 new」这种 NRE 一路混到 release 才被截图发现。
             try
             {
@@ -2182,11 +2142,6 @@ namespace Installer
             }
         }
 
-        /// <summary>
-        /// 创意工坊：独立窗口（非模态），主窗口照常能用 —— 下载期间照样翻树、拖未归类的 MOD。
-        /// 同一时刻只开一个：再点「工坊」把已有窗口提到前面。关窗时下载过才重扫库。
-        /// </summary>
-        private WorkshopForm wsWindow;
         private GalleryForm galleryWindow;    // 画廊页面（顶栏「工坊」进的就是它）
 
         /// <summary>
@@ -2348,7 +2303,7 @@ namespace Installer
         }
 
         /// <summary>
-        /// 顶栏「工坊」→ 画廊（用图找 MOD）。批量勾选下载那个列表窗口还在，从画廊右上角「批量下载」进。
+        /// 顶栏「工坊」→ 画廊（用图找 MOD）。下载管理在画廊顶栏。
         /// 两种活法：不知道装什么时看图扫；知道要哪几个时进列表一次勾完。
         /// </summary>
         /// <summary>方案树推荐区点一张：打开工坊并把这个位置对应的搜索词填进去（同一个窗口，不另开）。</summary>
@@ -2396,27 +2351,6 @@ namespace Installer
             galleryWindow = new GalleryForm(this);
             galleryWindow.FormClosed += delegate { galleryWindow = null; };
             galleryWindow.Show();
-        }
-
-        /// <summary>画廊里的「批量下载」调它；也能被外部自检直接调。</summary>
-        internal void ShowWorkshopList()
-        {
-            EnsureTree();
-            treeView.Rebuild();
-
-            if (wsWindow != null && !wsWindow.IsDisposed) { wsWindow.Activate(); return; }
-            wsWindow = new WorkshopForm(this);
-            wsWindow.FormClosed += delegate
-            {
-                int got = wsWindow.DownloadedCount;
-                wsWindow = null;
-                if (got > 0)
-                {
-                    Core.Log("INFO", "工坊：新下载 " + got + " 个，重扫库");
-                    RescanMods();
-                }
-            };
-            wsWindow.Show();
         }
 
         /// <summary>手动重扫：库或游戏目录在别处被改过（别人手动丢过 vpk、装了一半），点一下重读。</summary>
@@ -5322,4 +5256,4 @@ namespace Installer
             return f.box.Text.Trim();
         }
     }
-}
+}

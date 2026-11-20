@@ -11,10 +11,10 @@ namespace Installer
     /// <summary>
     /// 画廊：用图找 MOD 的页面。一屏铺卡片（预览图 + 名字 + 订阅数），点一张换到详情页看全篇介绍。
     ///
-    /// 和「批量下载」那个列表窗口是两种活法：
+    /// 和「下载管理」那个窗口是两种活法：
     ///   · 这里解决「我不知道要装什么，先看看有什么」——靠图扫，靠名字认；
     ///   · 列表那边解决「我知道要哪几个，一次勾完下完」——靠勾选和批量。
-    /// 两个入口都在：这个页面右上角有「批量下载」，列表窗口里也有「画廊」。
+    /// 只保留一个入口：主窗口顶栏的「工坊」进的就是这个页面。
     /// </summary>
     internal sealed class GalleryForm : Form, IMessageFilter
     {
@@ -47,11 +47,9 @@ namespace Installer
         private readonly TextBox txtQuery = new TextBox();
         private readonly ComboBox cboSort = new ComboBox();
         private readonly FlatButton btnSearch = new FlatButton();
-        private readonly FlatButton btnList = new FlatButton();
-        private readonly FlatButton btnDowns = new FlatButton();   // 下载列表 + 保存位置
+        private readonly FlatButton btnDowns = new FlatButton();   // 下载管理 + 保存位置
         private readonly FlatButton btnUpdates = new FlatButton(); // 检查已下载 MOD 有没有新版
         private DownloadListForm downsWindow;
-        private readonly FlatButton btnClose = new FlatButton();
         private readonly FlatButton btnTop = new FlatButton();       // 回到顶部
         private readonly FlatButton btnPrevPage = new FlatButton();  // 上一页（替换式定位）
         private readonly FlatButton btnNextPage = new FlatButton();  // 下一页（替换式定位）
@@ -158,22 +156,14 @@ namespace Installer
             cboSort.SelectedIndex = 0;
             Controls.Add(cboSort);
 
-            btnList.Text = Lang.S("批量下载");
-            btnList.Click += delegate { OpenList(); };
-            Controls.Add(btnList);
-
             btnUpdates.Text = Lang.S("检查更新");
             btnUpdates.Click += delegate { CheckUpdatesClicked(); };
             Controls.Add(btnUpdates);
 
-            btnDowns.Text = Lang.S("下载列表");
+            btnDowns.Text = Lang.S("下载管理");
             btnDowns.Click += delegate { OpenDowns(); };
             Controls.Add(btnDowns);
 
-            btnClose.Text = Lang.S("关闭");
-            btnClose.DialogResult = DialogResult.Cancel;
-            Controls.Add(btnClose);
-            CancelButton = btnClose;
 
             // ---- 主体：卡片墙 ----
             host.BackColor = Theme.Bg;
@@ -381,12 +371,8 @@ namespace Installer
             cboCat.SetBounds(m + S(40), y, S(160), S(26));
 
             int bx = W - m;
-            btnClose.SetBounds(bx - S(72), y, S(72), S(30)); bx -= S(72) + S(8);
-            btnList.SetBounds(bx - S(96), y, S(96), S(30)); bx -= S(96) + S(8);
             btnDowns.SetBounds(bx - S(92), y, S(92), S(30)); bx -= S(92) + S(8);
-            // 窄窗放不下就藏起来（搜索框不能被挤到和「搜索」按钮重叠）
-            btnUpdates.Visible = W >= S(1060);
-            if (btnUpdates.Visible) { btnUpdates.SetBounds(bx - S(96), y, S(96), S(30)); bx -= S(96) + S(8); }
+            btnUpdates.SetBounds(bx - S(96), y, S(96), S(30)); bx -= S(96) + S(8);
             cboSort.SetBounds(bx - S(104), y + S(2), S(104), S(26)); bx -= S(104) + S(8);
             btnSearch.SetBounds(bx - S(64), y, S(64), S(30)); bx -= S(64) + S(8);
             int qx = m + S(40) + S(160) + S(8);
@@ -1362,12 +1348,6 @@ namespace Installer
             catch (Exception ex) { lblState.Text = "打不开浏览器：" + ex.Message; }
         }
 
-        private void OpenList()
-        {
-            if (owner == null) return;
-            owner.ShowWorkshopList();
-        }
-
         /// <summary>
         /// 下载列表：这次下了什么、存到哪、成了没有，都在里面；保存位置也在里面改。
         /// 非模态且只留一个 —— 下载在跑的时候能开着看进度。
@@ -1381,7 +1361,7 @@ namespace Installer
                 downsWindow.Activate();
                 return;
             }
-            downsWindow = new DownloadListForm();
+            downsWindow = new DownloadListForm(owner);
             downsWindow.FormClosed += delegate { downsWindow = null; UpdateDownsCaption(); };
             downsWindow.Show(this);
             UpdateDownsCaption();
@@ -1402,7 +1382,7 @@ namespace Installer
         private void UpdateDownsCaption()
         {
             int run = WorkshopDownloads.RunningCount;
-            btnDowns.Text = run > 0 ? Lang.F("下载列表 ({0})", run) : Lang.S("下载列表");
+            btnDowns.Text = run > 0 ? Lang.F("下载管理 ({0})", run) : Lang.S("下载管理");
         }
 
         /// <summary>

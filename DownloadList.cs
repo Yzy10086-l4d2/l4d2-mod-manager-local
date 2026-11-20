@@ -9,7 +9,7 @@ using System.Windows.Forms;
 namespace Installer
 {
     /// <summary>
-    /// 工坊的「下载列表」：在这次下过什么、下到哪、成了还是失败，都看得见；
+    /// 工坊的「下载管理」：在这次下过什么、下到哪、成了还是失败，都看得见；
     /// 保存位置也在这里改 —— 下载这件事的两个疑问（"东西在哪"和"以后存哪"）放在同一个窗口里。
     ///
     /// 非模态：下载还在跑也能打开看进度，关掉不影响下载。
@@ -25,6 +25,8 @@ namespace Installer
         private readonly FlatButton btnDefault = new FlatButton();
         private readonly FlatButton btnOpenDir = new FlatButton();
         private readonly FlatButton btnAgain = new FlatButton();
+        private readonly FlatButton btnShop = new FlatButton();   // 回到我们自己的工坊页看这个 MOD
+        private readonly MainForm owner;
         private readonly FlatButton btnLocate = new FlatButton();
         private readonly FlatButton btnDelete = new FlatButton();
         private readonly FlatButton btnClear = new FlatButton();
@@ -36,9 +38,10 @@ namespace Installer
         private const int M = 16;
         private static int S(int v) { return Dpi.S(v); }
 
-        public DownloadListForm()
+        public DownloadListForm(MainForm mf = null)
         {
-            Text = Lang.S("工坊 · 下载列表");
+            owner = mf;
+            Text = Lang.S("工坊 · 下载管理");
             Theme.UseDpi(this);
             ClientSize = Dpi.Sz(780, 560);
             MinimumSize = Dpi.Sz(640, 420);
@@ -101,6 +104,10 @@ namespace Installer
             btnAgain.Text = Lang.S("重新下载");
             btnAgain.Click += delegate { Redownload(); };
             Controls.Add(btnAgain);
+
+            btnShop.Text = Lang.S("在工坊查看");
+            btnShop.Click += delegate { OpenInWorkshop(); };
+            Controls.Add(btnShop);
 
             btnLocate.Text = Lang.S("打开所在位置");
             btnLocate.Click += delegate { Locate(); };
@@ -186,8 +193,9 @@ namespace Installer
             // 底部：左边三颗操作，右边清空 + 关闭，中间留给状态文字
             int by = H - S(66);
             btnAgain.SetBounds(m, by, S(100), S(32));
-            btnLocate.SetBounds(m + S(108), by, S(120), S(32));
-            btnDelete.SetBounds(m + S(236), by, S(116), S(32));
+            btnShop.SetBounds(m + S(108), by, S(112), S(32));
+            btnLocate.SetBounds(m + S(228), by, S(120), S(32));
+            btnDelete.SetBounds(m + S(356), by, S(116), S(32));
 
             btnClose.SetBounds(W - m - S(76), by, S(76), S(32));
             btnClear.SetBounds(W - m - S(76) - S(8) - S(100), by, S(100), S(32));
@@ -284,6 +292,7 @@ namespace Installer
             WsDownload d = Selected();
             bool has = d != null && !d.Running;
             btnAgain.Enabled = has && d.Url.Length > 0;
+            btnShop.Enabled = d != null && d.Id.Length > 0 && owner != null;
             btnLocate.Enabled = d != null && (d.ExistsOnDisk || d.Dir.Length > 0);
             btnDelete.Enabled = d != null && d.ExistsOnDisk;
             btnClear.Enabled = WorkshopDownloads.Count > 0;
@@ -305,6 +314,44 @@ namespace Installer
             catch (Exception ex) { d = ex.Message; }
             lblDir.Text = custom ? d : d + Lang.S("    默认位置（跟随主库）");
             btnDefault.Enabled = custom;
+        }
+
+        /// <summary>
+        /// 已下载的 MOD 能回到我们的工坊页：按记录里的工坊 ID 查一次，直接打开它的详情页
+        /// （不跳 Steam 浏览器）。
+        /// </summary>
+        private void OpenInWorkshop()
+        {
+            WsDownload d = Selected();
+            if (d == null || d.Id.Length == 0 || owner == null) return;
+            string id = d.Id;
+            SetMsg(Lang.S("正在打开工坊详情…"));
+            btnShop.Enabled = false;
+            Thread t = new Thread(delegate()
+            {
+                string err = null;
+                WsItem it = null;
+                try
+                {
+                    List<WsItem> one = Workshop.Fetch(new List<string>(new string[] { id }));
+                    if (one != null && one.Count > 0) it = one[0];
+                    else err = Lang.S("工坊里查不到这个物品（可能已下架）");
+                }
+                catch (Exception ex) { err = ex.Message; }
+                try
+                {
+                    BeginInvoke(new MethodInvoker(delegate
+                    {
+                        btnShop.Enabled = true;
+                        if (it != null) { try { owner.OpenWorkshopFor("", it); } catch { } SetMsg(""); }
+                        else SetMsg(err ?? "");
+                    }));
+                }
+                catch { }
+            });
+            t.IsBackground = true;
+            t.Priority = ThreadPriority.BelowNormal;
+            t.Start();
         }
 
         private void PickDir()

@@ -85,7 +85,6 @@ namespace Installer
             bool wsSelf = false;
             string wsNet = null;
             string wsSearch = null;
-            bool uiWorkshop = false;
             bool uiGallery = false;
             int deskServe = 0;
             bool deskSelf = false;
@@ -162,7 +161,6 @@ namespace Installer
                 else if (a.StartsWith("--workshopnet=", StringComparison.OrdinalIgnoreCase)) wsNet = a.Substring(14).Trim();
                 else if (a.StartsWith("--workshopsearch=", StringComparison.OrdinalIgnoreCase)) wsSearch = a.Substring(17).Trim();
                 // 诊断截图：打开工坊窗口、填假数据、存 workshop.png，不联网
-                else if (string.Equals(a, "--workshopui", StringComparison.OrdinalIgnoreCase)) { uiWorkshop = true; uiTest = true; }
                 else if (string.Equals(a, "--galleryui", StringComparison.OrdinalIgnoreCase)) { uiGallery = true; uiTest = true; }
                 else if (string.Equals(a, "--gallerself", StringComparison.OrdinalIgnoreCase)) { gallerySelf = true; uiTest = true; }
                 else if (string.Equals(a, "--langself", StringComparison.OrdinalIgnoreCase)) { langSelf = true; uiTest = true; }
@@ -781,7 +779,7 @@ namespace Installer
                         Console.WriteLine("themeself failures = " + bad);
                         return bad == 0 ? 0 : 1;
                     }
-                    if (uiWorkshop) { f.WorkshopShot(); System.Windows.Forms.Application.DoEvents(); return 0; }
+                    
                     if (langSelf) { f.LangSelf(); System.Windows.Forms.Application.DoEvents(); return 0; }
                     if (gallerySelf) { int badg = f.GallerySelf(); System.Windows.Forms.Application.DoEvents(); return badg == 0 ? 0 : 1; }
                     if (uiGallery) { f.GalleryShot(); System.Windows.Forms.Application.DoEvents(); return 0; }

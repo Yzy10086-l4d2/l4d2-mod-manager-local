@@ -1050,6 +1050,16 @@ namespace Installer
                 if (p.EndsWith(".bsp", StringComparison.OrdinalIgnoreCase) && (p.StartsWith("maps/") || p.IndexOf("/maps/") >= 0))
                 { cat = "地图"; sub = "单张地图"; return true; }
 
+            // ①.5 战役配套（地图素材卷）：包里有 missions/<战役>.txt、但没有 maps/*.bsp。
+            // 实测 Poolcore v1.0 [5 Maps Campagin Part 2]：186 条全是贴图/声音 + 一个
+            // missions/poolcore.txt —— 它是这套 5 图战役的素材卷，要配合同名的 Part 1 才有图。
+            // 有 bsp 的包走上面 ①，这里只收「有任务定义、没有关卡」的那种。
+            // 任务文件是硬证据（作者给战役起的名字在里面），比按文件名猜 "Maps/Campaign" 可靠。
+            foreach (string p in ps)
+                if (p.StartsWith("missions/", StringComparison.OrdinalIgnoreCase)
+                    && p.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+                { cat = "地图"; sub = "配套素材"; return true; }
+
             // ② 场景：没有 bsp、只有天空盒或地面细节贴图的，才是单纯换场景
             foreach (string p in ps)
             {

@@ -294,7 +294,7 @@ namespace Installer
             Add(d, "当前：{0}", "Current: {0}");
             Add(d, "可叠加的扩展：{0}", "Stackable extras: {0}");
             Add(d, "{0} 页", "Page {0}");
-            Add(d, "下载列表 ({0})", "Downloads ({0})");
+            Add(d, "下载管理 ({0})", "Downloads ({0})");
 
             // ---------- 第三批：自检剩余项 ----------
             Add(d, "● 可以替换", "● Ready to apply");
@@ -333,9 +333,8 @@ namespace Installer
             Add(d, "全部物品", "All items");
             Add(d, "正在搜工坊…", "Searching the Workshop…");
             Add(d, "正在加载…", "Loading…");
-            Add(d, "下载列表", "Downloads");
-            Add(d, "批量下载", "Batch download");
-            Add(d, "下载", "Download");
+            Add(d, "下载管理", "Downloads");
+                        Add(d, "下载", "Download");
             Add(d, "已下载", "Downloaded");
             Add(d, "失败", "Failed");
             Add(d, "中断", "Interrupted");
@@ -388,6 +387,26 @@ namespace Installer
             Add(d, "刷新于 {0} · 读 addons + addonlist.txt", "Updated {0} · addons + addonlist.txt");
             Add(d, "按游戏现状回填", "Fill from game");
             Add(d, "刷新", "Refresh");
+            Add(d, "刷新游戏现状", "Refresh from game");
+            Add(d, "在工坊查看", "View in Workshop");
+            Add(d, "工坊 · 下载管理", "Workshop · Downloads");
+            Add(d, "检查更新", "Check for updates");
+            Add(d, "配套 MOD", "Required items");
+            Add(d, "配套 MOD（{0}）", "Required items ({0})");
+            Add(d, "下载合集（{0}）", "Download collection ({0})");
+            Add(d, "下载合集", "Download collection");
+            Add(d, "开始更新", "Update selected");
+            Add(d, "全选", "Select all");
+            Add(d, "全不选", "Select none");
+            Add(d, "一个都没勾。", "Nothing is selected.");
+            Add(d, "有配套 MOD", "Required items");
+            Add(d, "勾选要更新的 MOD，然后点「开始更新」。更新会覆盖原文件，分类和档位不变。", "Tick the MODs to update, then click Update selected. Files are overwritten in place; categories and slots stay as they are.");
+            Add(d, "正在检查更新…", "Checking for updates…");
+            Add(d, "检查完成：已下载的 MOD 都是最新的。", "All downloaded MODs are up to date.");
+            Add(d, "检查完成：已下载的 MOD 都是最新的", "All downloaded MODs are up to date");
+            Add(d, "正在打开工坊详情…", "Opening Workshop page…");
+            Add(d, "工坊里查不到这个物品（可能已下架）", "This item is not on the Workshop (maybe removed)");
+            Add(d, "检查更新失败：", "Update check failed: ");
             Add(d, "启动时自动回填", "Auto-fill on start");
             Add(d, "游戏 addons 里还没认出 MOD，没得回填", "No mods recognised in the game's addons — nothing to fill");
             Add(d, "正在扫库，扫完再回填", "Scanning the library — fill when it finishes");
