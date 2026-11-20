@@ -4015,16 +4015,31 @@ namespace Installer
                 // 每次开程序都换一批：页码随机，不落磁盘、不跨会话缓存
                 try { got = Workshop.SearchItems(key, "trend", recRnd.Next(1, 4)); } catch { }
                 if (got != null) { try { got = new List<WsItem>(got); } catch { } }
-                List<Image> pics = new List<Image>();
+                // 缩略图并发取（6 路）：单线程下 8 张图就是 8 个往返
+                List<WsItem> cand = new List<WsItem>();
                 if (got != null)
                     foreach (WsItem it in got)
                     {
-                        if (pics.Count >= 24) break;
+                        if (cand.Count >= 24) break;
                         if (it == null || string.IsNullOrEmpty(it.Preview)) continue;
-                        Image pic = null;
-                        try { pic = WsThumb.LoadCover(it.Preview, it.Id, tw, th); } catch { }
-                        if (pic != null) pics.Add(pic);
+                        cand.Add(it);
                     }
+                Image[] arr = new Image[cand.Count];
+                System.Threading.Tasks.Parallel.For(0, cand.Count, new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = 6 },
+                    delegate(int i)
+                    {
+                        try { arr[i] = WsThumb.LoadCover(cand[i].Preview, cand[i].Id, tw, th); } catch { }
+                    });
+                List<Image> pics = new List<Image>();
+                foreach (Image im in arr) if (im != null) pics.Add(im);
+                if (pics.Count > 0 && got != null)
+                {
+                    // pics 可能因个别失败和 got 错位：按成功顺序重建条目表，避免封面和标题对不上
+                    List<WsItem> aligned = new List<WsItem>();
+                    int k = 0;
+                    for (int i = 0; i < cand.Count; i++) if (arr[i] != null) { aligned.Add(cand[i]); k++; }
+                    got = aligned;
+                }
                 try
                 {
                     BeginInvoke((MethodInvoker)delegate

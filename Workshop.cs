@@ -171,6 +171,69 @@ namespace Installer
             }
         }
 
+        /// <summary>大文件下载：同样走优选 IP，失败退回域名重来一次；写到 part 路径，边下边报进度。</summary>
+        public static long DownloadTo(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress)
+        {
+            Tune();
+            long got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, true);
+            if (got > 0) return got;
+            try { if (File.Exists(partPath)) File.Delete(partPath); } catch { }
+            return TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false);
+        }
+
+        static long TryDownload(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, bool allowPin)
+        {
+            Uri u = null;
+            try { u = new Uri(url); } catch { }
+            try
+            {
+                string pinnedUrl = null;
+                if (allowPin && u != null)
+                {
+                    string ip = Pick(u.Host);
+                    if (!string.IsNullOrEmpty(ip))
+                    {
+                        UriBuilder ub = new UriBuilder(u);
+                        ub.Host = ip;
+                        pinnedUrl = ub.Uri.AbsoluteUri;
+                    }
+                }
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(pinnedUrl ?? url);
+                if (pinnedUrl != null) req.Host = u.Host;
+                req.UserAgent = ua;
+                req.Timeout = timeoutMs;
+                req.ReadWriteTimeout = 60000;
+                req.AllowAutoRedirect = true;
+                req.KeepAlive = true;
+                try { req.Proxy = null; } catch { }
+                using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
+                {
+                    long total = r.ContentLength > 0 ? r.ContentLength : totalHint;
+                    using (Stream src = r.GetResponseStream())
+                    using (FileStream fs = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536))
+                    {
+                        byte[] buf = new byte[65536];
+                        long got = 0;
+                        int n;
+                        while ((n = src.Read(buf, 0, buf.Length)) > 0)
+                        {
+                            fs.Write(buf, 0, n);
+                            got += n;
+                            if (progress != null) progress(got, total);
+                        }
+                        fs.Flush();
+                        return got;
+                    }
+                }
+            }
+            catch
+            {
+                if (allowPin && u != null) DropPin(u.Host);
+                try { if (File.Exists(partPath)) File.Delete(partPath); } catch { }
+                return -1;
+            }
+        }
+
         static string Pick(string host)
         {
             if (!IsPinHost(host)) return null;
@@ -625,13 +688,6 @@ namespace Installer
         /// </summary>
         public static void Download(WsItem it, string dest, Action<long, long> progress)
         {
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(it.Url);
-            req.UserAgent = Ua;                 // 不加这个 CDN 直接 404
-            req.Timeout = 30000;
-            req.ReadWriteTimeout = 60000;
-            req.AllowAutoRedirect = true;
-
             string part = dest + ".part";
             try
             {
@@ -639,24 +695,9 @@ namespace Installer
             }
             catch { }
 
-            using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
-            {
-                long total = r.ContentLength > 0 ? r.ContentLength : it.Size;
-                using (Stream src = r.GetResponseStream())
-                using (FileStream fs = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 65536))
-                {
-                    byte[] buf = new byte[65536];
-                    long got = 0;
-                    int n;
-                    while ((n = src.Read(buf, 0, buf.Length)) > 0)
-                    {
-                        fs.Write(buf, 0, n);
-                        got += n;
-                        if (progress != null) progress(got, total);
-                    }
-                    fs.Flush();
-                }
-            }
+            // 走联网层：优选 IP（CDN 大多命中 cdn.steamusercontent），失败自动退回域名重下
+            long gotBytes = WsNet.DownloadTo(it.Url, Ua, 30000, part, it.Size, progress);
+            if (gotBytes <= 0) throw new IOException("下载失败（连不上 steamusercontent，已重试一次）");
 
             long real = 0;
             try { real = new FileInfo(part).Length; } catch { }
