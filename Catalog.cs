@@ -49,17 +49,28 @@ namespace Installer
         public string Where { get { return Cat + " · " + Sub; } }
 
         /// <summary>
-        /// 界面上显示的名字：设置里选「VPK 文件名」就照原名，选「包内标题」就用 addoninfo 的 AddonTitle。
-        /// 只管显示和搜索 —— Key 是登记键、Name 是文件名，绝不能拿它们换显示值，否则开关和方案全对不上。
+        /// 界面上显示的名字：选「VPK 文件名」= 磁盘上那个 vpk 的原名；选「包内标题」= addoninfo 的 AddonTitle。
+        /// 注意 Name 在归组时已经被标题覆盖过（外观优先），所以「文件名」必须从 RelPath 取，
+        /// 不能再退回 Name —— 那样两种模式会显示同一个名字，开关看起来像坏的。
+        /// 只管显示和搜索 —— Key 是登记键，绝不能换显示值，否则开关和方案全对不上。
         /// </summary>
         public string Show
         {
             get
             {
-                if (Core.Cfg == null || !Core.Cfg.NameByTitle) return Name ?? "";
                 ModItem m = Main;
+                // 工坊订阅在磁盘上没有「用户起的文件名」可言：有游戏内标题就用标题，没有就按订阅号显示，
+                // 不拿 2157152704.vpk 冒充名字。
+                if (m != null && m.FromWorkshop)
+                {
+                    string wt = (m.AddonTitle ?? "").Trim();
+                    return wt.Length > 0 ? wt : Lang.S("工坊订阅") + " " + m.WorkshopId;
+                }
+                string file = m == null ? "" : System.IO.Path.GetFileNameWithoutExtension(m.RelPath ?? m.Name ?? "");
+                if (file.Length == 0) file = Name ?? "";
+                if (Core.Cfg == null || !Core.Cfg.NameByTitle) return file;
                 string t = m == null ? "" : (m.AddonTitle ?? "").Trim();
-                return t.Length > 0 ? t : (Name ?? "");
+                return t.Length > 0 ? t : file;
             }
         }
     }
@@ -873,7 +884,10 @@ namespace Installer
                 // 3) 游戏目录里已装的 vpk：也认出来进列表（FromGame 标记，安装时不再复制）
                 int gameN = ScanGameAddons(sw);
 
-                Core.Log("OK", "扫库: 独立 vpk " + vpkFiles.Count + " 个, 压缩包 " + arcs.Count + " 个（缓存命中 " + arcHit + "/" + (arcHit + arcMiss) + "），游戏目录 " + gameN + " 个，共 " + Core.ModList.Count + " 个 vpk，" + sw.ElapsedMilliseconds + " ms");
+                // 4) Steam 创意工坊订阅：只读进树。开关写 addonlist，工坊目录一个字节都不碰。
+                int wsN = ScanWorkshop(sw);
+
+                Core.Log("OK", "扫库: 独立 vpk " + vpkFiles.Count + " 个, 压缩包 " + arcs.Count + " 个（缓存命中 " + arcHit + "/" + (arcHit + arcMiss) + "），游戏目录 " + gameN + " 个" + (wsN > 0 ? "，工坊订阅 " + wsN + " 个" : "") + "，共 " + Core.ModList.Count + " 个 vpk，" + sw.ElapsedMilliseconds + " ms");
             }
             catch (Exception ex) { Core.Log("FAIL", "扫 MOD 出错: " + ex.Message); }
             ModIdentify.SaveCache();
@@ -1046,6 +1060,101 @@ namespace Installer
             return n2;
         }
 
+        /// <summary>
+        /// Steam 创意工坊订阅：只读进树。订阅/退订由 Steam 决定，这里只把「装了什么」读出来，
+        /// 开关写 addonlist 的 workshop\<id>.vpk 那一条 —— 不搬、不复制、不删工坊目录里的任何文件。
+        /// </summary>
+        static int ScanWorkshop(Stopwatch sw)
+        {
+            string dir = WorkshopContentDir();
+            if (dir == null) return 0;
+            Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            try { st = AddonList.ReadAll(Core.Cfg.GameRoot); } catch { }
+            int n = 0;
+            try
+            {
+                foreach (string item in Directory.GetDirectories(dir))
+                {
+                    string id = Path.GetFileName(item);
+                    if (!IsAllDigits(id)) continue;          // 只认 550\<数字 ID> 这种订阅目录
+                    string[] vpks = Directory.GetFiles(item, "*.vpk", SearchOption.TopDirectoryOnly);
+                    if (vpks.Length == 0) continue;
+                    // 一个订阅偶尔带好几个 vpk：开关按订阅走（一条 addonlist），所以拿最大的那个当代表，
+                    // 大小按整份订阅算 —— 拆成多条会出现「看着有两个、开关其实只有一个」。
+                    string main = vpks[0];
+                    long total = 0, best = -1;
+                    foreach (string v in vpks)
+                    {
+                        long len = 0;
+                        try { len = new FileInfo(v).Length; } catch { }
+                        total += len;
+                        if (len > best) { best = len; main = v; }
+                    }
+                    ModItem it = new ModItem();
+                    it.Name = "workshop\\" + id + ".vpk";   // 登记键，和游戏自己写进 addonlist 的写法一致
+                    it.FullPath = main;
+                    it.RelPath = "@工坊\\" + id + "\\" + Path.GetFileName(main);
+                    it.Key = "#ws#" + id;
+                    it.Category = "已装";
+                    it.FromGame = true;                      // 已装：开关、方案、勾选全按「已装」走
+                    it.FromWorkshop = true;
+                    it.WorkshopId = id;
+                    it.Size = total;
+                    bool on;
+                    it.AddonOn = !st.TryGetValue(it.Name, out on) || on;   // 没登记 = 订阅默认启用
+                    Classify(it);
+                    ModIdentify.Result ir = ModIdentify.AnalyzeCached(it.RelPath, main);
+                    it.Subject = ir.Subject;
+                    it.SubjectLevel = ir.Level;
+                    it.SubjectKey = ir.Key;
+                    // 一个包里换了好几个生还者时，位置跟小分类走（同 ScanGameAddons 的口径）
+                    if (it.Sub == "幸存者") { it.Subject = "幸存者"; it.SubjectKey = "幸存者"; }
+                    it.Kinds = ir.Kinds;
+                    it.Only1P = ir.Only1P;
+                    it.AnimOnly = ir.AnimOnly;
+                    it.Entries = ir.Entries;
+                    it.SubjectTrace = ir.Trace;
+                    it.AssetPaths = ir.Assets;
+                    it.AddonTitle = ir.Title;
+                    it.AddonAuthor = ir.Author;
+                    RefineBySubject(it);
+                    Add(it);
+                    n++;
+                }
+            }
+            catch (Exception ex) { Core.Log("WARN", "扫工坊订阅出错: " + ex.Message); }
+            if (n > 0) Core.Log("INFO", "工坊: 读出 " + n + " 个订阅（只读，不动工坊目录里的文件）");
+            return n;
+        }
+
+        static bool IsAllDigits(string s)
+        {
+            if (s.Length == 0) return false;
+            foreach (char c in s) if (c < '0' || c > '9') return false;
+            return true;
+        }
+
+        /// <summary>
+        /// 工坊内容目录 = &lt;库&gt;\steamapps\workshop\content\550（550 是 L4D2 的 appid）。
+        /// 从游戏目录往上找 steamapps：绿色版 / 自己解压的目录没有这一层，返回 null 就当没有订阅。
+        /// </summary>
+        static string WorkshopContentDir()
+        {
+            string root = Core.Cfg == null ? null : Core.Cfg.GameRoot;
+            if (string.IsNullOrEmpty(root)) return null;
+            try
+            {
+                for (DirectoryInfo up = new DirectoryInfo(root.TrimEnd('\\')); up != null; up = up.Parent)
+                {
+                    if (!string.Equals(up.Name, "steamapps", StringComparison.OrdinalIgnoreCase)) continue;
+                    string p = Path.Combine(up.FullName, "workshop", "content", "550");
+                    return Directory.Exists(p) ? p : null;
+                }
+            }
+            catch { }
+            return null;
+        }
+
         /// <summary>官方自带文件：pak01_dir.vpk / pak000_000.vpk / dlc1_xxx.vpk 这类，永远不当 MOD。</summary>
         static bool IsOfficialAddonName(string name)
         {
@@ -1113,12 +1222,27 @@ namespace Installer
             // 位置认出来了，但小分类还是文件夹 / 兜底给的：以小分类跟位置对齐。
             // 否则会出现「识别结果 MAC-10、小分类 UZI」这种自相矛盾的记录，
             // 树上到底听谁的完全看运气（2026-11-19 实测 shu_weapon_ram7_starlit_mac10）。
+            //
+            // 对齐只许在同一大类里换小分类，不许跨大类：识别结果是包内**零件**的证据，
+            // 整包是什么已经由包级证据定下来了。否则一张图里自带的自制枪、一个 UI 包里
+            // 自带的枪械图标，都能把整包搬到大类下面（2026-11-20 广州增城806 判成 UZI / 近战）。
+            // 只留一个例外：原大类是「杂项」这个兜底桶 —— 它本来就没结论，
+            // 「改视角 / 火光 / 杂项目录里的 AK」还要靠识别结果挂到那把枪下面。
+            // 但「包级证据」一旦成立（地图 = 包里有 bsp），整包身份就定了，位置级证据不许再改大类：
+            // 一张图里自带的自制枪、一个 UI 包里自带的枪械图标，都能把整包搬到大类下面
+            // （2026-11-20 广州增城806 被判成 UZI / 近战）。反过来，包级证据没成立时这条对齐
+            // 仍然要能救场 —— 「武士刀」在内容规则里被型号表匹配成枪，就是靠这里拉回近战的。
+            bool pkgLevel = (it.Kinds ?? "").IndexOf("地图", StringComparison.Ordinal) >= 0;
             Positions.Row pr = Positions.Find(it.Subject);
             if (pr != null && it.Sub != pr.Sub)
             {
-                it.Sub = pr.Sub;
-                it.Cat = SlotIndex.CatOfSub(pr.Sub);
-                it.Category = it.Cat;
+                string want = SlotIndex.CatOfSub(pr.Sub);
+                if (!pkgLevel || want == it.Cat)
+                {
+                    it.Sub = pr.Sub;
+                    it.Cat = want;
+                    it.Category = it.Cat;
+                }
             }
             // 整套替换的三栏（界面 / 特效 / 音效）：包里没有可指名的本体，用栏名兜一个对象名。
             // 这一步必须放在识别之后 —— 识别会把 Subject 整个覆盖掉（这类包读不出模型名），
@@ -1138,8 +1262,33 @@ namespace Installer
             it.Category = it.Cat;
         }
 
+        /// <summary>
+        /// 包指纹：优先用包内资源路径集合（改名、换目录都不变），
+        /// 读不出内容时退回「文件名 + 大小 + 条目数」，至少同一台机器上是稳定的。
+        /// </summary>
+        static string FpOf(ModItem it)
+        {
+            string raw = (it.AssetPaths ?? "").Trim();
+            // 不动文件名：作者改名、工坊下载时自动改名都不影响指纹。
+            // 读不出资源路径的大包（地图这种几千条目的）用「条目数 + 字节数」代替，同样改名不丢。
+            string basis = raw.Length > 0
+                ? "a:" + raw
+                : "e:" + it.Entries + "|" + it.Size;
+            using (System.Security.Cryptography.SHA1 sha = System.Security.Cryptography.SHA1.Create())
+            {
+                byte[] h = sha.ComputeHash(Encoding.UTF8.GetBytes(basis));
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < 8; i++) sb.Append(h[i].ToString("x2"));
+                return sb.ToString();
+            }
+        }
+
         static void Add(ModItem it)
         {
+            it.Fp = FpOf(it);
+            // 人工归类的记忆：这个包上次被你拖到哪一类，这次直接照办，不再让自动规则判回去。
+            // 记的是包指纹而不是路径，所以改名、换目录、库里和游戏里各一份都认（2026-11-20 加）。
+            CatPrefs.ApplyTo(it);
             Core.ModList.Add(it);
             Core.ByRel[it.Key] = it;
             string rd = Core.RelDir(it.RelPath);
@@ -2098,6 +2247,19 @@ namespace Installer
                 // 内容分类：只喂路径表，不碰真 vpk。
                 // 「一把枪的 HUD 图标」必须归到那把枪，不能算整套界面 —— 否则它会跑进
                 // UI 界面那个单选槽，把用户整套 HUD 顶掉。
+                // 地图包里夹着自己做的近战 / 枪械模型：整包仍然是地图，不能按模型名判成武器
+                // （2026-11-20 用户指出：广州增城806 被判成 UZI / 近战）。
+                {
+                    ModIdentify.Result rm = ModIdentify.AnalyzePaths(new List<string>(
+                        new string[] { "maps/zc1_m1.bsp", "models/weapons/v_smg_uzi.mdl" }));
+                    bad += RecogCheck(rm.Level == "地图" && rm.Subject.Length == 0, "地图包里的自制武器模型不影响整包判地图");
+                }
+                // 三方图几乎都自带天空盒/地面细节贴图：带 bsp 就一定是地图，不能判成场景
+                bad += RecogCheck(Classified(new string[] { "maps/zc1_m1.bsp", "materials/skybox/sky_zc_bk.vtf" }, "地图", "单张地图"),
+                    "自带天空盒的地图包仍算地图");
+                // 只有天空盒、没有 bsp 的才归场景
+                bad += RecogCheck(Classified(new string[] { "materials/skybox/sky_night_bk.vtf" }, "场景", "天空盒"),
+                    "单纯的天空盒包归场景");
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/icon_rifle.vtf" }, "枪械", "步枪"),
                     "只改一把枪的 HUD 图标归那把枪的枪种");
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/icon_smg.vtf" }, "枪械", "冲锋枪"),

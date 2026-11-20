@@ -215,6 +215,15 @@ namespace Installer
             segName.Items = new string[] { Lang.S("文件名"), Lang.S("标题") };
             segName.SetBounds(332, 208, 232, 32);
             segName.SelectedIndex = Core.Cfg.NameByTitle ? 1 : 0;
+            segName.SelectedIndexChanged += delegate
+            {
+                bool want = segName.SelectedIndex == 1;
+                if (want == Core.Cfg.NameByTitle) return;
+                Core.Cfg.NameByTitle = want;
+                Core.SaveConfig();
+                Core.Log("INFO", "设置：MOD 名称→" + (want ? "包内标题" : "文件名"));
+                if (owner != null) { owner.RebuildViews(); owner.RefreshMods(); }
+            };
             s.Controls.Add(segName);
         }
 
@@ -606,6 +615,7 @@ namespace Installer
                     Core.SaveConfig();
                     Core.Log("INFO", "设置：MOD 名称→" + (Core.Cfg.NameByTitle ? "包内标题" : "文件名"));
                     RebuildViews();
+                    RefreshMods();          // 主列表的显示名在这一层，树重建不会带着它变
                 }
 
                 // 外观在对话框里已经实时套上去了，这里只负责落配置

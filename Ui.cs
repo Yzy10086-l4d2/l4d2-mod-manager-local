@@ -1182,8 +1182,8 @@ namespace Installer
         /// <summary>行首的展开标记：套装才给三角，单 vpk 的行前面留空。</summary>
         internal string GroupRowText(ModGroup g, int sel)
         {
-            if (!g.IsSet) return g.Name;
-            return (expanded.Contains(g.Key) ? "▼ " : "▶ ") + g.Name + "（" + (sel > 0 ? sel : 0) + "/" + g.Parts.Count + "）";
+            if (!g.IsSet) return g.Show;
+            return (expanded.Contains(g.Key) ? "▼ " : "▶ ") + g.Show + "（" + (sel > 0 ? sel : 0) + "/" + g.Parts.Count + "）";
         }
 
         internal string GroupRowText(ModGroup g) { return GroupRowText(g, CountChecked(g)); }
@@ -1619,7 +1619,7 @@ namespace Installer
         }
 
         /// <summary>搜索或方案变了：树和标题跟着重排。</summary>
-        private void RefreshMods()
+        internal void RefreshMods()
         {
             UpdateSchemeLabel();
             // 方案树是常驻第一屏：万一扫库还没完就点进来了，树会是空的，扫完这里补一次；
@@ -2496,6 +2496,12 @@ namespace Installer
         internal static string PartStatus(ModItem p, out Color ink, out Color bg)
         {
             bg = Theme.Surface; ink = Theme.Ink3;
+            if (p.FromWorkshop)
+            {
+                ink = p.AddonOn ? Theme.Ok : Theme.Warn;
+                bg = p.AddonOn ? Theme.RowOn : Theme.RowOff;
+                return p.AddonOn ? "工坊 · 开" : "工坊 · 关";
+            }
             if (p.FromGame)
             {
                 // 本地模式没有「库」的概念，游戏里这份开着就是开启、关着就是关闭

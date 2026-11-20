@@ -34,9 +34,14 @@ namespace Installer
         public bool Only1P;               // 模型全是第一人称 v_，世界模型 w_ 一个没动（能和模型叠加）
         public bool AnimOnly;             // 模型全是 anim_/gestures_ 表情骨架（KSEP 这类陪套，能和模型叠加）
         public bool FromGame;             // 这个 vpk 本来就在游戏 addons 里（库外·已装），装的时候不用复制
+        public bool FromWorkshop;         // Steam 创意工坊订阅：文件在 steamapps\workshop 下，只读，永不删除/移动/改名
+        public string WorkshopId = "";    // 工坊订阅 ID（就是那个数字目录名）；开关写 addonlist 的 workshop\<id>.vpk 这一条
         public bool Installed;            // 游戏 addons 里有同名同大小的另一份（U 盘模式合并后不再重复列）
         public bool AddonOn = true;       // addonlist.txt 里这条是 "1"（开着）；未登记的按游戏默认算「开」
         public string AssetPaths = "";    // 包内模型/材质路径（分号分隔），只用于同套部件归组
+        // 包指纹：包内资源路径集合算出来的短哈希。人工归类认指纹、不认路径 ——
+        // 同一个包改名、换目录、库里一份游戏 addons 里一份，指纹都相同（2026-11-20 加）。
+        public string Fp = "";
         // 包内 addoninfo.txt 的原文：Title 是游戏 addons 菜单里显示的名字，和文件名常常不是一回事。
         // 只拿来当搜索别名和「游戏里叫什么」的参考，不参与命名/归类 —— 实测不少包的标题
         // 写的是被拆出去的公共材质包、粒子包甚至 debug demo 的名字。

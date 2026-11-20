@@ -33,6 +33,11 @@ namespace Installer
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, string> modSlot =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // 包指纹 → 人工归属：同一个包改名、换盘、库里和游戏 addons 各一份，都认得出是同一条（2026-11-20 加）
+        private static readonly Dictionary<string, string> fpCat =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, string> fpSlot =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         // 拖动排出来的顺序。三张表都只在「用户真的拖过」之后才写：
         // 没拖过的大类完全照原来的自动顺序（PosOrder / 识别结果），老用户打开还是熟悉的样子。
@@ -60,7 +65,7 @@ namespace Installer
         private static void Load()
         {
             loaded = true;
-            cats.Clear(); slotsOfCat.Clear(); modCat.Clear(); modSlot.Clear();
+            cats.Clear(); slotsOfCat.Clear(); modCat.Clear(); modSlot.Clear(); fpCat.Clear(); fpSlot.Clear();
             subOrder.Clear(); posOrder.Clear(); slotSub.Clear();
             try
             {
@@ -98,6 +103,18 @@ namespace Installer
                                 if (!cats.Contains(c)) cats.Add(c);   // 手改 ini 漏了 cat= 也不会让 MOD 掉出树
                             }
                             if (sl.Length > 0 && sl != "-") modSlot[k] = sl;
+                        }
+                        else if (s.StartsWith("fp=", StringComparison.Ordinal))
+                        {
+                            // fp=<指纹>\t<大类>\t<位置>：认包不认路径
+                            string[] p = s.Substring(3).Split('\t');
+                            if (p.Length < 2) continue;
+                            string fp = p[0].Trim();
+                            if (fp.Length == 0) continue;
+                            string c = p[1].Trim();
+                            string sl2 = p.Length > 2 ? p[2].Trim() : "-";
+                            if (c.Length > 0 && c != "-") { fpCat[fp] = c; if (!cats.Contains(c)) cats.Add(c); }
+                            if (sl2.Length > 0 && sl2 != "-") fpSlot[fp] = sl2;
                         }
                         else if (s.StartsWith("suborder=", StringComparison.Ordinal))
                         {
@@ -172,6 +189,12 @@ namespace Installer
                 modSlot.TryGetValue(kv.Key, out sl);
                 sb.AppendLine("mod=" + kv.Key + "\t" + kv.Value + "\t" + (string.IsNullOrEmpty(sl) ? "-" : sl));
             }
+            foreach (KeyValuePair<string, string> kv in fpCat)
+            {
+                string sl;
+                fpSlot.TryGetValue(kv.Key, out sl);
+                sb.AppendLine("fp=" + kv.Key + "\t" + kv.Value + "\t" + (string.IsNullOrEmpty(sl) ? "-" : sl));
+            }
             foreach (KeyValuePair<string, List<string>> kv in subOrder)
                 foreach (string s in kv.Value) sb.AppendLine("suborder=" + kv.Key + "\t" + s);
             foreach (KeyValuePair<string, List<string>> kv in posOrder)
@@ -240,7 +263,9 @@ namespace Installer
             Ensure();
             if (m == null) return auto;
             string v;
-            return modCat.TryGetValue(m.Key, out v) ? v : auto;
+            if (modCat.TryGetValue(m.Key, out v)) return v;
+            if (!string.IsNullOrEmpty(m.Fp) && fpCat.TryGetValue(m.Fp, out v)) return v;
+            return auto;
         }
 
         /// <summary>人工指定的位置名；没指定返回空串。</summary>
@@ -249,21 +274,46 @@ namespace Installer
             Ensure();
             if (m == null) return "";
             string v;
-            return modSlot.TryGetValue(m.Key, out v) ? v : "";
+            if (modSlot.TryGetValue(m.Key, out v)) return v;
+            if (!string.IsNullOrEmpty(m.Fp) && fpSlot.TryGetValue(m.Fp, out v)) return v;
+            return "";
         }
 
         public static bool HasManual(ModItem m)
         {
             Ensure();
             if (m == null) return false;
-            return modCat.ContainsKey(m.Key) || modSlot.ContainsKey(m.Key);
+            if (modCat.ContainsKey(m.Key) || modSlot.ContainsKey(m.Key)) return true;
+            if (!string.IsNullOrEmpty(m.Fp) && (fpCat.ContainsKey(m.Fp) || fpSlot.ContainsKey(m.Fp))) return true;
+            return false;
         }
 
         /// <summary>人工改过大类没有？</summary>
         public static bool HasCat(ModItem m)
         {
             Ensure();
-            return m != null && modCat.ContainsKey(m.Key);
+            if (m == null) return false;
+            if (modCat.ContainsKey(m.Key)) return true;
+            return !string.IsNullOrEmpty(m.Fp) && fpCat.ContainsKey(m.Fp);
+        }
+
+        /// <summary>
+        /// 扫描时把人工结论直接写到这个包上（认指纹，也认旧版的路径键）：
+        /// 树、搜索、导出、识别明细看到的是同一个结论，不会出现「树里对、导出错」两套。
+        /// </summary>
+        public static void ApplyTo(ModItem it)
+        {
+            Ensure();
+            if (it == null) return;
+            string c = "", sl = "", tmp;
+            bool hasC = modCat.TryGetValue(it.Key, out tmp);
+            if (hasC) c = tmp;
+            bool hasS = modSlot.TryGetValue(it.Key, out tmp);
+            if (hasS) sl = tmp;
+            if (!hasC && !string.IsNullOrEmpty(it.Fp) && fpCat.TryGetValue(it.Fp, out tmp)) { c = tmp; hasC = true; }
+            if (!hasS && !string.IsNullOrEmpty(it.Fp) && fpSlot.TryGetValue(it.Fp, out tmp)) { sl = tmp; hasS = true; }
+            if (hasC && c.Length > 0) { it.Cat = c; it.Category = c; }
+            if (hasS && sl.Length > 0) it.Sub = sl;
         }
 
         /// <summary>按 Key 直接指定大类（大类改名时批量搬运用）。</summary>
@@ -318,6 +368,11 @@ namespace Installer
                     if (!l.Contains(s)) l.Add(s);
                 }
                 else modSlot.Remove(p.Key);
+                if (!string.IsNullOrEmpty(p.Fp))
+                {
+                    if (c.Length > 0) fpCat[p.Fp] = c; else fpCat.Remove(p.Fp);
+                    if (c.Length > 0 && s.Length > 0) fpSlot[p.Fp] = s; else fpSlot.Remove(p.Fp);
+                }
             }
             Save();
         }
@@ -333,6 +388,7 @@ namespace Installer
                 modSlot.TryGetValue(p.Key, out sl);
                 modCat.Remove(p.Key);
                 modSlot.Remove(p.Key);
+                if (!string.IsNullOrEmpty(p.Fp)) { fpCat.Remove(p.Fp); fpSlot.Remove(p.Fp); }
                 // 拖进别的小分类留下的归属也一并清掉，不然「恢复自动」之后它还赖在那一类里
                 if (!string.IsNullOrEmpty(sl))
                     foreach (string cat in cats) slotSub.Remove(cat + "\u0001" + sl);

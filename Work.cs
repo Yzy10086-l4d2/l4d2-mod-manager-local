@@ -1042,6 +1042,8 @@ namespace Installer
         {
             // 最后一道防线：压缩包里的条目 FullPath 指向的是那个 rar/zip 本身，
             // 删「一条」等于删整包（包里其它 MOD 一起没了）。界面上都拦过，这里再拦一次。
+            // 工坊订阅的文件属于 Steam：不删、不搬、不改名。要清掉请在工坊里取消订阅。
+            if (m.FromWorkshop) return "「" + m.Name + "」是 Steam 创意工坊订阅的内容，程序不删也不搬；去掉它请在创意工坊取消订阅";
             if (m.IsArchive) return "「" + m.Name + "」在压缩包里（" + m.Container + "），本工具不删压缩包";
             try { File.Delete(m.FullPath); }
             catch (Exception ex)
@@ -1063,6 +1065,7 @@ namespace Installer
 
         public static string RenameMod(ModItem m, string newName)
         {
+            if (m.FromWorkshop) return "工坊订阅的内容由 Steam 管，程序不改名（要改名请先退订）";
             if (m.FromGame) return "这个 MOD 在游戏目录里，不能在这里改名";
             newName = Core.SafeName(newName);
             if (string.IsNullOrEmpty(newName)) return "名字不能为空";

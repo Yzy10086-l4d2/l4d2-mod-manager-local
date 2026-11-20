@@ -3262,9 +3262,9 @@ namespace Installer
                     if (live.Count == 0) lblCur.Text = Lang.S("游戏里还是原版（这个位置没有开着的 MOD）");
                     else if (live.Count == 1)
                     {
-                        string txt = Lang.F("当前：{0}", live[0].Name);
+                        string txt = Lang.F("当前：{0}", live[0].Show);
                         ModGroup pick = ChosenOf(s);
-                        if (pick != null && pick != live[0]) txt += "　（已选：" + pick.Name + "，未启用）";
+                        if (pick != null && pick != live[0]) txt += "　（已选：" + pick.Show + "，未启用）";
                         lblCur.Text = txt;
                     }
                     else
@@ -3272,7 +3272,7 @@ namespace Installer
                         System.Text.StringBuilder sb = new System.Text.StringBuilder();
                         sb.Append("同一位置开着 ").Append(live.Count).Append(" 个：");
                         for (int i = 0; i < live.Count && i < 3; i++)
-                            sb.Append(i > 0 ? "、" : "").Append(live[i].Name);
+                            sb.Append(i > 0 ? "、" : "").Append(live[i].Show);
                         // 开了「允许多选」的位置是有意叠着的，别报警；没开的才提醒会互相覆盖
                         sb.Append(IsMulti(s) ? "　（多选模式：这是你要的，注意模型叠放顺序）" : "　（会互相覆盖，建议只留一个）");
                         lblCur.Text = sb.ToString();
@@ -3371,6 +3371,7 @@ namespace Installer
 
             string src;
             if (lead == null) src = "";
+            else if (lead.FromWorkshop) src = Lang.S("来源：Steam 创意工坊订阅");
             else if (lead.FromGame) src = Lang.S("来源：游戏 addons 里已有");
             else if (!string.IsNullOrEmpty(lead.Container)) src = Lang.S("来源：压缩包 ") + System.IO.Path.GetFileName(lead.Container);
             else src = Lang.S("来源：") + System.IO.Path.GetFileName(lead.FullPath ?? "");
@@ -3382,7 +3383,8 @@ namespace Installer
                 if (!string.IsNullOrEmpty(lead.AddonTitle)) info += Lang.S("游戏里叫：") + lead.AddonTitle + "\n\n";
                 if (!string.IsNullOrEmpty(lead.AddonAuthor)) info += Lang.S("作者：") + lead.AddonAuthor + "\n\n";
                 info += (lead.AddonOn ? Lang.S("状态：已启用") : Lang.S("状态：已关闭"));
-                if (lead.FromGame) info += "\n\n" + Lang.S("这份就在游戏目录里，删文件得自己去资源管理器");
+                if (lead.FromWorkshop) info += "\n\n" + Lang.S("这是 Steam 创意工坊订阅的内容，程序不删也不搬；去掉它请在创意工坊取消订阅");
+                else if (lead.FromGame) info += "\n\n" + Lang.S("这份就在游戏目录里，删文件得自己去资源管理器");
             }
 
             string meta = KindsOf(g) + " · " + Core.Human(g.Size);
