@@ -818,6 +818,76 @@ namespace Installer
             }
         }
 
+        /// <summary>
+        /// 结构自检（下载完必跑）：目录表要能完整走完，且所有"数据在本文件里"的条目必须落在文件大小以内。
+        /// 网络半截断开时文件大小可能看着正常，但数据段没下全 —— 这种包进游戏就是缺模型/缺贴图。
+        /// </summary>
+        public static bool VerifyComplete(string file, out string reason)
+        {
+            reason = "";
+            try
+            {
+                using (FileStream fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024))
+                using (BinaryReader br = new BinaryReader(fs))
+                {
+                    if (fs.Length < 12) { reason = "文件太小"; return false; }
+                    if (br.ReadUInt32() != 0x55AA1234) { reason = "不是 vpk"; return false; }
+                    uint ver = br.ReadUInt32();
+                    int treeSize = (int)br.ReadUInt32();
+                    uint dataSec = 0, md5Sec = 0, otherSec = 0, sigSec = 0;
+                    if (ver == 2)
+                    {
+                        dataSec = br.ReadUInt32(); md5Sec = br.ReadUInt32();
+                        otherSec = br.ReadUInt32(); sigSec = br.ReadUInt32();
+                    }
+                    if (treeSize <= 0 || treeSize > 64 * 1024 * 1024) { reason = "目录表大小异常"; return false; }
+                    long avail = fs.Length - fs.Position;
+                    if (treeSize > avail) { reason = "目录表超出文件末尾"; return false; }
+                    byte[] t = br.ReadBytes(treeSize);
+                    if (t == null || t.Length != treeSize) { reason = "目录表读不全"; return false; }
+                    long dataStart = fs.Position + md5Sec + otherSec + sigSec;
+
+                    long maxEnd = 0;
+                    int entries = 0, external = 0;
+                    int i = 0;
+                    while (i < t.Length)
+                    {
+                        string ext = ReadStr(t, ref i);
+                        if (ext.Length == 0) break;
+                        while (i < t.Length)
+                        {
+                            string path = ReadStr(t, ref i);
+                            if (path.Length == 0) break;
+                            while (i < t.Length)
+                            {
+                                string name = ReadStr(t, ref i);
+                                if (name.Length == 0) break;
+                                if (i + 18 > t.Length) { reason = "目录表截断"; return false; }
+                                ushort pre = BitConverter.ToUInt16(t, i + 4);
+                                ushort ai = BitConverter.ToUInt16(t, i + 6);
+                                uint off = BitConverter.ToUInt32(t, i + 8);
+                                uint len = BitConverter.ToUInt32(t, i + 12);
+                                i += 18;
+                                if (pre > t.Length - i) { reason = "预载段截断"; return false; }
+                                i += pre;
+                                entries++;
+                                if (ai != 0x7FFF) external++;
+                                else if ((long)off + len > maxEnd) maxEnd = (long)off + len;
+                            }
+                        }
+                    }
+                    if (entries == 0) { reason = "目录表是空的"; return false; }
+                    if (external > 0) { reason = "这是分卷 vpk：" + external + " 个条目在配套分卷里，单下这一个用不了"; return false; }
+                    long need = dataStart + maxEnd;
+                    if (need > fs.Length) { reason = "数据段不完整：需要 " + need + " 字节，实际只有 " + fs.Length; return false; }
+                    if (ver == 2 && dataSec > 0 && dataStart + dataSec > fs.Length)
+                    { reason = "数据段声明超出文件（少 " + (dataStart + dataSec - fs.Length) + " 字节）"; return false; }
+                    return true;
+                }
+            }
+            catch (Exception ex) { reason = ex.Message; return false; }
+        }
+
         public static void Walk(string file, int maxEntries, Action<string> onPath)
         {
             int count = 0;

@@ -711,6 +711,17 @@ namespace Installer
                 try { File.Delete(part); } catch { }
                 throw new IOException("下载到 0 字节");
             }
+            // 结构校验：vpk 必须"数据段完整"。半截文件大小可能碰巧对，但进游戏就是缺件。
+            if (IsVpkFile(part))
+            {
+                string why;
+                if (!Vpk.VerifyComplete(part, out why))
+                {
+                    try { File.Delete(part); } catch { }
+                    throw new IOException("下载的 vpk 不完整：" + why);
+                }
+            }
+
             // 最后一道闸：只认库能用的格式。合集封面、HTML 错误页这类东西绝不能以 .vpk 落进库，
             // 否则扫描会把它当成一个正常 MOD 收进去，后面读 addoninfo 一直失败也看不出原因。
             if (!LooksLikeModFile(part))
@@ -721,6 +732,21 @@ namespace Installer
 
             if (File.Exists(dest)) File.Delete(dest);
             File.Move(part, dest);
+        }
+
+        /// <summary>是不是 vpk（看头 4 字节）。</summary>
+        static bool IsVpkFile(string path)
+        {
+            try
+            {
+                using (FileStream fs = File.OpenRead(path))
+                {
+                    byte[] h = new byte[4];
+                    if (fs.Read(h, 0, 4) < 4) return false;
+                    return h[0] == 0x34 && h[1] == 0x12 && h[2] == 0xAA && h[3] == 0x55;
+                }
+            }
+            catch { return false; }
         }
 
         /// <summary>库认的三种容器：vpk（55 AA 12 34）、zip（PK）、rar（Rar!）。</summary>
