@@ -436,6 +436,18 @@ namespace Installer
         /// <summary>
         /// 换搜索条件 → 从第 1 页重新来（清空墙、清空去重表）。
         /// </summary>
+        /// <summary>
+        /// 外部（方案树的推荐区）点了某一张：直接进它的详情页，而不是停在一墙搜索结果上。
+        /// 顺手把搜索词填好、后台铺一页，这样点「← 返回」回到的是这一类的结果墙，不是空墙。
+        /// </summary>
+        internal void ShowItemFrom(string query, WsItem it)
+        {
+            if (it == null) return;
+            if (!string.IsNullOrEmpty(query)) txtQuery.Text = query;
+            if (ready && !busy) DoSearch(1);
+            ShowDetail(it);
+        }
+
         /// <summary>外部（方案树的推荐区）指定搜索词：填进框子并按新条件搜一次。</summary>
         internal void SetQuery(string q)
         {

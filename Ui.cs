@@ -2352,10 +2352,19 @@ namespace Installer
         /// 两种活法：不知道装什么时看图扫；知道要哪几个时进列表一次勾完。
         /// </summary>
         /// <summary>方案树推荐区点一张：打开工坊并把这个位置对应的搜索词填进去（同一个窗口，不另开）。</summary>
-        internal void OpenWorkshopFor(string query)
+        internal void OpenWorkshopFor(string query) { OpenWorkshopFor(query, null); }
+
+        /// <summary>item 不为空就直达它的详情页（推荐区点一张），否则只按搜索词打开。</summary>
+        internal void OpenWorkshopFor(string query, WsItem item)
         {
             OpenWorkshop();
-            try { if (galleryWindow != null && !galleryWindow.IsDisposed) galleryWindow.SetQuery(query); } catch { }
+            try
+            {
+                if (galleryWindow == null || galleryWindow.IsDisposed) return;
+                if (item != null) galleryWindow.ShowItemFrom(query, item);
+                else galleryWindow.SetQuery(query);
+            }
+            catch { }
         }
 
         /// <summary>

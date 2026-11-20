@@ -4125,7 +4125,8 @@ namespace Installer
         private void OpenRecPick(WsItem it)
         {
             if (it == null || mf == null) return;
-            mf.OpenWorkshopFor(recKey);
+            // 点哪张就打开哪张的详情页（以前只按分类打开搜索结果墙，用户 2026-11-21 反馈）
+            mf.OpenWorkshopFor(recKey, it);
         }
 
         private void LayoutCols()
