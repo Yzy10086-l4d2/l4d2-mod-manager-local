@@ -521,7 +521,32 @@ namespace Installer
             try { Vpk.Walk(vpkFile, 200000, sc.Feed); r = sc.Finish(); }
             catch { return new Result(); }
             FillAddonInfo(r, vpkFile);
+            UpgradeShotgunByText(r, vpkFile);
             return r;
+        }
+
+        /// <summary>
+        /// 材质路径只能判到「霰弹枪某一格」时，文件名/标题里明确写了型号的以它为准。
+        /// 实测：`Scattershot 散布步枪（SPAS 霰弹枪）.vpk` 包里只有 storm_shotgun_shell.vmt，
+        /// 材质会把裸 shotgun 判成铁喷；作者命名里的 SPAS 才是真型号（SPAS = 二代连喷，用户 2026-11-21 明确）。
+        /// 只校正霰弹枪内部的这一格，别的枪种不碰。
+        /// </summary>
+        private static void UpgradeShotgunByText(Result r, string vpkFile)
+        {
+            // 只在"没有模型证据"时校正：模型名最硬，音效/材质/HUD/标题都可能只是泛称
+            if (r == null || r.Level == "模型" || r.Subject.Length == 0) return;
+            Positions.Row pr = Positions.Find(r.Subject);
+            if (pr == null || pr.Sub != "霰弹枪") return;
+            string text = ((System.IO.Path.GetFileNameWithoutExtension(vpkFile) ?? "") + " " + (r.Title ?? "")).ToLowerInvariant();
+            string hit = null;
+            if (text.IndexOf("spas", StringComparison.Ordinal) >= 0) hit = "二代连喷";
+            else if (text.IndexOf("chrome", StringComparison.Ordinal) >= 0 || text.IndexOf("铁喷", StringComparison.Ordinal) >= 0) hit = "铁喷";
+            else if (text.IndexOf("pumpshotgun", StringComparison.Ordinal) >= 0 || text.IndexOf("木喷", StringComparison.Ordinal) >= 0) hit = "木喷";
+            else if (text.IndexOf("autoshotgun", StringComparison.Ordinal) >= 0 || text.IndexOf("一代连喷", StringComparison.Ordinal) >= 0) hit = "一代连喷";
+            if (hit == null || hit == r.Subject) return;
+            r.Subject = hit;
+            r.Level = "文件名";
+            r.Trace = "规则:文件名 · 命中:" + hit;
         }
 
         /// <summary>
@@ -819,6 +844,9 @@ namespace Installer
         {
             if (_ruleFp != null) return _ruleFp;
             StringBuilder sb = new StringBuilder();
+            // 改了"识别逻辑"（不是规则表）就改这个串：否则表没变、指纹不变，旧缓存会继续用旧结论。
+            // 2026-11-21a：模型证据 v_ 优先 + 裸 shotgun=铁喷 + 材质级霰弹枪按文件名校正（SPAS=二代连喷）
+            sb.Append("rules:2026-11-21b;");
             AppendTable(sb, Dict);
             AppendTable(sb, AliasKeys);
             AppendTable(sb, GunKeys);
