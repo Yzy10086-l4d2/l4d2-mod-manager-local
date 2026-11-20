@@ -936,6 +936,15 @@ namespace Installer
         private readonly MainForm mf;
         private readonly ScrollHost scroll;
         private ColHead headMain, headExtra;
+        // ---- 工坊推荐区（2026-11-21 用户定：中间候选列的下半截用来推荐工坊里同类的 MOD）----
+        private Panel recPanel;
+        private Label recTitle;
+        private ListView recList;
+        private ImageList recImgs;
+        private int recGen;                                    // 换位置后，在途的旧结果作废
+        private string recKey = "";
+        private static readonly Dictionary<string, List<WsItem>> recCache =
+            new Dictionary<string, List<WsItem>>(StringComparer.OrdinalIgnoreCase);
         private readonly SlotTree body;
         private readonly ListView lv;
         private readonly ListView lvExtra;                 // 下半：可叠加的扩展
@@ -1159,6 +1168,40 @@ namespace Installer
             headExtra = new ColHead(lvExtra);
             headExtra.Visible = false;
             Controls.Add(headExtra);
+
+            // ---- 工坊推荐：候选列下半截 ----
+            recPanel = new Panel();
+            recPanel.BackColor = Theme.Surface;
+            recPanel.Visible = false;
+            Controls.Add(recPanel);
+
+            recTitle = new Label();
+            recTitle.Font = Theme.UISmall;
+            recTitle.ForeColor = Theme.Ink3;
+            recTitle.BackColor = Color.Transparent;
+            recTitle.Text = Lang.S("工坊推荐");
+            recPanel.Controls.Add(recTitle);
+
+            recImgs = new ImageList();
+            recImgs.ImageSize = new Size(Dpi.S(104), Dpi.S(58));
+            recImgs.ColorDepth = ColorDepth.Depth32Bit;
+
+            recList = new ListView();
+            recList.View = View.LargeIcon;
+            recList.MultiSelect = false;
+            recList.HideSelection = false;
+            recList.BorderStyle = BorderStyle.None;
+            recList.BackColor = Theme.Surface;
+            recList.ForeColor = Theme.Ink2;
+            recList.Font = Theme.UISmall;
+            recList.LargeImageList = recImgs;
+            recList.ShowItemToolTips = true;
+            recList.DoubleClick += delegate { OpenRecPick(); };
+            recList.KeyDown += delegate(object s2, KeyEventArgs e2)
+            {
+                if (e2.KeyCode == Keys.Enter) { OpenRecPick(); e2.Handled = true; }
+            };
+            recPanel.Controls.Add(recList);
             lblExtraTitle = new Label();
             lblExtraTitle.Visible = false;
             Controls.Add(lblExtraTitle);
@@ -3194,6 +3237,7 @@ namespace Installer
 
         private void FillDetail()
         {
+            PrepareRecommend();
             // 搜索优先：搜了词就只看结果（搜索只剩这一条路可走）
             string kw = mf.SearchText;
             if (kw.Length > 0) { ShowSearch(kw); return; }
@@ -3920,6 +3964,27 @@ namespace Installer
                 }
             }
 
+            // ---- 工坊推荐区：占候选列下方三成多（最多 220px），列表让位 ----
+            if (recPanel != null)
+            {
+                bool show = lv != null && lv.Visible && recKey.Length > 0 && lv.Width > Dpi.S(160);
+                if (!show) recPanel.Visible = false;
+                else
+                {
+                    int whole = lv.Height;
+                    int recH = Math.Max(Dpi.S(96), Math.Min(Dpi.S(220), whole * 38 / 100));
+                    if (whole - recH < Dpi.S(90)) { recPanel.Visible = false; }
+                    else
+                    {
+                        lv.Height = whole - recH - Dpi.S(6);
+                        recPanel.SetBounds(lv.Left, lv.Top + lv.Height + Dpi.S(6), lv.Width, recH);
+                        recPanel.Visible = true;
+                        recTitle.SetBounds(Dpi.S(4), 0, Math.Max(60, recPanel.Width - 8), Dpi.S(16));
+                        recList.SetBounds(Dpi.S(2), Dpi.S(17), Math.Max(60, recPanel.Width - 4), Math.Max(40, recH - Dpi.S(20)));
+                    }
+                }
+            }
+
             if (btnPick != null) btnPick.SetBounds(x + pad, by, 76, actH);
             // 右下角从右往左排：「指定位置…」只在未归类页。脚注按实际占用让位。
             int edge = x + rightW - 8;
@@ -3928,6 +3993,102 @@ namespace Installer
                 lblFoot.SetBounds(x + pad, by + (actH - 18) / 2, Math.Max(60, candW - 2 * pad - used), 18);
             LayoutCols();
         }
+
+        // ---------------- 工坊推荐（候选列下半截） ----------------
+
+        /// <summary>当前位置在工坊里该搜什么词：和工坊窗口「分类」下拉用的是同一套映射。</summary>
+        private string RecQuery()
+        {
+            if (mf != null && !string.IsNullOrEmpty(mf.SearchText)) return "";
+            if (!string.IsNullOrEmpty(selKey) && selKey[0] == '#') return "";
+            Slot s = Current;
+            if (s == null || s.Empty) return "";
+            string q = Workshop.SearchWord(s.Name ?? "", s.Key ?? "");
+            return q ?? "";
+        }
+
+        /// <summary>换位置刷一次推荐；同一位置不重复拉网。搜不到/连不上只改标题那行，不弹窗。</summary>
+        private void PrepareRecommend()
+        {
+            if (recPanel == null) return;
+            string q = RecQuery();
+            if (q.Length == 0) { recGen++; recKey = ""; recPanel.Visible = false; return; }
+            if (q == recKey) return;
+            recKey = q;
+            int gen = ++recGen;
+            recPanel.Visible = true;
+            recTitle.Text = Lang.S("工坊推荐：正在搜…");
+            recList.Items.Clear();
+            recImgs.Images.Clear();
+            LayoutSelf();
+
+            int tw = Math.Max(64, Dpi.S(104)), th = Math.Max(36, Dpi.S(58));
+            string key = q;
+            System.Threading.Tasks.Task.Run(delegate
+            {
+                List<WsItem> got = null;
+                try { lock (recGate) { List<WsItem> c; if (recCache.TryGetValue(key, out c)) got = c; } } catch { }
+                if (got == null)
+                {
+                    try { got = Workshop.SearchItems(key, "trend", 1); } catch { }
+                    if (got != null) { try { lock (recGate) recCache[key] = got; } catch { } }
+                }
+                List<Image> pics = new List<Image>();
+                if (got != null)
+                    foreach (WsItem it in got)
+                    {
+                        if (pics.Count >= 8) break;
+                        if (it == null || string.IsNullOrEmpty(it.Preview)) continue;
+                        Image pic = null;
+                        try { pic = WsThumb.LoadCover(it.Preview, it.Id, tw, th); } catch { }
+                        if (pic != null) pics.Add(pic);
+                    }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (gen != recGen) { foreach (Image p in pics) { try { p.Dispose(); } catch { } } return; }
+                        if (got == null) { recTitle.Text = Lang.S("工坊推荐：连不上，稍后再试"); return; }
+                        FillRecUi(key, got, pics);
+                        LayoutSelf();
+                    });
+                }
+                catch { }
+            });
+        }
+
+        /// <summary>把搜到的东西铺成卡片：封面 + 名字，悬停看订阅数，双击去工坊。</summary>
+        private void FillRecUi(string q, List<WsItem> items, List<Image> pics)
+        {
+            recList.Items.Clear();
+            recImgs.Images.Clear();
+            int shown = 0;
+            for (int i = 0; i < items.Count && shown < 8; i++)
+            {
+                WsItem it = items[i];
+                if (it == null) continue;
+                Image pic = i < pics.Count ? pics[i] : null;
+                if (pic == null) continue;
+                recImgs.Images.Add(pic);
+                string t = it.Title ?? "";
+                if (t.Length > 16) t = t.Substring(0, 15) + "…";
+                ListViewItem li = new ListViewItem(t, recImgs.Images.Count - 1);
+                li.Tag = it;
+                li.ToolTipText = (it.Subs > 0 ? Lang.F("订阅 {0} · ", it.Subs) : "") + (it.Title ?? "");
+                recList.Items.Add(li);
+                shown++;
+            }
+            recTitle.Text = shown > 0 ? Lang.S("工坊推荐 · ") + q
+                                      : Lang.S("工坊里没搜到相关 MOD：") + q;
+        }
+
+        private void OpenRecPick()
+        {
+            if (recList == null || recList.SelectedItems.Count == 0) return;
+            if (mf != null) mf.OpenWorkshopFor(recKey);
+        }
+
+        private static readonly object recGate = new object();
 
         private void LayoutCols()
         {

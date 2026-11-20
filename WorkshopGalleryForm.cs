@@ -436,6 +436,14 @@ namespace Installer
         /// <summary>
         /// 换搜索条件 → 从第 1 页重新来（清空墙、清空去重表）。
         /// </summary>
+        /// <summary>外部（方案树的推荐区）指定搜索词：填进框子并按新条件搜一次。</summary>
+        internal void SetQuery(string q)
+        {
+            if (string.IsNullOrEmpty(q)) return;
+            txtQuery.Text = q;
+            if (ready && !busy) DoSearch(1);
+        }
+
         private void DoSearch(int p)
         {
             if (busy) return;

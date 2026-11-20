@@ -2351,6 +2351,13 @@ namespace Installer
         /// 顶栏「工坊」→ 画廊（用图找 MOD）。批量勾选下载那个列表窗口还在，从画廊右上角「批量下载」进。
         /// 两种活法：不知道装什么时看图扫；知道要哪几个时进列表一次勾完。
         /// </summary>
+        /// <summary>方案树推荐区点一张：打开工坊并把这个位置对应的搜索词填进去（同一个窗口，不另开）。</summary>
+        internal void OpenWorkshopFor(string query)
+        {
+            OpenWorkshop();
+            try { if (galleryWindow != null && !galleryWindow.IsDisposed) galleryWindow.SetQuery(query); } catch { }
+        }
+
         private void OpenWorkshop()
         {
             // 分类下拉要用方案树的位置表；树还没建的话这里先补上，否则下拉只有「全部物品」
