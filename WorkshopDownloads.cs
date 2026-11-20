@@ -204,15 +204,6 @@ namespace Installer
             Fire();
         }
 
-        /// <summary>清空：正在下的保留（清历史不该把在下的一起抹掉）。</summary>
-        public static void ClearFinished()
-        {
-            Ensure();
-            lock (gate) { items.RemoveAll(delegate(WsDownload d) { return !d.Running; }); }
-            Save();
-            Fire();
-        }
-
         private static void Trim()
         {
             if (items.Count <= MaxRecords) return;

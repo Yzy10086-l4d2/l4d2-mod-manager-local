@@ -33,7 +33,6 @@ namespace Installer
         private readonly MainForm owner;
         private readonly FlatButton btnLocate = new FlatButton();
         private readonly FlatButton btnDelete = new FlatButton();
-        private readonly FlatButton btnClear = new FlatButton();
         private readonly FlatButton btnClose = new FlatButton();
 
         private readonly System.Windows.Forms.Timer msgTimer = new System.Windows.Forms.Timer();   // 与 System.Threading.Timer 区分
@@ -139,10 +138,6 @@ namespace Installer
             btnDelete.Click += delegate { DeleteFile(); };
             Controls.Add(btnDelete);
 
-            btnClear.Text = Lang.S("清空历史");
-            btnClear.Click += delegate { ClearHistory(); };
-            Controls.Add(btnClear);
-
             btnClose.Text = Lang.S("关闭");
             btnClose.DialogResult = DialogResult.Cancel;
             btnClose.Click += delegate { Close(); };
@@ -222,7 +217,6 @@ namespace Installer
             btnDelete.SetBounds(m + S(356), by, S(116), S(32));
 
             btnClose.SetBounds(W - m - S(76), by, S(76), S(32));
-            btnClear.SetBounds(W - m - S(76) - S(8) - S(100), by, S(100), S(32));
 
             lblStatus.SetBounds(m, H - S(26), W - 2 * m, S(18));
         }
@@ -397,8 +391,8 @@ namespace Installer
             {
                 return "tree=" + tree.Bounds + " lv=" + lv.Bounds
                     + " overlapTreeLv=" + (tree.Right > lv.Left)
-                    + " btnDeleteRight=" + btnDelete.Right + " btnClearLeft=" + btnClear.Left
-                    + " btnOverlap=" + (btnDelete.Right > btnClear.Left)
+                    + " btnDeleteRight=" + btnDelete.Right + " btnCloseLeft=" + btnClose.Left
+                    + " btnOverlap=" + (btnDelete.Right > btnClose.Left)
                     + " treeItems=" + tree.Items.Count;
             }
             catch (Exception ex) { return "ERR " + ex.Message; }
@@ -475,7 +469,6 @@ namespace Installer
             btnShop.Enabled = d != null && d.Id.Length > 0 && owner != null;
             btnLocate.Enabled = d != null && (d.ExistsOnDisk || d.Dir.Length > 0);
             btnDelete.Enabled = d != null && d.ExistsOnDisk;
-            btnClear.Enabled = WorkshopDownloads.Count > 0;
         }
 
         // ---------------------------------------------------------- 保存位置
@@ -613,17 +606,6 @@ namespace Installer
                 SetMsg("删不掉：" + ex.Message + "（文件可能正被游戏或杀软占用）");
                 Core.Log("FAIL", "工坊：删除下载文件失败 " + d.Path + "：" + ex.Message);
             }
-        }
-
-        private void ClearHistory()
-        {
-            if (WorkshopDownloads.Count == 0) return;
-            if (MessageBox.Show(this,
-                "清空下载记录？\r\n\r\n只清这张列表，磁盘上的文件一个都不动。",
-                "清空历史", MessageBoxButtons.OKCancel, MessageBoxIcon.Question,
-                MessageBoxDefaultButton.Button2) != DialogResult.OK) return;
-            WorkshopDownloads.ClearFinished();
-            SetMsg("记录已清空（文件都还在）");
         }
 
         private void Redownload()

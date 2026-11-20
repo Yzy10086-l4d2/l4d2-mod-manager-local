@@ -344,7 +344,6 @@ namespace Installer
             Add(d, "重新下载", "Download again");
             Add(d, "打开所在位置", "Show in folder");
             Add(d, "从磁盘删除", "Delete from disk");
-            Add(d, "清空历史", "Clear history");
             Add(d, "改位置", "Change folder");
             Add(d, "用默认", "Use default");
             Add(d, "打开文件夹", "Open folder");
