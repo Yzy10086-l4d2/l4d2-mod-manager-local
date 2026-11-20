@@ -326,6 +326,35 @@ namespace Installer
                     }
                 }
 
+                // 幸存者模型还有「按人分区」的老布局：models/survivors/namvet/namvet_deathpose.mdl，
+                // 文件名里没有 survivor_namvet 这一段，只按模型名查表就漏（比尔躯体被判成未归类）。
+                // 只认 models/survivors/<人名>/ 这一级，其余路径不动。
+                if (found.Count == 0 && !assetOverflow)
+                {
+                    List<string> hit = new List<string>();
+                    for (int i = 0; i < SurvivorDirs.GetLength(0); i++)
+                    {
+                        string pre = "models/survivors/" + SurvivorDirs[i, 0] + "/";
+                        bool one = false;
+                        foreach (string a in Assets)
+                        {
+                            if (!a.EndsWith(".mdl", StringComparison.Ordinal)) continue;
+                            if (a.StartsWith(pre, StringComparison.Ordinal)) { one = true; break; }
+                        }
+                        if (one && !hit.Contains(SurvivorDirs[i, 1])) hit.Add(SurvivorDirs[i, 1]);
+                    }
+                    if (hit.Count == 1)
+                    {
+                        found.Add(hit[0]);
+                        if (r.Level.Length == 0) { r.Level = "模型"; r.Trace = "规则:幸存者目录 · 命中:" + hit[0]; }
+                    }
+                    else if (hit.Count > 1)
+                    {
+                        found.Add("幸存者");      // 一包里好几个人：八人包
+                        if (r.Level.Length == 0) { r.Level = "模型"; r.Trace = "规则:幸存者目录 · 命中 " + hit.Count + " 人"; }
+                    }
+                }
+
                 // 模型全是 v_（第一人称手持）、一个 w_（世界模型）都没有 = 只改了你看枪的那只手，
                 // 世界里的枪还是原版。这条事实单独记在 Only1P 上，不塞进 Kinds ——
                 // 「改了什么」要照实说，模型就是模型；能不能叠是另一件事。
@@ -762,6 +791,7 @@ namespace Installer
             AppendTable(sb, GunKeys);
             AppendTable(sb, ThrowKeys);
             AppendTable(sb, InfectKeys);
+            AppendTable(sb, SurvivorDirs);
             foreach (Positions.Row p in Positions.All)
             {
                 sb.Append(p.Sub).Append('|').Append(p.Name).Append('|').Append(p.En).Append('|');
@@ -921,6 +951,14 @@ namespace Installer
             {"survivor_namvet","比尔"},{"survivor_teenangst","佐伊"},{"survivor_manager","路易斯"},
             {"survivor_biker","弗朗西斯"},{"survivor_producer","罗谢尔"},{"survivor_gambler","尼克"},
             {"survivor_mechanic","埃利斯"},{"survivor_coach","教练"}
+        };
+
+        // 幸存者的老布局是按人分区：models/survivors/<人名>/<模型>.mdl。
+        // 模型文件名（namvet_deathpose）里没有 survivor_namvet 这段，靠这张表补。
+        private static readonly string[,] SurvivorDirs = new string[,]
+        {
+            {"namvet","比尔"}, {"teenangst","佐伊"}, {"manager","路易斯"}, {"biker","弗朗西斯"},
+            {"producer","罗谢尔"}, {"coach","教练"}, {"mechanic","埃利斯"}, {"gambler","尼克"}
         };
 
         // 特感的模型目录就是 models/infected/<名字>/，名字对得上就够

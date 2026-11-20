@@ -2036,6 +2036,15 @@ namespace Installer
                 if (HasModel(it)) models.Add(it);
             }
             if (!namedMain && models.Count == 1) models[0].Role = "主体";
+            else if (!namedMain && models.Count > 1)
+            {
+                // 一套里好几个模型包（eku 水手服：八人包 + 比尔躯体 + 飞行员三种姿势）：
+                // 以前谁都当不上「唯一带模型」的主体，分类就跟着文件名排序落到材质包上，
+                // 整套掉进「杂项 · 其他」。最大的那个模型包才是这套的主体。
+                ModItem big = models[0];
+                foreach (ModItem m in models) if (m.Size > big.Size) big = m;
+                big.Role = "主体";
+            }
 
             for (int i = 0; i < parts.Count; i++)
             {
