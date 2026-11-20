@@ -567,7 +567,8 @@ namespace Installer
                     grid.HideSkeleton();
                     retryPage = 0;
                     if (append) grid.AppendItems(fresh);
-                    else { grid.SetItems(fresh); ShowGallery(); host.ScrollTo(0); }
+                    // 用户可能已经从推荐区直接进了某个详情页：搜索晚回来时别把详情页顶回墙
+                    else { grid.SetItems(fresh); if (detail == null || !detail.Visible) ShowGallery(); host.ScrollTo(0); }
 
                     UpdateFooter();
                     KickPrefetch();
