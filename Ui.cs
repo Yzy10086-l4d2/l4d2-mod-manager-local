@@ -1374,6 +1374,9 @@ namespace Installer
             branch.DropDownItems.Add(take);
             cms.Items.Add(branch);
 
+            ToolStripMenuItem shop = new ToolStripMenuItem("打开工坊详情页", null, delegate { OpenWorkshopForRow(lv); });
+            cms.Items.Add(shop);
+
             ToolStripMenuItem setCat = new ToolStripMenuItem("设置 MOD 分类…", null, delegate { SetModCatIn(lv); });
             ToolStripMenuItem reveal = new ToolStripMenuItem("在资源管理器里定位", null, delegate { RevealIn(lv); });
             cms.Items.Add(setCat);
@@ -1416,6 +1419,7 @@ namespace Installer
                 parts.Visible = group && g.IsSet && !multi;
                 toggle.Visible = group && !multi;
                 branch.Visible = group && !multi;
+                shop.Visible = row && !multi;
                 subNew.Visible = group && !multi && treeView != null && treeView.CurrentBranch != null;
                 take.Visible = group && !multi && treeView != null && treeView.InOpenBranch(g);
                 setCat.Visible = group && !multi;
@@ -1493,6 +1497,67 @@ namespace Installer
             SetStatus(failed.Count == 0
                 ? "已删除 " + n + " 个 vpk（" + Core.Human(size) + "）"
                 : "删了 " + n + " 个，" + failed.Count + " 个没删掉（见日志）");
+        }
+
+        /// <summary>
+        /// 右键「打开工坊详情页」：按订阅号（或下载记录）找这行对应的工坊 ID，
+        /// 拉到详情后直接开我们自己的工坊页 —— 不跳 Steam 浏览器。
+        /// </summary>
+        private void OpenWorkshopForRow(ListView lv)
+        {
+            ModGroup g = null;
+            ModItem one = null;
+            ListViewItem li = RowTarget(lv);
+            if (li != null) { g = li.Tag as ModGroup; if (g == null) one = li.Tag as ModItem; }
+            if (g == null && one == null) { MessageBox.Show("先右键点一行 MOD。"); return; }
+
+            List<ModItem> parts = g != null ? g.Parts : new List<ModItem>(new ModItem[] { one });
+            string id = "";
+            foreach (ModItem p in parts)
+                if (p != null && !string.IsNullOrEmpty(p.WorkshopId)) { id = p.WorkshopId.Trim(); break; }
+            if (id.Length == 0)
+            {
+                HashSet<string> names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (ModItem p in parts)
+                    if (p != null && !string.IsNullOrEmpty(p.FullPath)) names.Add(Path.GetFileName(p.FullPath));
+                try
+                {
+                    foreach (Workshop.DownloadRec rec in Workshop.LoadIndex())
+                        if (names.Contains(rec.File)) { id = rec.Id; break; }
+                }
+                catch { }
+            }
+            if (id.Length == 0)
+            {
+                MessageBox.Show("这套 MOD 不是从工坊下载的（没有工坊 ID），打不开详情页。", "工坊详情",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            string wid = id;
+            System.Threading.Tasks.Task.Run(delegate
+            {
+                WsItem item = null;
+                try
+                {
+                    List<WsItem> got = Workshop.Fetch(new List<string>(new string[] { wid }));
+                    if (got != null && got.Count > 0) item = got[0];
+                }
+                catch { }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (item == null)
+                        {
+                            MessageBox.Show("工坊里查不到这个物品（可能已下架）。", "工坊详情",
+                                MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            return;
+                        }
+                        OpenWorkshopFor("", item);
+                    });
+                }
+                catch { }
+            });
         }
 
         /// <summary>右键「在当前分支下新建子分支…」：正在看哪个分支，就建在它下面。</summary>
@@ -2386,7 +2451,22 @@ namespace Installer
                     if (names.Contains(Path.GetFileName(p.FullPath))) { hit = true; break; }
                 }
                 if (!hit) continue;
-                try { if (ApplyGroupPick(g, true)) hits++; else hits++; } catch { }
+                // 同位置是单选：先把这一位置其它的关掉，再勾这套（和方案树里点候选同一条路径）
+                Slot slot = null;
+                try
+                {
+                    if (treeView != null)
+                        foreach (Slot s2 in treeView.Slots)
+                            if (s2 != null && s2.Items.Contains(g)) { slot = s2; break; }
+                }
+                catch { }
+                try
+                {
+                    if (slot != null) treeView.ChooseInSlot(slot, g);
+                    else ApplyGroupPick(g, true);
+                    hits++;
+                }
+                catch { }
             }
             if (hits > 0) { try { SaveChecks(); } catch { } Core.Log("OK", "新下载的 " + hits + " 套 MOD 已自动启用"); }
         }
