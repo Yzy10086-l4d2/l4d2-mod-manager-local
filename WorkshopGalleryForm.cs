@@ -37,8 +37,8 @@ namespace Installer
         private readonly FlatButton btnOpen = new FlatButton();
         private readonly FlatButton btnGet = new FlatButton();
         private readonly FlatButton btnDeps = new FlatButton();      // 配套 MOD（正文里写了工坊链接的）
-        private List<string> depIds = new List<string>();
-        private List<string> depTitles = new List<string>();
+        private List<WsItem> depItems = new List<WsItem>();          // 配套 MOD（工坊 Required items）
+        private readonly FlowLayoutPanel depList = new FlowLayoutPanel();  // 每条可点：进它自己的详情页
         private readonly FlatButton btnLang = new FlatButton();   // 原文 / 译文 切换
 
         private readonly ComboBox cboCat = new ComboBox();
@@ -272,13 +272,20 @@ namespace Installer
 
             btnDeps.Text = Lang.S("配套 MOD");
             btnDeps.Visible = false;
-            btnDeps.Click += delegate { DownloadDeps(); };
+            btnDeps.Click += delegate { DownloadDeps(false); };
             detail.Controls.Add(btnDeps);
 
             btnGet.Text = Lang.S("下载这个 MOD");
             btnGet.Primary = true;
             btnGet.Click += delegate { DownloadOne(); };
             detail.Controls.Add(btnGet);
+
+            depList.FlowDirection = FlowDirection.TopDown;
+            depList.WrapContents = false;
+            depList.AutoScroll = false;
+            depList.Visible = false;
+            depList.BackColor = Color.Transparent;
+            detail.Controls.Add(depList);
 
             btnOpen.Text = Lang.S("在浏览器打开");
             btnOpen.Click += delegate { OpenInBrowser(); };
@@ -407,7 +414,16 @@ namespace Installer
             barLoad.SetBounds(0, ty + S(104), dw, S(7));
             int descTop = ty + S(118);
             int btnY = dh - S(34);
-            descBox.SetBounds(0, descTop, dw, Math.Max(S(60), btnY - S(10) - descTop));
+            // 配套清单：每条一行、可点进详情；有它时正文整体下移，别互相压
+            int depH = 0;
+            if (depList.Visible)
+            {
+                int rows = Math.Min(depItems.Count, 4) + (depItems.Count > 4 ? 1 : 0);
+                depH = Math.Min(S(118), rows * S(23));
+            }
+            depList.SetBounds(0, descTop, dw, Math.Max(0, depH));
+            int bodyTop = descTop + (depH > 0 ? depH + S(6) : 0);
+            descBox.SetBounds(0, bodyTop, dw, Math.Max(S(60), btnY - S(10) - bodyTop));
             btnBack.SetBounds(0, btnY, S(88), S(32));
             btnGet.SetBounds(S(96), btnY, S(116), S(32));
             btnDeps.SetBounds(S(220), btnY, S(132), S(32));
@@ -806,7 +822,7 @@ namespace Installer
             translating = false;
             langTouched = false;
             detailClean = WsText.Clean(it.Desc);
-            depIds.Clear(); depTitles.Clear(); btnDeps.Visible = false;
+            depItems.Clear(); depList.Controls.Clear(); depList.Visible = false; btnDeps.Visible = false;
             detailZh = WsTranslate.ReadCache(it.Id, it.Updated);
             showZh = detailZh != null && detailZh.Length > 0;
             RenderDesc();
@@ -858,16 +874,13 @@ namespace Installer
                         DetailBusy(false);
                         detailClean = WsText.Clean(it.Desc);      // 短介绍换成全文
                         // 配套 MOD：工坊页面 Required items 区块（Steam 自己声明的依赖）
-                        depIds.Clear(); depTitles.Clear();
+                        depItems.Clear();
                         if (reqs != null)
                             foreach (WsItem rq in reqs)
-                            {
-                                if (rq == null || string.IsNullOrEmpty(rq.Id)) continue;
-                                depIds.Add(rq.Id);
-                                depTitles.Add(string.IsNullOrEmpty(rq.Title) ? rq.Id : rq.Title);
-                            }
-                        btnDeps.Visible = depIds.Count > 0;
-                        btnDeps.Text = Lang.F("配套 MOD（{0}）", depIds.Count);
+                                if (rq != null && !string.IsNullOrEmpty(rq.Id)) depItems.Add(rq);
+                        RebuildDepList();
+                        btnDeps.Visible = depItems.Count > 0;
+                        btnDeps.Text = Lang.F("配套 MOD（{0}）", depItems.Count);
                         // 全文里带着新的 time_updated：缓存要按它重判一次，别拿旧译文糊上去。
                         // 但如果用户已经自己点过「看原文」，就别替他改回来。
                         detailZh = WsTranslate.ReadCache(it.Id, it.Updated);
@@ -1024,20 +1037,68 @@ namespace Installer
         // ---------------------------------------------------------- 下载单个
 
         /// <summary>
-        /// 下载"配套 MOD"：正文里出现的那些工坊物品。先确认（作者写的不一定都是必须），
+        /// 把配套 MOD 列成可点的行：点哪条就进哪条的详情页（Steam 工坊也是这个行为）。
+        /// 最多列 4 条，多的折成一行提示；批量下载走「配套 MOD（N）」按钮。
+        /// </summary>
+        private void RebuildDepList()
+        {
+            depList.Controls.Clear();
+            int max = Math.Min(depItems.Count, 4);
+            for (int i = 0; i < max; i++)
+            {
+                WsItem rq = depItems[i];
+                FlatButton b = new FlatButton();
+                b.Soft = true;
+                b.Font = Theme.UISmall;
+                string t = "• " + (string.IsNullOrEmpty(rq.Title) ? rq.Id : rq.Title);
+                if (t.Length > 44) t = t.Substring(0, 43) + "…";
+                b.Text = t;
+                b.Height = S(21);
+                b.Width = Math.Max(S(120), detail.ClientSize.Width - S(8));
+                b.Tag = rq;
+                b.Click += delegate(object s2, EventArgs e2)
+                {
+                    Control c2 = s2 as Control;
+                    WsItem pick = c2 == null ? null : c2.Tag as WsItem;
+                    if (pick != null) ShowDetail(pick);        // 点配套 → 看它自己的详情，再决定装不装
+                };
+                depList.Controls.Add(b);
+            }
+            if (depItems.Count > max)
+            {
+                Label more = new Label();
+                more.Text = Lang.F("…另有 {0} 个配套，点「配套 MOD」按钮一起下载", depItems.Count - max);
+                more.Font = Theme.UISmall;
+                more.ForeColor = Theme.Ink3;
+                more.BackColor = Color.Transparent;
+                more.Width = Math.Max(S(120), detail.ClientSize.Width - S(8));
+                more.Height = S(18);
+                depList.Controls.Add(more);
+            }
+            depList.Visible = depItems.Count > 0;
+        }
+
+        /// <summary>
+        /// 下载"配套 MOD"：工坊页面 Required items 里声明的那些。alreadyConfirmed=true 时不再问。
         /// 然后逐个走普通下载流程，完事刷新主界面。
         /// </summary>
-        private void DownloadDeps()
+        private void DownloadDeps(bool alreadyConfirmed)
         {
-            if (depIds.Count == 0) return;
-            if (MessageBox.Show(this,
-                Lang.F("Steam 工坊页面声明这个 MOD 需要以下配套物品（{0} 个），要一起下载吗？\r\n\r\n{1}",
-                       depIds.Count, string.Join("\r\n", depTitles.ToArray())),
+            List<string> ids = new List<string>();
+            string names = "";
+            foreach (WsItem rq in depItems)
+            {
+                if (rq == null || string.IsNullOrEmpty(rq.Id)) continue;
+                ids.Add(rq.Id);
+                if (ids.Count <= 8) names += "\r\n  · " + (string.IsNullOrEmpty(rq.Title) ? rq.Id : rq.Title);
+            }
+            if (ids.Count == 0) return;
+            if (!alreadyConfirmed && MessageBox.Show(this,
+                Lang.F("Steam 工坊页面声明这个 MOD 需要以下配套物品（{0} 个），要一起下载吗？{1}", ids.Count, names),
                 Lang.S("配套 MOD"), MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
             string dir;
             try { dir = Workshop.DestDir(); }
             catch (Exception ex) { lblState.Text = ex.Message; return; }
-            List<string> ids = new List<string>(depIds);
             btnDeps.Enabled = false;
             lblState.Text = Lang.S("正在下载配套 MOD…");
             Thread t = new Thread(delegate()
@@ -1082,6 +1143,22 @@ namespace Installer
             string dir;
             try { dir = Workshop.DestDir(); }
             catch (Exception ex) { lblState.Text = ex.Message; return; }
+
+            // Steam 工坊式询问：有配套就选「只下这个」还是「连配套一起下」（用户 2026-11-21 要求）
+            bool withDeps = false;
+            if (depItems.Count > 0)
+            {
+                string names = "";
+                for (int i = 0; i < Math.Min(6, depItems.Count); i++)
+                    names += "\r\n  · " + (string.IsNullOrEmpty(depItems[i].Title) ? depItems[i].Id : depItems[i].Title);
+                if (depItems.Count > 6) names += "\r\n  · …";
+                DialogResult dr = MessageBox.Show(this,
+                    Lang.F("这个 MOD 需要以下配套物品（{0} 个）：{1}\r\n\r\n「是」= 连配套一起下载\r\n「否」= 只下载这个 MOD\r\n「取消」= 先不下",
+                           depItems.Count, names),
+                    Lang.S("有配套 MOD"), MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                if (dr == DialogResult.Cancel) return;
+                withDeps = dr == DialogResult.Yes;
+            }
 
             busy = true;
             btnGet.Enabled = false;
@@ -1130,6 +1207,8 @@ namespace Installer
                         lblState.Text = "已下载到库里：" + name + (note.Length > 0 ? "（" + note + "）" : "（已自动刷新方案树）");
                         // 下完立刻刷主界面，不用等关窗（用户 2026-11-21 反馈）
                         try { if (owner != null) owner.RefreshAfterImport(); } catch { }
+                        // 用户在提示里选了「连配套一起下」：主件落库后接着下配套
+                        if (withDeps) DownloadDeps(true);
                     });
                     Core.Log("OK", "画廊：下载 " + it.Id + " → " + dest);
                 }
