@@ -3,6 +3,11 @@
 > 本文件从 v0.5.0 起维护。更早的版本（v0.3.0 ~ v0.4.8）请见
 > [Releases](https://github.com/Yzy10086-l4d2/l4d2-mod-manager-local/releases)。
 
+## v0.6.16
+
+- **API 结果缓存 10 分钟**：同一个分类位置来回切不再重复打接口（推荐区此前只有备用源有缓存）。
+- **把不可达的图片域名从优选名单移除**：`images.steamusercontent.com` 整域名超时，留在名单里每次白探 700ms。
+
 ## v0.6.15
 
 - **下载按钮不再灰着**：列表接口（QueryFiles）本身就带 `file_url`，之前没取，导致“有结果但下不了”。现在取下来直接用。

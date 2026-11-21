@@ -67,7 +67,7 @@ namespace Installer
         static readonly string[] PinHosts = new string[]
         {
             "steamcommunity.com", "cdn.steamusercontent.com",
-            "images.steamusercontent.com", "api.steampowered.com"
+            "api.steampowered.com"      // images.steamusercontent.com 整个域名在这条线上不可达，别再浪费探针
         };
 
         // 最近一次失败的原因 + 探针明细：界面要能说清「为什么连不上」，日志要能看出探了哪些 IP
@@ -1089,8 +1089,20 @@ namespace Installer
         /// 用 QueryFiles 拿一页结果。不需要 steamcommunity，只要 key。
         /// 返回 null 表示这次 API 没成功（调用方退回网页路由）。
         /// </summary>
+        // API 结果缓存（10 分钟）：同一个位置来回切不该每次都打一遍接口
+        static readonly Dictionary<string, List<WsItem>> apiCache = new Dictionary<string, List<WsItem>>(StringComparer.Ordinal);
+        static readonly Dictionary<string, DateTime> apiCacheAt = new Dictionary<string, DateTime>(StringComparer.Ordinal);
+        static readonly object apiGate = new object();
+
         static List<WsItem> SearchByApi(string query, string sort, int page, string tag)
         {
+            string ck = (query ?? "") + "|" + (sort ?? "") + "|" + page + "|" + (tag ?? "");
+            lock (apiGate)
+            {
+                DateTime at; List<WsItem> hit;
+                if (apiCacheAt.TryGetValue(ck, out at) && (DateTime.Now - at).TotalMinutes < 10 && apiCache.TryGetValue(ck, out hit))
+                    return hit;
+            }
             // QueryFiles 只认 GET（POST 会 405）；参数一律塞进 query string
             StringBuilder u = new StringBuilder(PubRoot + "QueryFiles/v1/?format=json");
             u.Append("&key=").Append(ApiKey);
@@ -1108,6 +1120,8 @@ namespace Installer
             if (string.IsNullOrEmpty(json)) return null;
             List<string> objs = SplitObjects(json, "publishedfiledetails");
             List<WsItem> outp = new List<WsItem>();
+            // 缓存命中判断用的 ck 在方法开头算好了
+            string cacheKey = (query ?? "") + "|" + (sort ?? "") + "|" + page + "|" + (tag ?? "");
             foreach (string o in objs)
             {
                 string id = JStr(o, "publishedfileid");
@@ -1128,6 +1142,8 @@ namespace Installer
                 it.DetailsLoaded = true;
                 outp.Add(it);
             }
+            if (outp.Count > 0)
+                lock (apiGate) { apiCache[cacheKey] = outp; apiCacheAt[cacheKey] = DateTime.Now; }
             return outp;
         }
 
