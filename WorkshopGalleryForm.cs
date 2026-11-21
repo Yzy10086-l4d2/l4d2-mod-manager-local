@@ -77,6 +77,8 @@ namespace Installer
         private int retryPage;              // 上次搜索失败的页码，>0 表示底部提示是「重试」而不是「加载更多」
         private bool retryAppend;           // 重试的是追加页（已有卡片要留着）还是首屏
         private volatile bool busy;
+        private bool pendingSort;      // 搜索途中改了排序：等这一页回来再按新排序重搜
+        private int lastRunningCount;  // 上一次看到的「正在下载」条数：用来发现「刚下完」
         private DateTime busySince;          // 看门狗：超过 120 秒就自己解锁，别让按钮永远灰着
         private int detailToken;
         private bool showZh;
@@ -156,6 +158,14 @@ namespace Installer
             cboSort.Items.Add(new GalChoice { Label = "最新", Sort = "newestfirst" });
             cboSort.Items.Add(new GalChoice { Label = "趋势", Sort = "trend" });
             cboSort.SelectedIndex = 0;
+            // 切排序 = 换了一批要看的 MOD，立即按新排序重搜。
+            // 以前这里没挂事件：下拉值变了、卡片墙一动不动，用户得再点一次「搜索」或翻页才生效（2026-11-22 用户反馈）。
+            cboSort.SelectedIndexChanged += delegate
+            {
+                if (!ready) return;                        // 构造里 SelectedIndex=0 触发的那次不算
+                if (busy) { pendingSort = true; return; }  // 正在搜：等这一页回来再按新排序重搜
+                DoSearch(1);
+            };
             Controls.Add(cboSort);
 
             btnUpdates.Text = Lang.S("检查更新");
@@ -631,6 +641,9 @@ namespace Installer
                 {
                     busy = false;
                     btnSearch.Enabled = true;
+                    // 搜索途中改了排序：这一页作废，立刻按新排序重搜第一页。
+                    // 不这么做的话，用户改了排序只能再点一次搜索，体验上就是「下拉没反应」。
+                    if (pendingSort) { pendingSort = false; DoSearch(1); return; }
                     if (err != null)
                     {
                         // 失败必须撤骨架：留着一墙占位卡继续扫光，用户会以为还在搜，其实连接早断了。
@@ -1555,7 +1568,26 @@ namespace Installer
             try
             {
                 if (!IsHandleCreated) return;
-                BeginInvoke(new MethodInvoker(delegate() { UpdateDownsCaption(); UpdateDetailProgress(); }));
+                BeginInvoke(new MethodInvoker(delegate()
+                {
+                    UpdateDownsCaption();
+                    UpdateDetailProgress();
+                    // 从「有在下」变成 0 = 这一批下完了：把卡片上的「已下载」角标按磁盘重新对一遍。
+                    // 以前只在本窗口自己下完时加角标、打开窗口时读一次；从方案树推荐区或下载管理下完回来，
+                    // 卡片还写着「可下载」（2026-11-22 审计）。
+                    int run = WorkshopDownloads.RunningCount;
+                    if (run == 0 && lastRunningCount > 0)
+                    {
+                        try
+                        {
+                            grid.DownloadedIds.Clear();
+                            foreach (string id in Workshop.LoadDownloadedIds()) grid.DownloadedIds.Add(id);
+                            grid.Invalidate();
+                        }
+                        catch { }
+                    }
+                    lastRunningCount = run;
+                }));
             }
             catch { }
         }

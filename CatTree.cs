@@ -4020,12 +4020,17 @@ namespace Installer
             if (RecQuery().Length == 0 && RecTag().Length == 0) return;
             recForced = true;              // 手动点重试/换一换：解除「离线冷却」
             WsNet.Retry();
+            recAutoRetries = 0;            // 用户主动重试：自动重试额度重新给满
             recKey = "";
+            recOkKey = "";                 // 换一换 = 要新的一批；不清掉会命中「已成功」短路，点着没反应
             PrepareRecommend();
         }
 
         private bool recForced;        // 用户主动点了重试：这一轮无视离线冷却
         private int recAutoRetries;    // 失败后自动重试的次数（最多两次，别把线路当沙袋）
+        private string recBusyKey = "";   // 正在搜的键（同一位置重复触发时别再发一遍）
+        private string recOkKey = "";     // 已经成功展示过的键（同一位置不重复打接口）
+        private string recLastWant = "";  // 上一次是哪个位置在要推荐：换位置时重试计数归零
 
         /// <summary>把一段诊断文本塞进剪贴板 —— 傻瓜用户的「反馈」就这一步。</summary>
         private void CopyWorkshopDiag()
@@ -4034,20 +4039,35 @@ namespace Installer
             recTitle.Text = Lang.S("诊断已复制：粘到反馈里就行");
         }
 
+        /// <summary>同一位置已经成功展示、或正在搜：只保证推荐区可见，不再重复发请求。</summary>
+        private void ShowRecPanel()
+        {
+            if (recPanel == null || recPanel.Visible) return;
+            if (lv == null || !lv.Visible || lv.Width <= Dpi.S(160)) return;
+            recPanel.Visible = true;
+            LayoutSelf();
+        }
+
         private void PrepareRecommend()
         {
             if (recPanel == null) return;
             string q = RecQuery();
             string tag = RecTag();
-            if (q.Length == 0 && tag.Length == 0) { recGen++; recKey = ""; recPanel.Visible = false; return; }
+            if (q.Length == 0 && tag.Length == 0) { recGen++; recKey = ""; recBusyKey = ""; recPanel.Visible = false; return; }
             // Steam 处于离线冷却时不再去敲它，但也不能就此空白：下面直接走 GameBanana 兜底
             // 有 key 时看 API 通不通：steamcommunity 被墙不代表 API 不通（实测前者被 RST、后者仍能搜）
             bool steamDead = !Core.Cfg.SteamEnabled
                 || (Workshop.HasApiKey ? WsNet.ApiOffline : (WsNet.IsOffline && !recForced));
             recForced = false;
             string want = q + "\u0001" + tag;
-            if (want == recKey) return;
+            // 同一位置已经搜成功过：直接复用现有卡片，别重复打接口
+            if (want == recOkKey) { ShowRecPanel(); return; }
+            // 同一位置正在搜：只保证面板可见，别把在途请求再发一遍（否则先回来的那批会被作废）
+            if (want == recBusyKey) { ShowRecPanel(); return; }
+            // 换位置 / 换词：自动重试计数归零（以前是全局计数，失败两次后换位置也不再自动重试）
+            if (want != recLastWant) { recAutoRetries = 0; recLastWant = want; }
             recKey = want;
+            recBusyKey = want;
             int gen = ++recGen;
             recPanel.Visible = true;
             recTitle.Text = Lang.S("工坊推荐：正在搜…");
@@ -4072,7 +4092,9 @@ namespace Installer
                     steamTh = new System.Threading.Thread(delegate() { try { steamGot = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { } });
                     steamTh.IsBackground = true;
                     steamTh.Start();
-                    steamTh.Join(WsNet.SteamJustFailed ? 200 : 700);   // Steam 刚就挂过就别等它了
+                    // 700ms 对慢线路太短：Steam 还在路上就被判失败，接着去问 GameBanana，结果两次都空 → 用户得反复点。
+                    // 给到 1.2s；Steam 刚挂过的时候仍然只等 200ms，别在死路上耗。
+                    steamTh.Join(WsNet.SteamJustFailed ? 200 : 1200);
                 }
                 if (steamGot != null && steamGot.Count > 0) got = steamGot;
                 if (got == null || got.Count == 0)
@@ -4096,23 +4118,24 @@ namespace Installer
                     {
                         try { arr[i] = WsThumb.LoadCover(cand[i].Preview, cand[i].Id, tw, th); } catch { }
                     });
+                // 缩略图失败只让那张卡少张图，不能把条目整个丢掉：
+                // 以前图全挂时 pics 为空 → 显示「没搜到」，用户只能反复点重试（图片 CDN 抖一下就这样）。
                 List<Image> pics = new List<Image>();
-                foreach (Image im in arr) if (im != null) pics.Add(im);
-                if (pics.Count > 0 && got != null)
+                if (got != null && cand.Count > 0)
                 {
-                    // pics 可能因个别失败和 got 错位：按成功顺序重建条目表，避免封面和标题对不上
-                    List<WsItem> aligned = new List<WsItem>();
-                    int k = 0;
-                    for (int i = 0; i < cand.Count; i++) if (arr[i] != null) { aligned.Add(cand[i]); k++; }
-                    got = aligned;
+                    got = new List<WsItem>(cand);
+                    for (int i = 0; i < cand.Count; i++) pics.Add(arr[i]);   // null 也放：RecGrid 画的时候会跳过
                 }
                 try
                 {
                     BeginInvoke((MethodInvoker)delegate
                     {
-                        if (gen != recGen) { foreach (Image p in pics) { try { p.Dispose(); } catch { } } return; }
+                        if (gen != recGen) { if (recBusyKey == want) recBusyKey = ""; foreach (Image p in pics) { try { p.Dispose(); } catch { } } return; }
                         if (got == null)
                         {
+                            // 失败不留「已成功」标记：下次切回这个位置会重新试，不用用户点「换一换」
+                            recBusyKey = "";
+                            recOkKey = "";
                             // 说清为什么连不上，再给一张能点的卡：以前只改标题、骨架还留着，看着像还在搜
                             string why = Lang.S(WsNet.LastFailHint());
                             // 不用用户点：失败后自己退避重试两次（4 秒、8 秒），期间标题写清倒计时
@@ -4146,6 +4169,8 @@ namespace Installer
                             }
                             return;
                         }
+                        recBusyKey = "";
+                        recOkKey = want;          // 这条位置已经有结果了：同一位置再进不再重复打接口
                         FillRecUi(key, got, pics);
                         LayoutSelf();
                     });
@@ -4208,11 +4233,13 @@ namespace Installer
         {
             List<WsItem> okItems = new List<WsItem>();
             List<Image> okPics = new List<Image>();
-            for (int i = 0; i < items.Count && i < pics.Count; i++)
+            // 图和条目不再要求一一齐全：缩略图没取到就画一张无图卡片，照样能点开，
+            // 而不是把整批结果判成「没搜到」（图片 CDN 抖动时最容易被误判成搜不到）。
+            for (int i = 0; i < items.Count; i++)
             {
-                if (items[i] == null || pics[i] == null) continue;
+                if (items[i] == null) continue;
                 okItems.Add(items[i]);
-                okPics.Add(pics[i]);
+                okPics.Add(i < pics.Count ? pics[i] : null);
             }
             if (okItems.Count == 0)
             {
