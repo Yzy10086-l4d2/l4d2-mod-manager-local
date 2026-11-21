@@ -4194,7 +4194,9 @@ namespace Installer
             recGrid.SetItems(okItems, okPics);
             bool fromGb = false;
             foreach (WsItem oi in okItems) { if (oi.Id.StartsWith("gb", StringComparison.Ordinal)) { fromGb = true; break; } }
-            recTitle.Text = (fromGb ? Lang.S("GameBanana 推荐 · ") : Lang.S("工坊推荐 · ")) + q;
+            bool noKey = !Workshop.HasApiKey;
+            recTitle.Text = (fromGb ? Lang.S("GameBanana 推荐 · ") : Lang.S("工坊推荐 · ")) + q
+                + (fromGb && noKey ? Lang.S("　（填 key 可搜 Steam 全站）") : "");
             if (mf != null && !fromGb) mf.NoteWorkshopOffline(false);   // 走 GameBanana 时 Steam 其实还挂着
         }
 

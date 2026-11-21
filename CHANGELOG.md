@@ -3,6 +3,11 @@
 > 本文件从 v0.5.0 起维护。更早的版本（v0.3.0 ~ v0.4.8）请见
 > [Releases](https://github.com/Yzy10086-l4d2/l4d2-mod-manager-local/releases)。
 
+## v0.6.12
+
+- **把「key 是门票」说清楚**：设置页状态行直接写「API 可用 / 最近失败过」和「key：已填（可全站搜）/ 未填（只能按 ID/合集导入）」；来源对话框也有一行同样的话。
+- **没填 key 时的提示**：走 GameBanana 兜底时，推荐区标题后面补一句「填 key 可搜 Steam 全站」，免得以为工坊只有那点东西。
+
 ## v0.6.11
 
 - **工坊网页被墙不再连坐 API 路线**：填了 key 时，判断「Steam 能不能用」看的是 `api.steampowered.com` 通不通，而不是 `steamcommunity.com`。实测前者 200、后者被 RST，之前会被误判成整条 Steam 不可用。

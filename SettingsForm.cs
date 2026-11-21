@@ -275,7 +275,7 @@ namespace Installer
             Card s = AddGroup(Lang.S("MOD 来源"), 496, 96);
 
             RowTitle(s, Lang.S("来源与 Steam API key"), 16, 8, 360);
-            RowNote(s, Lang.S("在哪开哪些来源、填 Steam API key，都在这个按钮里（填了 key 才能全站搜工坊）"), 16, 28, 548);
+            RowNote(s, Lang.S("Steam 全站搜索必须填 key（免 key 只能按 ID/合集导入）；不填也能用 GameBanana 兜底"), 16, 28, 548);
 
             lblSourceState = new Label();
             lblSourceState.SetBounds(16, 50, 400, 26);
@@ -314,8 +314,12 @@ namespace Installer
                 List<string> on = new List<string>();
                 if (Core.Cfg.SteamEnabled) on.Add("Steam");
                 lock (Sources.All) { foreach (SourceDef d in Sources.All) if (d.Enabled) on.Add(d.Name); }
+                bool hasKey = (Core.Cfg.WsApiKey ?? "").Trim().Length > 0;
+                string apiState = !Core.Cfg.SteamEnabled ? "Steam 已关"
+                    : (WsNet.ApiOffline ? "API 最近失败过" : "API 可用");
                 lblSourceState.Text = string.Join("、", on.ToArray())
-                    + "　·　Steam key：" + ((Core.Cfg.WsApiKey ?? "").Trim().Length > 0 ? "已填" : "未填");
+                    + "　·　" + apiState
+                    + "　·　key：" + (hasKey ? "已填（可全站搜）" : "未填（只能按 ID/合集导入）");
             }
             catch { lblSourceState.Text = ""; }
         }

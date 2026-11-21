@@ -76,15 +76,25 @@ namespace Installer
             help.Click += delegate { ShowKeyHelp(); };
             Controls.Add(help);
 
+            Label keyState = new Label();
+            keyState.SetBounds(18, 152, 464, 16);
+            keyState.Font = Theme.UISmall;
+            keyState.ForeColor = Theme.Ink3;
+            keyState.BackColor = Color.Transparent;
+            keyState.Text = ((Core.Cfg.WsApiKey ?? "").Trim().Length > 0)
+                ? Lang.S("key 已填：Steam 全站可搜")
+                : Lang.S("没填 key：只能按 ID / 合集导入，搜不了全站");
+            Controls.Add(keyState);
+
             Label other = new Label();
             other.Text = Lang.S("其它来源（配置文件里加的）");
-            other.SetBounds(18, 148, 440, 16);
+            other.SetBounds(18, 176, 440, 16);
             other.Font = Theme.UISmall;
             other.ForeColor = Theme.Ink3;
             other.BackColor = Color.Transparent;
             Controls.Add(other);
 
-            list.SetBounds(18, 168, 464, 176);
+            list.SetBounds(18, 196, 464, 148);
             list.Font = Theme.UI;
             list.CheckOnClick = true;
             Theme.Dress(list);
