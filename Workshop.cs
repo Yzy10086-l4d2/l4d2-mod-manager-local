@@ -921,7 +921,7 @@ namespace Installer
                 it.Title = JStr(ob, "title").Trim();
                 it.Size = JNum(ob, "file_size");
                 it.Url = JStr(ob, "file_url");
-                it.Preview = JStr(ob, "preview_url");
+                it.Preview = FixImageUrl(JStr(ob, "preview_url"));
                 it.Created = JNum(ob, "time_created");
                 it.Updated = JNum(ob, "time_updated");
                 it.Subs = JNum(ob, "subscriptions");
@@ -1115,10 +1115,11 @@ namespace Installer
                 WsItem it = new WsItem();
                 it.Id = id;
                 it.Title = JStr(o, "title").Trim();
-                it.Preview = JStr(o, "preview_url");
+                it.Preview = FixImageUrl(JStr(o, "preview_url"));
                 it.Size = JNum(o, "file_size");
                 it.Subs = JNum(o, "subscriptions");
                 it.Views = JNum(o, "views");
+                if (it.Url.Length == 0) it.Url = JStr(o, "file_url");   // 列表接口也带直链，别让下载按钮灰着
                 it.Created = JNum(o, "time_created");
                 it.Updated = JNum(o, "time_updated");
                 it.Desc = JStr(o, "short_description");
@@ -1222,7 +1223,7 @@ namespace Installer
                 WsItem it = new WsItem();
                 it.Id = "gb" + raw;                       // 前缀区分来源：详情/点击都靠它分流
                 it.Title = JStr(o, "_sName").Trim();
-                it.Preview = GbImage(o);
+                it.Preview = FixImageUrl(GbImage(o));
                 it.Created = JNum(o, "_tsDateAdded");
                 it.Updated = JNum(o, "_tsDateModified");
                 it.Note = "GameBanana";
@@ -1554,7 +1555,7 @@ namespace Installer
                     // 只认后者的话，真实数据里所有物品的正文都会是空的（详情页统一显示「没有写介绍」）。
                     it.Desc = JStr(o, "description");
                     if (it.Desc.Length == 0) it.Desc = JStr(o, "file_description");
-                    it.Preview = JStr(o, "preview_url");
+                    it.Preview = FixImageUrl(JStr(o, "preview_url"));
                     it.Created = JNum(o, "time_created");
                     it.Updated = JNum(o, "time_updated");
                     it.Subs = JNum(o, "subscriptions");
@@ -2222,6 +2223,18 @@ namespace Installer
                 }
             }
             catch (Exception ex) { return "steamcmd 跑不起来：" + ex.Message; }
+        }
+
+        /// <summary>
+        /// 封面图地址修正：images.steamusercontent.com 这条线实测被掐（12 秒超时），
+        /// 换成同一套 UGC 路径的 cdn.steamusercontent.com 能拿到图（实测 200 / 1.1 MB）。
+        /// </summary>
+        internal static string FixImageUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return url;
+            if (url.IndexOf("images.steamusercontent.com", StringComparison.OrdinalIgnoreCase) >= 0)
+                return url.Replace("images.steamusercontent.com", "cdn.steamusercontent.com");
+            return url;
         }
 
         /// <summary>这条东西从哪来的：详情页/预览面板统一用它，别写死 Steam。</summary>

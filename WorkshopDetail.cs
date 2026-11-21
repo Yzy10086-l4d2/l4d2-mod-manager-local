@@ -483,7 +483,7 @@ namespace Installer
                 if (data == null || data.Length < 64)
                 {
                     // 走联网层：优选 IP + 并发连接放宽；流式读完再落缓存
-                    data = WsNet.GetBytes(url, Ua, 15000);
+                    data = WsNet.GetBytes(Workshop.FixImageUrl(url), Ua, 15000);
                     if (data == null || data.Length < 64) return null;
                     try
                     {

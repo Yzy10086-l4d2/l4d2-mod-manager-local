@@ -3,6 +3,11 @@
 > 本文件从 v0.5.0 起维护。更早的版本（v0.3.0 ~ v0.4.8）请见
 > [Releases](https://github.com/Yzy10086-l4d2/l4d2-mod-manager-local/releases)。
 
+## v0.6.15
+
+- **下载按钮不再灰着**：列表接口（QueryFiles）本身就带 `file_url`，之前没取，导致“有结果但下不了”。现在取下来直接用。
+- **封面图能显示了**：`images.steamusercontent.com` 实测被掐（12 秒超时），同一套 UGC 路径换 `cdn.steamusercontent.com` 能拿到图（实测 200 / 1.1 MB）。程序里自动换域名。
+
 ## v0.6.14
 
 - **「MOD 来源」不再弹窗**：设置页里左右两栏——左边 Steam 工坊（开关 + API key + 怎么拿 key + 状态），右边 GameBanana（开关 + 说明）。
