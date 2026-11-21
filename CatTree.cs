@@ -4022,6 +4022,7 @@ namespace Installer
         }
 
         private bool recForced;        // 用户主动点了重试：这一轮无视离线冷却
+        private int recAutoRetries;    // 失败后自动重试的次数（最多两次，别把线路当沙袋）
 
         /// <summary>把一段诊断文本塞进剪贴板 —— 傻瓜用户的「反馈」就这一步。</summary>
         private void CopyWorkshopDiag()
@@ -4111,10 +4112,35 @@ namespace Installer
                         {
                             // 说清为什么连不上，再给一张能点的卡：以前只改标题、骨架还留着，看着像还在搜
                             string why = Lang.S(WsNet.LastFailHint());
-                            recTitle.Text = Lang.S("工坊推荐：连不上");
-                            recGrid.ShowEmpty(why, WsNet.IsOffline ? Lang.S("5 分钟后自动再试，或点这里马上重试") : Lang.S("点这里重试"));
+                            // 不用用户点：失败后自己退避重试两次（4 秒、8 秒），期间标题写清倒计时
+                            bool willRetry = !recForced && recAutoRetries < 2;
+                            int waitSec = willRetry ? (recAutoRetries == 0 ? 4 : 8) : 0;
+                            if (willRetry) recAutoRetries++;
+                            recTitle.Text = willRetry
+                                ? Lang.S("工坊推荐：连不上，") + waitSec + Lang.S(" 秒后自动重试")
+                                : Lang.S("工坊推荐：连不上");
+                            recGrid.ShowEmpty(why, willRetry ? Lang.S("也可以点这里马上重试") : Lang.S("点这里重试"));
                             if (mf != null) mf.NoteWorkshopOffline(WsNet.IsOffline);
                             LayoutSelf();
+                            if (willRetry)
+                            {
+                                int myGen = gen;
+                                System.Threading.Tasks.Task.Run(delegate
+                                {
+                                    try { System.Threading.Thread.Sleep(waitSec * 1000); } catch { }
+                                    try
+                                    {
+                                        BeginInvoke((MethodInvoker)delegate()
+                                        {
+                                            if (myGen != recGen) return;       // 期间换了位置就别再打
+                                            recForced = true;                   // 这一轮绕过冷却
+                                            recKey = "";
+                                            PrepareRecommend();
+                                        });
+                                    }
+                                    catch { }
+                                });
+                            }
                             return;
                         }
                         FillRecUi(key, got, pics);
@@ -4191,6 +4217,7 @@ namespace Installer
                 recTitle.Text = Lang.S("工坊推荐：没搜到");
                 return;
             }
+            recAutoRetries = 0;            // 成功一次就把自动重试计数清零
             recGrid.SetItems(okItems, okPics);
             bool fromGb = false;
             foreach (WsItem oi in okItems) { if (oi.Id.StartsWith("gb", StringComparison.Ordinal)) { fromGb = true; break; } }

@@ -1489,12 +1489,21 @@ namespace Installer
                 string msg;
                 try
                 {
+                    WorkshopDownloads.Begin(it.Id, it.Title, it.Url ?? "", "");   // 进「下载管理」，切走也看得见
                     msg = Workshop.GbInstall(it, out added, delegate(string stage)
                     {
                         BeginInvoke((MethodInvoker)delegate() { lblState.Text = stage; });
+                    }, delegate(long gotBytes, long totalBytes)
+                    {
+                        WorkshopDownloads.Progress(it.Id, gotBytes, totalBytes);
                     });
+                    WorkshopDownloads.Finish(it.Id, added > 0, "", 0, added > 0 ? "" : msg);
                 }
-                catch (Exception ex) { msg = "安装失败：" + ex.Message; }
+                catch (Exception ex)
+                {
+                    msg = "安装失败：" + ex.Message;
+                    try { WorkshopDownloads.Finish(it.Id, false, "", 0, msg); } catch { }
+                }
                 Ui(delegate()
                 {
                     busy = false;
@@ -1546,7 +1555,32 @@ namespace Installer
             try
             {
                 if (!IsHandleCreated) return;
-                BeginInvoke(new MethodInvoker(UpdateDownsCaption));
+                BeginInvoke(new MethodInvoker(delegate() { UpdateDownsCaption(); UpdateDetailProgress(); }));
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 详情页上的下载进度：从别处切回来时，这一条如果正在后台下，要能看到百分比，
+        /// 而不是一片“可以下载”的假象。
+        /// </summary>
+        private void UpdateDetailProgress()
+        {
+            try
+            {
+                if (detailItem == null || !detail.Visible) return;
+                WsDownload rec = null;
+                foreach (WsDownload d in WorkshopDownloads.All())
+                    if (string.Equals(d.Id, detailItem.Id, StringComparison.Ordinal)) { rec = d; break; }
+                if (rec == null) return;
+                if (rec.Running)
+                {
+                    int pct = rec.Size > 0 ? (int)Math.Min(100, rec.Got * 100 / rec.Size) : 0;
+                    lblState.Text = Lang.S("后台下载中 ") + pct + "%  ·  " + rec.SizeText;
+                    btnGet.Enabled = false;
+                }
+                else if (rec.Status == "ok") { lblState.Text = Lang.S("已下载完成"); btnGet.Enabled = true; }
+                else if (rec.Status == "fail") { lblState.Text = Lang.S("下载失败：") + rec.Error; btnGet.Enabled = true; }
             }
             catch { }
         }

@@ -1443,6 +1443,11 @@ namespace Installer
 
         internal static string GbInstall(WsItem it, out int added, Action<string> stage)
         {
+            return GbInstall(it, out added, stage, null);
+        }
+
+        internal static string GbInstall(WsItem it, out int added, Action<string> stage, Action<long, long> onProgress)
+        {
             added = 0;
             if (it == null) return "没有选中条目";
             string url = it.Url ?? "";
@@ -1466,8 +1471,9 @@ namespace Installer
             Say(stage, "下载中…");
             long got = WsNet.DownloadTo(url, Ua, 120000, part, 0, delegate(long g, long t)
             {
-                if (t > 0) Say(stage, "下载中 " + (int)Math.Min(100, g * 100 / t) + "%  ·  " + Core.Human(g) + " / " + Core.Human(t));
+                if (t > 0) Say(stage, "下载中 " + (int)Math.Min(100, g * 100 / t) + "%  ·  " + Core.Human(g) + " /  " + Core.Human(t));
                 else Say(stage, "下载中  ·  " + Core.Human(g));
+                if (onProgress != null) { try { onProgress(g, t); } catch { } }
             });
             if (got <= 0) { try { File.Delete(part); } catch { } return "下载失败：GameBanana 连不上"; }
             try
