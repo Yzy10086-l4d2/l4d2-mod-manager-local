@@ -2085,6 +2085,34 @@ namespace Installer
         /// 把工坊的预览图存到 MOD 旁边（同目录同名的 .jpg/.png）。
         /// 库里的封面优先读包内 addonimage，包里没有就找同名图片 —— 下载时存一份，没打包封面图的作者也能有预览。
         /// </summary>
+        /// <summary>线路自检：给一个地址，回一句「✅ x.x 秒」或「❌ 原因」。只试一次，不折腾。</summary>
+        internal static string ProbeLine(string url)
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            byte[] b = TryGet(url, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36", 6000, false, null);
+            sw.Stop();
+            if (b == null)
+            {
+                string why = LastWhy;
+                return "❌ " + (why.Length > 0 ? why : "连不上");
+            }
+            return "✅ " + (sw.ElapsedMilliseconds / 1000.0).ToString("0.0") + " 秒";
+        }
+
+        /// <summary>系统代理长什么样（没有就返回「无」）。</summary>
+        internal static string SystemProxyDesc()
+        {
+            try
+            {
+                IWebProxy p = SystemProxy();
+                if (p == null) return "无";
+                Uri probe = new Uri("https://steamcommunity.com/");
+                Uri got = p.GetProxy(probe);
+                return got == null ? "无" : got.ToString();
+            }
+            catch { return "未知"; }
+        }
+
         /// <summary>这条东西从哪来的：详情页/预览面板统一用它，别写死 Steam。</summary>
         internal static string SourceLabel(WsItem it)
         {

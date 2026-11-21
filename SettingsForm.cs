@@ -355,6 +355,39 @@ namespace Installer
 
             btnImport = SoftButton(s, Lang.S("导入压缩包…"), 336, 52, 116, 28);
             btnImport.Click += delegate { ImportFromDialog(); };
+
+            FlatButton lines = SoftButton(s, Lang.S("测工坊线路"), 460, 52, 108, 28);
+            lines.Click += delegate { TestLines(); };
+        }
+
+        /// <summary>
+        /// 工坊线路自检：三根线各通不通、系统代理在不在。给用户一个「现在该用哪条路」的凭据，
+        /// 不用点分类位置干等十几秒去猜。
+        /// </summary>
+        private void TestLines()
+        {
+            lblCfg.Text = Lang.S("正在测线路…");
+            lblCfg.ForeColor = Theme.Ink2;
+            System.Threading.Thread t = new System.Threading.Thread(delegate()
+            {
+                string api = WsNet.ProbeLine("https://api.steampowered.com/");
+                string cdn = WsNet.ProbeLine("https://cdn.steamusercontent.com/");
+                string web = WsNet.ProbeLine("https://steamcommunity.com/");
+                string px = WsNet.SystemProxyDesc();
+                string key = ((Core.Cfg.WsApiKey ?? "").Trim().Length > 0) ? "已填" : "未填";
+                string msg = "api.steampowered.com：" + api + "\r\n"
+                    + "cdn.steamusercontent.com：" + cdn + "\r\n"
+                    + "steamcommunity.com：" + web + "\r\n\r\n"
+                    + "系统代理：" + px + "\r\n"
+                    + "Steam API key：" + key;
+                SafeInvoke(delegate
+                {
+                    lblCfg.Text = Lang.F("配置：{0}", Core.CfgPath);
+                    MessageBox.Show(this, msg, Lang.S("工坊线路自检"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                });
+            });
+            t.IsBackground = true;
+            t.Start();
         }
 
         /// <summary>把 vpk / 压缩包里的 vpk 搬进 addons，然后重扫一遍让树认出来。</summary>
