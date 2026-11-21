@@ -4037,7 +4037,9 @@ namespace Installer
             string tag = RecTag();
             if (q.Length == 0 && tag.Length == 0) { recGen++; recKey = ""; recPanel.Visible = false; return; }
             // Steam 处于离线冷却时不再去敲它，但也不能就此空白：下面直接走 GameBanana 兜底
-            bool steamDead = !Core.Cfg.SteamEnabled || (WsNet.IsOffline && !recForced);
+            // 有 key 时看 API 通不通：steamcommunity 被墙不代表 API 不通（实测前者被 RST、后者仍能搜）
+            bool steamDead = !Core.Cfg.SteamEnabled
+                || (Workshop.HasApiKey ? WsNet.ApiOffline : (WsNet.IsOffline && !recForced));
             recForced = false;
             string want = q + "\u0001" + tag;
             if (want == recKey) return;

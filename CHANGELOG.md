@@ -3,6 +3,10 @@
 > 本文件从 v0.5.0 起维护。更早的版本（v0.3.0 ~ v0.4.8）请见
 > [Releases](https://github.com/Yzy10086-l4d2/l4d2-mod-manager-local/releases)。
 
+## v0.6.11
+
+- **工坊网页被墙不再连坐 API 路线**：填了 key 时，判断「Steam 能不能用」看的是 `api.steampowered.com` 通不通，而不是 `steamcommunity.com`。实测前者 200、后者被 RST，之前会被误判成整条 Steam 不可用。
+
 ## v0.6.10
 
 - **散文件打包更可靠**：剥掉 `left4dead2/`、`addons/<名>/` 这类外壳后再进包（之前会剥了路径却还按旧路径读文件，直接报错）；非 ASCII 文件名跳过，不让它污染 vpk 目录表。
