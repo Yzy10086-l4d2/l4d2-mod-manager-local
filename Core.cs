@@ -62,6 +62,7 @@ namespace Installer
         // 铺进去约 580MB 平台组件。要用的人自己勾；老配置里写过 True 的仍按配置回填。
         public bool CfgFile = false;        // 新人首装不默认写 cfg；老配置里写过 True 的照旧
         public bool ReduceMotion = false;   // true = 关闭轻量过渡，直接显示最终状态
+        public bool MultiConnDownload = false;   // 实验：单文件双连接下载（默认关，慢线/有代理时可能反而更慢）
         public bool NameByTitle = false;    // MOD 名称显示：false = VPK 文件名（默认）；true = 包内 addoninfo 的标题
         public bool DpiAware = true;        // true = 自己按 DPI 缩放界面（高 DPI 下不再模糊）；false = 老样子交给系统拉伸
         public string Mode = "local";       // 工作模式：local = 游戏目录 addons 当库（默认，单 exe 下载的人只有这一种）；usb = 拿 U 盘去装机
@@ -540,6 +541,7 @@ namespace Installer
                     else if (k == "LastRun") Cfg.LastRun = v;
                     else if (k == "CfgFile") Cfg.CfgFile = (v == "1");
                     else if (k == "ReduceMotion") Cfg.ReduceMotion = (v == "1");
+                    else if (k == "MultiConn") Cfg.MultiConnDownload = (v == "1");
                     else if (k == "NameByTitle") Cfg.NameByTitle = (v == "1");
                     else if (k == "DpiAware") Cfg.DpiAware = (v != "0");
                     else if (k == "Mode") Cfg.Mode = v;
@@ -576,6 +578,7 @@ namespace Installer
                 sb.AppendLine("[platform]");
                 sb.AppendLine("CfgFile=" + (Cfg.CfgFile ? "1" : "0"));
                 sb.AppendLine("ReduceMotion=" + (Cfg.ReduceMotion ? "1" : "0"));
+                sb.AppendLine("MultiConn=" + (Cfg.MultiConnDownload ? "1" : "0"));
                 sb.AppendLine("NameByTitle=" + (Cfg.NameByTitle ? "1" : "0"));
                 sb.AppendLine("DpiAware=" + (Cfg.DpiAware ? "1" : "0"));
                 sb.AppendLine("Mode=" + (ModeLock ?? Cfg.Mode));

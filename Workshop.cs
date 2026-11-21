@@ -412,6 +412,18 @@ namespace Installer
         public static long DownloadTo(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress)
         {
             Tune();
+            // 实验开关：单文件双连接。只处理「全新下载 + 服务器支持 Range + 文件够大」，
+            // 任何一步失败都会清干净并返回 -1，由下面的单连接阶梯接手（绝不留下拼坏的 part）。
+            if (Core.Cfg != null && Core.Cfg.MultiConnDownload)
+            {
+                long mc = TryTwoParts(url, ua, timeoutMs, partPath, progress);
+                if (mc > 0)
+                {
+                    try { Core.Log("INFO", "下载：双连接完成 " + (mc / 1048576) + " MB"); } catch { }
+                    return mc;
+                }
+                try { Core.Log("INFO", "下载：本次没走双连接（不支持 Range / 文件小于 6MB / 有断点），用单连接"); } catch { }
+            }
             Uri u = null;
             try { u = new Uri(url); } catch { }
             string host = u == null ? null : u.Host;
@@ -439,6 +451,128 @@ namespace Installer
         }
 
         /// <summary>单次下载尝试。part 已存在就从断点续（HTTP Range）；总时长/卡死由 HttpWebRequest 超时管。</summary>
+        /// <summary>
+        /// 双连接下载（实验）：先用 1 字节 Range 探服务器是否支持、拿总长；支持且 ≥6MB 才切两段并发。
+        /// 返回总字节数；任何异常/长度不符都清理临时文件并返回 -1（调用方走单连接，不会下出坏包）。
+        /// </summary>
+        static long TryTwoParts(string url, string ua, int timeoutMs, string partPath, Action<long, long> progress)
+        {
+            Uri u = null;
+            try { u = new Uri(url); } catch { return -1; }
+            if (u == null || string.IsNullOrEmpty(partPath)) return -1;
+            if (File.Exists(partPath)) return -1;                     // 有断点就不并发，交给单连接续传
+            long total;
+            if (!ProbeRange(url, ua, u, out total) || total < 6L * 1024 * 1024) return -1;
+
+            string p0 = partPath + ".0", p1 = partPath + ".1";
+            DelIfExists(p0); DelIfExists(p1);
+            long mid = total / 2;
+            long done = 0;
+            Action<long> report = delegate(long delta)
+            {
+                long now = System.Threading.Interlocked.Add(ref done, delta);
+                if (progress != null) { try { progress(now, total); } catch { } }
+            };
+            string err0 = null, err1 = null;
+            System.Threading.Thread a = new System.Threading.Thread(delegate() { err0 = GetRange(url, ua, timeoutMs, p0, 0, mid - 1, u.Host, report); });
+            System.Threading.Thread b = new System.Threading.Thread(delegate() { err1 = GetRange(url, ua, timeoutMs, p1, mid, total - 1, u.Host, report); });
+            a.IsBackground = true; b.IsBackground = true;
+            a.Start(); b.Start(); a.Join(); b.Join();
+            if (err0 != null || err1 != null) { DelIfExists(p0); DelIfExists(p1); return -1; }
+            if (LenOf(p0) != mid || LenOf(p1) != total - mid) { DelIfExists(p0); DelIfExists(p1); return -1; }
+            try
+            {
+                using (FileStream fs = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 131072))
+                {
+                    using (FileStream s0 = File.OpenRead(p0)) s0.CopyTo(fs, 131072);
+                    using (FileStream s1 = File.OpenRead(p1)) s1.CopyTo(fs, 131072);
+                }
+                DelIfExists(p0); DelIfExists(p1);
+                if (LenOf(partPath) != total) { DelIfExists(partPath); return -1; }
+                return total;
+            }
+            catch { DelIfExists(p0); DelIfExists(p1); DelIfExists(partPath); return -1; }
+        }
+
+        /// <summary>Range 探针：能拿到 206 + Content-Range 才算支持分段。</summary>
+        static bool ProbeRange(string url, string ua, Uri u, out long total)
+        {
+            total = 0;
+            string ip = Pick(u.Host);
+            string pinned = null;
+            if (!string.IsNullOrEmpty(ip))
+            {
+                UriBuilder ub = new UriBuilder(u); ub.Host = ip; pinned = ub.Uri.AbsoluteUri;
+            }
+            foreach (string target in new string[] { pinned, url })
+            {
+                if (string.IsNullOrEmpty(target)) continue;
+                try
+                {
+                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create(target);
+                    if (target == pinned) req.Host = u.Host;
+                    req.UserAgent = ua;
+                    req.Timeout = 15000; req.ReadWriteTimeout = 15000;
+                    try { req.Proxy = null; } catch { }
+                    req.AddRange(0, 0);
+                    using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
+                    {
+                        if (r.StatusCode != HttpStatusCode.PartialContent) return false;
+                        string cr = r.Headers["Content-Range"];
+                        int slash = cr == null ? -1 : cr.LastIndexOf('/');
+                        if (slash < 0 || !long.TryParse(cr.Substring(slash + 1), out total) || total <= 0) return false;
+                        using (Stream s = r.GetResponseStream()) { byte[] one = new byte[1]; if (s != null) s.Read(one, 0, 1); }
+                        return true;
+                    }
+                }
+                catch { }
+            }
+            return false;
+        }
+
+        /// <summary>下某一段到独立文件；成功返回 null，失败返回原因。</summary>
+        static string GetRange(string url, string ua, int timeoutMs, string path, long from, long to, string host, Action<long> report)
+        {
+            string ip = Pick(host);
+            string pinned = null;
+            if (!string.IsNullOrEmpty(ip))
+            {
+                UriBuilder ub = new UriBuilder(url); ub.Host = ip; pinned = ub.Uri.AbsoluteUri;
+            }
+            try
+            {
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(pinned ?? url);
+                if (pinned != null) req.Host = host;
+                req.UserAgent = ua;
+                req.Timeout = timeoutMs; req.ReadWriteTimeout = 60000;
+                try { req.Proxy = null; } catch { }
+                req.AddRange(from, to);
+                using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
+                {
+                    if (r.StatusCode != HttpStatusCode.PartialContent) return "服务器没按 Range 返回（" + r.StatusCode + "）";
+                    using (Stream src = r.GetResponseStream())
+                    using (FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 131072))
+                    {
+                        byte[] buf = new byte[131072];
+                        int n;
+                        while ((n = src.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); report(n); }
+                    }
+                }
+                return null;
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
+
+        static void DelIfExists(string p)
+        {
+            try { if (File.Exists(p)) File.Delete(p); } catch { }
+        }
+
+        static long LenOf(string p)
+        {
+            try { return new FileInfo(p).Length; } catch { return -1; }
+        }
+
         static long TryDownload(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, bool allowPin, IWebProxy proxy)
         {
             Uri u = null;
