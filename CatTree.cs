@@ -4137,7 +4137,7 @@ namespace Installer
                 : Lang.F("浏览 {0}", WsText.Compact(it.Views));
             string desc = WsText.Clean(it.Desc ?? "");
             if (desc.Length > 700) desc = desc.Substring(0, 700) + "…";
-            peek.ShowImage(it.Title ?? "", meta, it.Id.StartsWith("gb", StringComparison.Ordinal) ? Lang.S("来源：GameBanana") : Lang.S("来源：Steam 创意工坊"), pic, "", desc);
+            peek.ShowImage(it.Title ?? "", meta, Lang.S("来源：") + Workshop.SourceLabel(it), pic, "", desc);
 
             // 卡片图只有 104×58，塞进详情栏必然糊；后台按详情尺寸再取一张大的换上去
             string url = it.Preview, id = it.Id, title = it.Title ?? "";
@@ -4155,7 +4155,7 @@ namespace Installer
                         if (dtok != recDetailToken) { try { big.Dispose(); } catch { } return; }
                         if (recBigPic != null) { try { recBigPic.Dispose(); } catch { } }
                         recBigPic = big;
-                        peek.ShowImage(title, meta, Lang.S("来源：Steam 创意工坊"), big, "", desc);
+                        peek.ShowImage(title, meta, Lang.S("来源：") + Workshop.SourceLabel(it), big, "", desc);
                     });
                 }
                 catch { try { big.Dispose(); } catch { } }

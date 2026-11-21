@@ -858,7 +858,8 @@ namespace Installer
             if (it.Updated > 0) meta += (meta.Length > 0 ? "  ·  " : "") + "更新 " + WsText.Ago(it.Updated);
             if (it.Size > 0) meta += (meta.Length > 0 ? "  ·  " : "") + Core.Human(it.Size);
             if (it.IsCollection) meta += (meta.Length > 0 ? "  ·  " : "") + "这是合集";
-            lblMeta.Text = meta.Length == 0 ? "物品 " + it.Id : meta;
+            string srcLabel = Workshop.SourceLabel(it);
+            lblMeta.Text = (srcLabel.Length > 0 ? srcLabel + "　·　" : "") + (meta.Length == 0 ? "物品 " + it.Id : meta);
             lblTags.Text = it.Tags;
             string where = it.Where.Length > 0 ? "会装到：" + it.Where + "  ·  " : "";
             string saveTo;

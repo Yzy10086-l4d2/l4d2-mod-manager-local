@@ -42,14 +42,6 @@ namespace Installer
                 sb.AppendLine("kind=json");
                 sb.AppendLine("enabled=1");
                 sb.AppendLine();
-                sb.AppendLine("[gm]");
-                sb.AppendLine("name=GameMaps 地图");
-                sb.AppendLine("kind=html");
-                sb.AppendLine("enabled=1");
-                sb.AppendLine("list=https://www.gamemaps.com/l4d2/maps");
-                sb.AppendLine("item=(?s)data-id=\"(\\d+)\".{0,400}?<img src=\"([^\"]+)\" title=\"([^\"]+)\"");
-                sb.AppendLine("detail=https://www.gamemaps.com/details/{id}");
-                sb.AppendLine("base=https://www.gamemaps.com");
                 File.WriteAllText(FilePath, sb.ToString(), Encoding.UTF8);
             }
             catch { }

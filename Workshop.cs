@@ -2093,6 +2093,15 @@ namespace Installer
         /// 把工坊的预览图存到 MOD 旁边（同目录同名的 .jpg/.png）。
         /// 库里的封面优先读包内 addonimage，包里没有就找同名图片 —— 下载时存一份，没打包封面图的作者也能有预览。
         /// </summary>
+        /// <summary>这条东西从哪来的：详情页/预览面板统一用它，别写死 Steam。</summary>
+        internal static string SourceLabel(WsItem it)
+        {
+            if (it == null) return "";
+            if (it.Id.StartsWith("gb", StringComparison.Ordinal)) return "GameBanana";
+            if (it.Id.StartsWith("s", StringComparison.Ordinal)) return string.IsNullOrEmpty(it.Note) ? "外部来源" : it.Note;
+            return "Steam 创意工坊";
+        }
+
         public static void SavePreview(WsItem it, string savedPath)
         {
             if (it == null || string.IsNullOrEmpty(it.Preview) || string.IsNullOrEmpty(savedPath)) return;
