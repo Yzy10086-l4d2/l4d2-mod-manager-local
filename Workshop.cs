@@ -1058,27 +1058,19 @@ namespace Installer
         /// </summary>
         static List<WsItem> SearchByApi(string query, string sort, int page, string tag)
         {
-            StringBuilder b = new StringBuilder();
-            b.Append("key=").Append(ApiKey);
-            b.Append("&appid=").Append(AppId);
-            b.Append("&page=").Append(page);
-            b.Append("&numperpage=30");
-            b.Append("&return_short_description=true");
-            b.Append("&query_type=").Append(ApiQueryType(sort, query));
-            if (!string.IsNullOrEmpty(query)) b.Append("&search_text=").Append(Uri.EscapeDataString(query));
-            if (!string.IsNullOrEmpty(tag)) b.Append("&requiredtags[0]=").Append(Uri.EscapeDataString(tag));
+            // QueryFiles 只认 GET（POST 会 405）；参数一律塞进 query string
+            StringBuilder u = new StringBuilder(PubRoot + "QueryFiles/v1/?format=json");
+            u.Append("&key=").Append(ApiKey);
+            u.Append("&appid=").Append(AppId);
+            u.Append("&page=").Append(page);
+            u.Append("&numperpage=").Append(Math.Min(100, Math.Max(1, 30)));
+            u.Append("&return_short_description=true");
+            u.Append("&query_type=").Append(ApiQueryType(sort, query));
+            if (!string.IsNullOrEmpty(query)) u.Append("&search_text=").Append(Uri.EscapeDataString(query));
+            if (!string.IsNullOrEmpty(tag)) u.Append("&requiredtags%5B0%5D=").Append(Uri.EscapeDataString(tag));
 
-            // 接口路径是 IPublishedFileService/QueryFiles/v1/ —— 多写一个 "PublishedFile." 会直接 404
-            string json = null;
-            for (int attempt = 0; attempt < 2 && json == null; attempt++)
-            {
-                try { json = PostUrl(PubRoot + "QueryFiles/v1/?format=json", b.ToString(), 6000); }
-                catch (WebException we)
-                {
-                    if (attempt > 0 || we.Status != WebExceptionStatus.Timeout) throw;
-                    try { Core.Log("WARN", "工坊 API 超时，重试一次"); } catch { }
-                }
-            }
+            string json = WsNet.GetString(u.ToString(), Ua, 8000);
+            if (string.IsNullOrEmpty(json)) return null;
             List<string> objs = SplitObjects(json, "publishedfiledetails");
             List<WsItem> outp = new List<WsItem>();
             foreach (string o in objs)

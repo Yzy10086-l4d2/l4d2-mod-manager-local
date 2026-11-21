@@ -4058,10 +4058,20 @@ namespace Installer
                 int pg = recRnd.Next(1, 4);
                 if (pg == recPage) pg = pg % 3 + 1;      // 换一换别撞回同一页
                 recPage = pg;
-                if (!steamDead) { try { got = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { } }
+                // Steam 和「来源」同时问：Steam 现在经常是死的，不能让它把每次点击拖成好几秒
+                List<WsItem> steamGot = null;
+                System.Threading.Thread steamTh = null;
+                if (!steamDead)
+                {
+                    steamTh = new System.Threading.Thread(delegate() { try { steamGot = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { } });
+                    steamTh.IsBackground = true;
+                    steamTh.Start();
+                    steamTh.Join(1200);                       // 给它 1.2 秒，回来得慢就先上来源
+                }
+                if (steamGot != null && steamGot.Count > 0) got = steamGot;
                 if (got == null || got.Count == 0)
                 {
-                    // Steam 走不通（或没结果）：按「来源.ini」的顺序挨个问，第一个有结果的上
+                    // 按「来源.ini」的顺序挨个问，第一个有结果的上
                     try { string nm; List<WsItem> alt = Sources.Take(key, pg, 24, out nm); if (alt != null && alt.Count > 0) got = alt; } catch { }
                 }
                 if (got != null) { try { got = new List<WsItem>(got); } catch { } }
