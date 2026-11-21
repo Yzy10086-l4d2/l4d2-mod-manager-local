@@ -1138,6 +1138,20 @@ namespace Installer
         /// 工坊内容目录 = &lt;库&gt;\steamapps\workshop\content\550（550 是 L4D2 的 appid）。
         /// 从游戏目录往上找 steamapps：绿色版 / 自己解压的目录没有这一层，返回 null 就当没有订阅。
         /// </summary>
+        /// <summary>这个工坊物品在本机是否已经订阅并下好：有就返回它的目录，没有返回 null。</summary>
+        internal static string SubscribedDir(string workshopId)
+        {
+            if (string.IsNullOrEmpty(workshopId)) return null;
+            try
+            {
+                string root = WorkshopContentDir();
+                if (root == null) return null;
+                string d = Path.Combine(root, workshopId.Trim());
+                return Directory.Exists(d) ? d : null;
+            }
+            catch { return null; }
+        }
+
         static string WorkshopContentDir()
         {
             string root = Core.Cfg == null ? null : Core.Cfg.GameRoot;

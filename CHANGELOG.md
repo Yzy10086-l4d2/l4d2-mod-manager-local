@@ -3,6 +3,16 @@
 > 本文件从 v0.5.0 起维护。更早的版本（v0.3.0 ~ v0.4.8）请见
 > [Releases](https://github.com/Yzy10086-l4d2/l4d2-mod-manager-local/releases)。
 
+## v0.6.8
+
+### 提速与通道
+
+- **搜过的结果落盘缓存 1 小时**：同一个位置来回点、重开程序都不再重复打网络。
+- **本机已订阅的工坊物品直接复制**：不再白下载一遍（走 `steamapps\workshop\content\550\<id>`）。
+- **QueryFiles 补两个参数**：`language=schinese`（作者填过中文的直接拿中文）、`cache_max_age_seconds=600`（少打接口）。
+- **来源标签统一**：GameBanana 的条目不再显示成「Steam 创意工坊」。
+- **设置里加「测工坊线路」**：三条线各通不通、系统代理、key 状态一眼看清。
+
 ## v0.6.7
 
 ### 修复

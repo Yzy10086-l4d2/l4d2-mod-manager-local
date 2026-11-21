@@ -1093,6 +1093,8 @@ namespace Installer
             u.Append("&page=").Append(page);
             u.Append("&numperpage=").Append(Math.Min(100, Math.Max(1, 30)));
             u.Append("&return_short_description=true");
+            u.Append("&language=schinese");                 // 作者填过中文的，直接拿中文
+            u.Append("&cache_max_age_seconds=600");         // 同一分类反复刷不重复打接口
             u.Append("&query_type=").Append(ApiQueryType(sort, query));
             if (!string.IsNullOrEmpty(query)) u.Append("&search_text=").Append(Uri.EscapeDataString(query));
             if (!string.IsNullOrEmpty(tag)) u.Append("&requiredtags%5B0%5D=").Append(Uri.EscapeDataString(tag));
@@ -2113,6 +2115,27 @@ namespace Installer
         /// 把工坊的预览图存到 MOD 旁边（同目录同名的 .jpg/.png）。
         /// 库里的封面优先读包内 addonimage，包里没有就找同名图片 —— 下载时存一份，没打包封面图的作者也能有预览。
         /// </summary>
+        /// <summary>
+        /// 本机已经订阅并下好：直接把里面的 vpk 复制进 addons，一个字节都不用下载。
+        /// 返回 null 表示本机没有这份订阅，调用方照常走下载。
+        /// </summary>
+        internal static string InstallFromSubscription(WsItem it, string addons, out int added)
+        {
+            added = 0;
+            try
+            {
+                string dir = Catalog.SubscribedDir(it == null ? null : it.Id);
+                if (dir == null) return null;
+                string[] vpks = Directory.GetFiles(dir, "*.vpk", SearchOption.TopDirectoryOnly);
+                if (vpks.Length == 0) return null;
+                int skipped;
+                List<string> errs;
+                string msg = Catalog.ImportTo(vpks, addons, out added, out skipped, out errs);
+                return msg + "（本机已订阅，直接复制，没走网络）";
+            }
+            catch { return null; }
+        }
+
         /// <summary>这条东西从哪来的：详情页/预览面板统一用它，别写死 Steam。</summary>
         internal static string SourceLabel(WsItem it)
         {

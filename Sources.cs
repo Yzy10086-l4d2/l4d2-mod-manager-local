@@ -105,6 +105,15 @@ namespace Installer
         {
             sourceName = "";
             Load(false);
+
+            // 先看磁盘缓存（1 小时）：同一个位置反复点，不该每次都打网络
+            string cachedName;
+            List<WsItem> cached = LoadCache(query, page, out cachedName);
+            if (cached != null && cached.Count > 0 && SourceEnabled(cachedName))
+            {
+                sourceName = cachedName;
+                return cached;
+            }
             List<SourceDef> defs;
             lock (All) { defs = new List<SourceDef>(All); }
             foreach (SourceDef d in defs)
@@ -120,10 +129,94 @@ namespace Installer
                 if (got != null && got.Count > 0)
                 {
                     sourceName = d.Name.Length > 0 ? d.Name : d.Id;
+                    SaveCache(query, page, sourceName, got);
                     return got;
                 }
             }
             return null;
+        }
+
+        // ---------------- 磁盘缓存（1 小时） ----------------
+        // 搜索结果落盘：重开程序、来回切位置都不再重复打网络。按「查询词 + 页码」分文件。
+
+        static string CacheDir
+        {
+            get
+            {
+                string d = Path.Combine(Core.CfgDir, "_缓存");
+                try { Directory.CreateDirectory(d); } catch { }
+                return d;
+            }
+        }
+
+        static string CachePath(string query, int page)
+        {
+            string k = (query ?? "") + "|" + page;
+            uint h = 2166136261u;
+            foreach (char c in k) { h ^= c; h *= 16777619u; }
+            return Path.Combine(CacheDir, "src_" + h.ToString("x8") + ".txt");
+        }
+
+        static bool SourceEnabled(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            lock (All)
+            {
+                foreach (SourceDef d in All)
+                    if (d.Enabled && string.Equals(d.Name, name, StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
+        static List<WsItem> LoadCache(string query, int page, out string name)
+        {
+            name = "";
+            try
+            {
+                string p = CachePath(query, page);
+                if (!File.Exists(p)) return null;
+                if ((DateTime.Now - File.GetLastWriteTime(p)).TotalHours >= 1) return null;
+                string[] lines = File.ReadAllLines(p, Encoding.UTF8);
+                if (lines.Length < 2) return null;
+                List<WsItem> outp = new List<WsItem>();
+                for (int i = 1; i < lines.Length; i++)
+                {
+                    string[] f = lines[i].Split('\t');
+                    if (f.Length < 4) continue;
+                    WsItem it = new WsItem();
+                    it.Id = f[0]; it.Title = f[1]; it.Preview = f[2]; it.Url = f[3];
+                    if (f.Length > 4) it.Note = f[4];
+                    if (f.Length > 5) { long v; if (long.TryParse(f[5], out v)) it.Updated = v; }
+                    it.DetailsLoaded = true;
+                    outp.Add(it);
+                }
+                if (outp.Count == 0) return null;
+                name = lines[0].Trim();
+                return outp;
+            }
+            catch { return null; }
+        }
+
+        static void SaveCache(string query, int page, string name, List<WsItem> items)
+        {
+            try
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine(name ?? "");
+                foreach (WsItem it in items)
+                {
+                    sb.Append(Safe(it.Id)).Append('\t').Append(Safe(it.Title)).Append('\t')
+                      .Append(Safe(it.Preview)).Append('\t').Append(Safe(it.Url)).Append('\t')
+                      .Append(Safe(it.Note)).Append('\t').Append(it.Updated).AppendLine();
+                }
+                File.WriteAllText(CachePath(query, page), sb.ToString(), Encoding.UTF8);
+            }
+            catch { }
+        }
+
+        static string Safe(string s)
+        {
+            return (s ?? "").Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ');
         }
 
         /// <summary>抓一个 html 来源的列表页。不翻页（很多站翻页要过验证，翻了也是 403）。</summary>

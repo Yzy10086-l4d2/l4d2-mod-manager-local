@@ -1310,6 +1310,21 @@ namespace Installer
             WsItem it = detailItem;
             if (busy || it == null) return;
             if (it.Id.StartsWith("gb", StringComparison.Ordinal)) { DownloadGb(it); return; }
+
+            // 本机已经订阅并下好：直接复制进 addons，一个字节都不下载
+            try
+            {
+                string subAddons = Workshop.DestDir();
+                int subAdded = 0;
+                string subMsg = Workshop.InstallFromSubscription(it, subAddons, out subAdded);
+                if (subMsg != null)
+                {
+                    lblState.Text = subMsg;
+                    if (subAdded > 0 && owner != null) owner.RescanMods();
+                    return;
+                }
+            }
+            catch { }
             if (it.IsCollection || it.Url.Length == 0) { lblState.Text = Lang.S("这个物品没有直链，只能走 Steam 客户端订阅。"); return; }
             string dir;
             try { dir = Workshop.DestDir(); }
