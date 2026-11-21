@@ -2317,6 +2317,16 @@ namespace Installer
                     "正常人物模型仍归人物（界面排除没殃及本体）");
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/survivor_biker_portrait.vtf" }, "杂项", "UI 界面"),
                     "界面里引用角色名不算人物皮肤");
+                {
+                    ModIdentify.Result ra = ModIdentify.AnalyzePaths(new List<string>(
+                        new string[] { "materials/models/v_models/weapons/autoshot/m4super.vtf" }));
+                    bad += RecogCheck(ra.Subject == "一代连喷" && ra.Level == "材质",
+                        "官方 autoshot 材质目录认出一代连喷（two_tone_silver_autoshotty）");
+                    ModIdentify.Result rs = ModIdentify.AnalyzePaths(new List<string>(
+                        new string[] { "materials/models/survivors/namvet/bill_color.vtf" }));
+                    bad += RecogCheck(rs.Subject == "比尔" && rs.Level == "材质",
+                        "按人分区的幸存者纯材质包认出具体角色");
+                }
 
                 // 同名伴随文件：vpk 旁边的配图要认得出来（删/改名时一起带走），别把别人的图误收进来
                 string sideDir = Path.Combine(Path.GetTempPath(), "l4d2sides-" + Guid.NewGuid().ToString("N"));

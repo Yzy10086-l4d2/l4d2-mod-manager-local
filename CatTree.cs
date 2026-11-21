@@ -2122,6 +2122,7 @@ namespace Installer
             lib.DropDownItems.Add("库文件夹管理…", null, delegate { mf.ManageModDirs(); });
             lib.DropDownItems.Add("识别压缩包内容", null, delegate { mf.ProbeArchivesUi(); });
             lib.DropDownItems.Add("清理同名重复", null, delegate { mf.CleanDupMods(); });
+            lib.DropDownItems.Add("提交识别反馈（GitHub Issue）…", null, delegate { CatPrefs.SubmitFeedback(unmatchedGroups); });
             lib.DropDownItems.Add(new ToolStripSeparator());
             lib.DropDownItems.Add("重新扫描 MOD 库", null, delegate { mf.RescanMods(); });
             m.Items.Add(lib);

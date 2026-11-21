@@ -373,6 +373,136 @@ namespace Installer
                 }
             }
             Save();
+            if (!Core.SelfTesting && (c.Length > 0 || s.Length > 0)) RecordAssignSample(g, c, s);
+        }
+
+        private static string SampleFile
+        {
+            get { return string.IsNullOrEmpty(Core.LogDir) ? "" : Path.Combine(Core.LogDir, "identify-feedback.tsv"); }
+        }
+
+        /// <summary>把一次人工归类顺手记进本地样本表（指纹去重），点「提交识别反馈」时一并带上。</summary>
+        private static void RecordAssignSample(ModGroup g, string newCat, string newSlot)
+        {
+            try
+            {
+                ModItem m = g == null ? null : g.Main;
+                if (m == null) return;
+                string f = SampleFile;
+                if (f.Length == 0) return;
+                string fp = string.IsNullOrEmpty(m.Fp) ? (m.Name ?? "") : m.Fp;
+                string samplePaths = SamplePathsOf(m, 5);
+                string line = fp + "\t" + CleanCell(m.Name) + "\t" + CleanCell(m.AddonTitle)
+                    + "\t" + CleanCell(g.AutoCat) + "·" + CleanCell(m.Subject)
+                    + "\t" + CleanCell(newCat) + "·" + CleanCell(newSlot)
+                    + "\t" + CleanCell(samplePaths);
+                List<string> keep = new List<string>();
+                if (File.Exists(f))
+                {
+                    foreach (string old in File.ReadAllLines(f, Encoding.UTF8))
+                    {
+                        if (old.Length == 0) continue;
+                        if (old.StartsWith(fp + "\t", StringComparison.OrdinalIgnoreCase)) continue;
+                        keep.Add(old);
+                    }
+                }
+                keep.Add(line);
+                if (keep.Count > 200) keep.RemoveRange(0, keep.Count - 200);
+                Core.WriteAllTextAtomic(f, string.Join("\r\n", keep.ToArray()) + "\r\n", Encoding.UTF8);
+            }
+            catch { }
+        }
+
+        private static string CleanCell(string s)
+        {
+            return (s ?? "").Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ').Trim();
+        }
+
+        internal static string SamplePathsOf(ModItem m, int max)
+        {
+            if (m == null || string.IsNullOrEmpty(m.AssetPaths)) return "";
+            string[] parts = m.AssetPaths.Split(';');
+            List<string> pick = new List<string>();
+            for (int i = 0; i < parts.Length && pick.Count < max; i++)
+                if (parts[i].Length > 0) pick.Add(parts[i]);
+            return string.Join("; ", pick.ToArray());
+        }
+
+        /// <summary>生成 Markdown 格式的识别反馈正文（人工纠错样本 + 当前未归类样本），供复制与预填 GitHub Issue。</summary>
+        internal static string BuildFeedbackMarkdown(List<ModGroup> unmatched, out int count)
+        {
+            count = 0;
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("### 识别样本反馈");
+            sb.AppendLine();
+            List<string> handLines = new List<string>();
+            try
+            {
+                string f = SampleFile;
+                if (f.Length > 0 && File.Exists(f))
+                {
+                    foreach (string raw in File.ReadAllLines(f, Encoding.UTF8))
+                        if (raw.Trim().Length > 0) handLines.Add(raw);
+                }
+            }
+            catch { }
+            if (handLines.Count > 0)
+            {
+                sb.AppendLine("#### 1. 我手动归类纠正过的包（" + handLines.Count + " 个）");
+                sb.AppendLine("| 文件名 | 包内标题 | 原识别 | 我归到的位置 | 包内代表路径 |");
+                sb.AppendLine("|---|---|---|---|---|");
+                for (int i = 0; i < handLines.Count && i < 25; i++)
+                {
+                    string[] c = handLines[i].Split('\t');
+                    if (c.Length < 6) continue;
+                    sb.AppendLine("| " + c[1] + " | " + c[2] + " | " + c[3] + " | **" + c[4] + "** | " + c[5] + " |");
+                    count++;
+                }
+                sb.AppendLine();
+            }
+            if (unmatched != null && unmatched.Count > 0)
+            {
+                sb.AppendLine("#### 2. 当前未归类的包（" + unmatched.Count + " 个）");
+                sb.AppendLine("| 文件名 | 包内标题 | 影响面 | 包内代表路径 |");
+                sb.AppendLine("|---|---|---|---|");
+                for (int i = 0; i < unmatched.Count && i < 25; i++)
+                {
+                    ModGroup g = unmatched[i];
+                    ModItem m = g == null ? null : g.Main;
+                    if (m == null) continue;
+                    sb.AppendLine("| " + CleanCell(m.Name) + " | " + CleanCell(m.AddonTitle)
+                        + " | " + CleanCell(m.Kinds) + " | " + CleanCell(SamplePathsOf(m, 5)) + " |");
+                    count++;
+                }
+                sb.AppendLine();
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>方案 B：把识别样本复制到剪贴板，并打开预填好标题与正文的 GitHub Issue 页面。</summary>
+        public static void SubmitFeedback(List<ModGroup> unmatched)
+        {
+            int count;
+            string md = BuildFeedbackMarkdown(unmatched, out count);
+            if (count == 0)
+            {
+                MessageBox.Show("当前既没有「未归类」的包，也没有你手动拖拽纠正过的记录，说明库里的包全都认出来了！",
+                    "提交识别反馈", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            try { Clipboard.SetText(md); } catch { }
+            string title = Uri.EscapeDataString("识别样本反馈（" + count + " 条）");
+            string bodyRaw = md.Length > 1800 ? md.Substring(0, 1800) + "\r\n...(完整内容已在剪贴板，可直接 Ctrl+V 粘贴)" : md;
+            string body = Uri.EscapeDataString(bodyRaw);
+            string url = "https://github.com/Yzy10086-l4d2/l4d2-mod-manager-local/issues/new?title=" + title + "&body=" + body;
+            DialogResult dr = MessageBox.Show(
+                "已整理 " + count + " 条未归类 / 手动纠错样本，并【复制到剪贴板】。\r\n\r\n"
+                + "点击「确定」将打开 GitHub Issue 页面（已自动填好表格，点绿色的 Submit 即可提交；若网页打不开，直接把剪贴板内容粘贴发给作者就行）。",
+                "提交识别反馈（方案 B）", MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
+            if (dr == DialogResult.OK)
+            {
+                try { System.Diagnostics.Process.Start(url); } catch { }
+            }
         }
 
         /// <summary>回到全自动（自动大类 + 自动位置 + 自动小分类）。</summary>

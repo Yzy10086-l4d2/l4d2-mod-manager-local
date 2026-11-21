@@ -126,6 +126,7 @@ namespace Installer
             {"shotgun_spas",     "二代连喷"},{"spas",             "二代连喷"},{"scattergun",       "二代连喷"},
             {"pumpshotgun",      "木喷"},
             {"autoshotgun",      "一代连喷"},
+            {"autoshot",         "一代连喷"},    // 官方一代连喷贴图目录 materials/models/v_models/weapons/autoshot/
             {"shotgun",          "铁喷"},        // 裸 shotgun = w_shotgun.mdl = 铁喷的官方世界模型（木喷是 pumpshotgun）
             {"rifle",            "M16"},         // 裸 rifle = v_rifle = M16
             {"machinegun",       "M60"},
@@ -458,6 +459,31 @@ namespace Installer
                     }
                 }
                 // 4) 材质路径（弱信号，只在前三级都没中时才用）
+                //    4.1) 先看幸存者「按人分区」的材质目录：materials/models/survivors/namvet/bill_color.vtf
+                //         必须排在通用 Lookup 前面 —— 否则路径里的 "survivors" 会先撞上 Dict 里的泛称 "survivor" →「幸存者」，
+                //         把明明只改比尔一个人的贴图包吞成八人包。
+                if (found.Count == 0)
+                {
+                    List<string> hit = new List<string>();
+                    for (int i = 0; i < SurvivorDirs.GetLength(0); i++)
+                    {
+                        string pre = "materials/models/survivors/" + SurvivorDirs[i, 0] + "/";
+                        bool one = false;
+                        foreach (string mp in Mats)
+                            if (mp.StartsWith(pre, StringComparison.Ordinal)) { one = true; break; }
+                        if (one && !hit.Contains(SurvivorDirs[i, 1])) hit.Add(SurvivorDirs[i, 1]);
+                    }
+                    if (hit.Count == 1)
+                    {
+                        found.Add(hit[0]);
+                        if (r.Level.Length == 0) { r.Level = "材质"; r.Trace = "规则:幸存者材质目录 · 命中:" + hit[0]; }
+                    }
+                    else if (hit.Count > 1)
+                    {
+                        found.Add("幸存者");
+                        if (r.Level.Length == 0) { r.Level = "材质"; r.Trace = "规则:幸存者材质目录 · 命中 " + hit.Count + " 人"; }
+                    }
+                }
                 if (found.Count == 0)
                 {
                     foreach (string mp in Mats)
@@ -848,11 +874,9 @@ namespace Installer
             StringBuilder sb = new StringBuilder();
             // 改了"识别逻辑"（不是规则表）就改这个串：否则表没变、指纹不变，旧缓存会继续用旧结论。
             // 2026-11-21a：模型证据 v_ 优先 + 裸 shotgun=铁喷 + 材质级霰弹枪按文件名校正（SPAS=二代连喷）
-            sb.Append("rules:2026-11-21b;");
+            sb.Append("rules:2026-11-22a;");
             AppendTable(sb, Dict);
             AppendTable(sb, AliasKeys);
-            AppendTable(sb, GunKeys);
-            AppendTable(sb, ThrowKeys);
             AppendTable(sb, InfectKeys);
             AppendTable(sb, SurvivorDirs);
             foreach (Positions.Row p in Positions.All)
@@ -981,40 +1005,8 @@ namespace Installer
             {"燃烧瓶","燃烧瓶","投掷物","投掷物"},{"土制炸弹","土制炸弹","投掷物","投掷物"}
         };
 
-        private static readonly string[,] GunKeys = new string[,]
-        {
-            {"rifle_ak47","AK-47"},{"ak47","AK-47"},
-            {"rifle_desert","SCAR-L"},{"desert_rifle","SCAR-L"},{"scar","SCAR-L"},
-            {"rif_sg552","sg552"},{"rifle_sg552","sg552"},{"sg552","sg552"},
-            {"smg_mp5","MP5"},{"mp5","MP5"},
-            {"smg_silenced","MAC-10"},{"mac-10","MAC-10"},{"mac10","MAC-10"},
-            {"rifle_m16","M16"},{"m16","M16"},
-            {"uzi","UZI"},{"smg","UZI"},
-            {"m60","M60"},{"machinegun","M60"},
-            {"sniper_awp","AWP"},{"awp","AWP"},
-            {"sniper_scout","鸟狙"},{"scout","鸟狙"},
-            {"sniper_military","30发军用狙"},{"military","30发军用狙"},
-            {"huntingrifle","15发木狙"},
-            {"pumpshotgun","木喷"},{"shotgun_pump","木喷"},
-            {"shotgun_chrome","铁喷"},
-            {"autoshotgun","一代连喷"},{"shotgun_spas","二代连喷"},{"shotgun","木喷"},
-            {"grenade_launcher","榴弹发射器"},{"pistol_magnum","马格南"},
-            {"katana","近战武器"},{"machete","近战武器"},{"crowbar","近战武器"},
-            {"fireaxe","近战武器"},{"melee","近战武器"}
-        };
-
-        private static readonly string[,] ThrowKeys = new string[,]
-        {
-            {"vomitjar","胆汁"},{"vomit_jar","胆汁"},{"bile_flask","胆汁"},
-            {"molotov","燃烧瓶"},{"pipebomb","土制炸弹"},{"grenade","投掷物"}
-        };
-
-        private static readonly string[,] CharKeys = new string[,]
-        {
-            {"survivor_namvet","比尔"},{"survivor_teenangst","佐伊"},{"survivor_manager","路易斯"},
-            {"survivor_biker","弗朗西斯"},{"survivor_producer","罗谢尔"},{"survivor_gambler","尼克"},
-            {"survivor_mechanic","埃利斯"},{"survivor_coach","教练"}
-        };
+        // 枪械 / 投掷物 / 近战 / 生还者的模型关键词统一归口到上面的 Dict + Positions.cs，
+        // 不再在这里另维护 GunKeys / ThrowKeys / CharKeys 三张副本表（避免「裸 shotgun 一边判铁喷一边判木喷」）。
 
         // 幸存者的老布局是按人分区：models/survivors/<人名>/<模型>.mdl。
         // 模型文件名（namvet_deathpose）里没有 survivor_namvet 这段，靠这张表补。
@@ -1081,9 +1073,10 @@ namespace Installer
                     if (IsUiAssetPath(p)) continue;
                     if (p.IndexOf("survivor_", StringComparison.OrdinalIgnoreCase) < 0) continue;
                     anySurv = true;
-                    for (int i = 0; i < CharKeys.GetLength(0); i++)
-                        if (p.IndexOf(CharKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
-                        { if (CharKeys[i, 1] != "幸存者") who.Add(CharKeys[i, 1]); break; }
+                    string hitSurv = Lookup(p.ToLowerInvariant());
+                    Positions.Row prSurv = Positions.Find(hitSurv);
+                    if (prSurv != null && (prSurv.Sub == "一代" || prSurv.Sub == "二代"))
+                        who.Add(prSurv.Name);
                 }
                 if (anySurv)
                 {
@@ -1149,26 +1142,17 @@ namespace Installer
                 if (p.IndexOf("defibrillator", StringComparison.OrdinalIgnoreCase) >= 0) { cat = "药品"; sub = "电击器"; return true; }
             }
 
-            // 5) 枪械：模型名命中已知枪种
+            // 5) 枪械 / 近战 / 投掷物 / 弹药升级：模型名统一查 Dict，大类小类由 Positions + CatOfSub 决定（单一事实源）
             foreach (string p in ps)
             {
                 if (!p.EndsWith(".mdl", StringComparison.OrdinalIgnoreCase)) continue;
                 int s2 = p.LastIndexOf('/');
-                string bn = s2 >= 0 ? p.Substring(s2 + 1) : p;
-                for (int i = 0; i < GunKeys.GetLength(0); i++)
-                    if (bn.IndexOf(GunKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
-                    { cat = "枪械"; sub = GunKeys[i, 1]; return true; }
-            }
-
-            // 6) 投掷物：模型也在武器槽里，算枪械大类下的一个小分类
-            foreach (string p in ps)
-            {
-                if (!p.EndsWith(".mdl", StringComparison.OrdinalIgnoreCase)) continue;
-                int s3 = p.LastIndexOf('/');
-                string bn = s3 >= 0 ? p.Substring(s3 + 1) : p;
-                for (int i = 0; i < ThrowKeys.GetLength(0); i++)
-                    if (bn.IndexOf(ThrowKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
-                    { cat = "枪械"; sub = ThrowKeys[i, 1]; return true; }
+                string bn = (s2 >= 0 ? p.Substring(s2 + 1) : p).ToLowerInvariant();
+                Positions.Row pr = Positions.Find(Lookup(bn));
+                if (pr == null) continue;
+                string c2 = SlotIndex.CatOfSub(pr.Sub);
+                if (c2 == "枪械" || c2 == "近战" || c2 == "投掷物" || c2 == "弹药升级")
+                { cat = c2; sub = pr.Sub; return true; }
             }
             // 7) 以下四段是「没认出具体对象」的兜底层，必须排在 1~6 之后：
             //    一把枪的 HUD 图标包、武器音效包同样带 vgui / sound 路径，先判具体对象才不会抓错。
