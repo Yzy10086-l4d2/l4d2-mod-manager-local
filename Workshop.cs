@@ -2303,29 +2303,73 @@ namespace Installer
 
         public static void SavePreview(WsItem it, string savedPath)
         {
-            if (it == null || string.IsNullOrEmpty(it.Preview) || string.IsNullOrEmpty(savedPath)) return;
+            if (it == null || string.IsNullOrEmpty(savedPath)) return;
             try
             {
                 string dir = Path.GetDirectoryName(savedPath);
                 string stem = Path.GetFileNameWithoutExtension(savedPath);
                 if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(stem)) return;
-                byte[] b = WsNet.GetBytes(FixImageUrl(it.Preview), Ua, 15000);
-                if (b == null || b.Length < 64) return;
+                // 先吃缓存：浏览时 WsThumb 已经把原图存进 workshop-img 了，这里别再下一遍。
+                // 以前 15 次下载只有 1 次存到封面，就是因为这里硬走网络、失败还静默 return。
+                byte[] b = WsThumb.RawOf(it.Id);
+                if (b == null && !string.IsNullOrEmpty(it.Preview))
+                    b = WsNet.GetBytes(FixImageUrl(it.Preview), Ua, 15000);
+                if (b == null || b.Length < 64)
+                {
+                    Core.Log("WARN", "工坊：封面没拿到（" + it.Id + "）"
+                        + (string.IsNullOrEmpty(it.Preview) ? "：条目没有预览图地址" : "：图下载失败"));
+                    return;
+                }
+                WsThumb.PutRaw(it.Id, b);
                 // 优先塞进 vpk（游戏和程序看到同一份，目录里也不多一个文件）
                 if (savedPath.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase) && VpkPack.InjectImage(savedPath, b))
                 {
                     CleanSidecarImages(dir, stem);       // 旧版本在旁边留过同名图，顺手清掉
+                    Cover.Forget(savedPath);             // 包刚被重写：旧的「没封面」结论作废
                     Core.Log("OK", "工坊：封面已写进 vpk " + Path.GetFileName(savedPath));
                     return;
                 }
-                string low = it.Preview.ToLowerInvariant();
-                string ext = low.Contains(".png") ? ".png" : (low.Contains(".gif") ? ".gif" : ".jpg");
-                string dst = Path.Combine(dir, stem + ext);
-                if (File.Exists(dst) && new FileInfo(dst).Length > 1024) return;
-                File.WriteAllBytes(dst, b);
-                Core.Log("OK", "工坊：预览图已保存 " + Path.GetFileName(dst));
+                // v2 / 多卷 / 带 preload 的包 InjectImage 会主动放弃（不动用户几十 MB 的包），
+                // 这时退回「旁边放同名图」，不是失败。
+                if (WriteSidecar(savedPath, b))
+                {
+                    Cover.Forget(savedPath);
+                    Core.Log("OK", "工坊：预览图已保存 " + Path.GetFileName(savedPath) + "（放在 vpk 旁边）");
+                }
+                else Core.Log("WARN", "工坊：预览图写不进 vpk 也放不到旁边（" + Path.GetFileName(savedPath) + "）");
             }
             catch (Exception ex) { Core.Log("WARN", "工坊：预览图保存失败 " + ex.Message); }
+        }
+
+        /// <summary>把封面放在 vpk 旁边（vpk 同级同名不同扩展）。成功返回 true。</summary>
+        static bool WriteSidecar(string vpkPath, byte[] b)
+        {
+            try
+            {
+                string dir = Path.GetDirectoryName(vpkPath);
+                string stem = Path.GetFileNameWithoutExtension(vpkPath);
+                if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(stem)) return false;
+                string ext = ExtOfImage(b);
+                if (ext == ".webp") return false;          // GDI+ 解不了 webp，放了也用不上
+                string dst = Path.Combine(dir, stem + ext);
+                if (File.Exists(dst) && new FileInfo(dst).Length > 1024) return true;
+                File.WriteAllBytes(dst, b);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>按文件头判断图片真实格式（缓存命中时没有 URL 可参考）。</summary>
+        static string ExtOfImage(byte[] b)
+        {
+            if (b != null && b.Length >= 4)
+            {
+                if (b[0] == 0xFF && b[1] == 0xD8) return ".jpg";
+                if (b[0] == 0x89 && b[1] == 0x50) return ".png";
+                if (b[0] == 0x47 && b[1] == 0x49) return ".gif";
+                if (b[0] == 0x52 && b[1] == 0x49) return ".webp";   // RIFF/WEBP
+            }
+            return ".jpg";
         }
 
         /// <summary>删掉旧版本留在 vpk 旁边的同名封面，保持目录干净。</summary>
@@ -2357,21 +2401,26 @@ namespace Installer
                 }
                 if (ids.Count == 0) { if (stage != null) stage("库里没有带工坊 ID 的 vpk，没什么可补的"); return 0; }
                 if (stage != null) stage("要补 " + ids.Count + " 个物品的封面…");
-                List<WsItem> items = Fetch(ids);
+                List<WsItem> items = null;
+                try { items = Fetch(ids); } catch { }
                 Dictionary<string, string> prev = new Dictionary<string, string>(StringComparer.Ordinal);
-                foreach (WsItem it in items) if (it != null && !string.IsNullOrEmpty(it.Preview)) prev[it.Id] = it.Preview;
+                if (items != null)
+                    foreach (WsItem it in items) if (it != null && !string.IsNullOrEmpty(it.Preview)) prev[it.Id] = it.Preview;
                 int idx = 0;
                 foreach (ModItem m in mods)
                 {
                     if (m == null || string.IsNullOrEmpty(m.WorkshopId) || string.IsNullOrEmpty(m.FullPath)) continue;
                     if (!m.FullPath.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase)) continue;
                     idx++;
+                    // 浏览时缓存过的原图直接用，不必再走网络（断网也能补）
+                    byte[] b = WsThumb.RawOf(m.WorkshopId);
                     string url;
-                    if (!prev.TryGetValue(m.WorkshopId, out url)) { failed++; continue; }
-                    byte[] b = null;
-                    try { b = WsNet.GetBytes(FixImageUrl(url), Ua, 15000); } catch { }
+                    if (b == null && prev.TryGetValue(m.WorkshopId, out url))
+                        try { b = WsNet.GetBytes(FixImageUrl(url), Ua, 15000); } catch { }
                     if (b == null || b.Length < 64) { failed++; continue; }
-                    if (VpkPack.InjectImage(m.FullPath, b)) ok++; else failed++;
+                    WsThumb.PutRaw(m.WorkshopId, b);
+                    bool done = VpkPack.InjectImage(m.FullPath, b) || WriteSidecar(m.FullPath, b);
+                    if (done) { ok++; Cover.Forget(m.FullPath); } else failed++;
                     if (stage != null) stage("补封面 " + idx + "/" + ids.Count + (ok > 0 ? "（成功 " + ok + "）" : ""));
                 }
             }
@@ -2607,6 +2656,19 @@ namespace Installer
             if (LooksLikeCollection(modItem))
             { bad++; Core.Log("FAIL", "WS 把正常的 .vpk 物品误判成合集了"); }
             else Core.Log("INFO", "WS 合集识别：.vpk 物品 → 不是合集");
+
+            // 封面原图缓存：下载后直接复用浏览时缓存的那张，不再重复走网络（2026-11-22 查封面问题）
+            {
+                string tid = "selftest-cover-" + Guid.NewGuid().ToString("N").Substring(0, 6);
+                byte[] probe = new byte[128];
+                for (int i = 0; i < probe.Length; i++) probe[i] = (byte)(i & 0xFF);
+                WsThumb.PutRaw(tid, probe);
+                byte[] back = WsThumb.RawOf(tid);
+                bool okc = back != null && back.Length == probe.Length;
+                try { File.Delete(Path.Combine(WsThumb.CacheDir, "img-" + WsText.SafeId(tid) + ".bin")); } catch { }
+                if (okc) Core.Log("INFO", "封面缓存往返正常（下载后直接复用，不再重复下载）");
+                else { bad++; Core.Log("FAIL", "封面缓存往返失败：RawOf 取不到 PutRaw 写进去的字节"); }
+            }
 
             // 浏览页解析：新版是 JS 渲染，结果在转义 JSON 里（\"publishedfileid\":\"123\"）；
             // 老版才是 <a class="workshopItem">。两条路都得能出 id，且按文档顺序、去重。

@@ -457,6 +457,32 @@ namespace Installer
             return Path.Combine(CacheDir, "img-" + WsText.SafeId(id) + ".bin");
         }
 
+        /// <summary>取缓存里的原图字节（没缓存返回 null）。下载完存封面时优先用它，别再重新下一遍。</summary>
+        internal static byte[] RawOf(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+            try
+            {
+                string p = CachePath(id);
+                if (!File.Exists(p)) return null;
+                byte[] b = File.ReadAllBytes(p);
+                return b != null && b.Length >= 64 ? b : null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>把原图字节补进缓存（SavePreview 拿到图后调用，浏览过的图不再重复下载）。</summary>
+        internal static void PutRaw(string id, byte[] data)
+        {
+            if (string.IsNullOrEmpty(id) || data == null || data.Length < 64) return;
+            try
+            {
+                Directory.CreateDirectory(CacheDir);
+                File.WriteAllBytes(CachePath(id), data);
+            }
+            catch { }
+        }
+
         public static Image Load(string url, string id, int maxW, int maxH)
         {
             return Load(url, id, maxW, maxH, false);
@@ -529,7 +555,9 @@ namespace Installer
             }
             catch (Exception ex)
             {
-                Core.Log("WARN", "工坊预览图失败: " + ex.Message);
+                // 缓存里躺着的不是图片（HTML 错误页 / 截断文件）：删掉，下次重新下，别一直拿坏文件解码
+                try { string p = CachePath(id); if (File.Exists(p)) File.Delete(p); } catch { }
+                Core.Log("WARN", "工坊预览图失败(" + id + "): " + ex.Message);
                 return null;
             }
         }

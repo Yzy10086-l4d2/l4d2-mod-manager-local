@@ -32,6 +32,31 @@ namespace Installer
         private static readonly Dictionary<string, string> memo =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object gate = new object();
+        // 路径 → 最近一次算出来的缓存键：旁边新放了封面时要能删掉对应的旧缩略图
+        private static readonly Dictionary<string, string> lastKey =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// 这个 vpk 旁边新放了封面 / 包被重写过：把「没封面」的结论和缩略图一起作废。
+        /// 缓存键只看 vpk 的大小+时间，光加一张同名图不会让旧结论失效（2026-11-22 查封面问题时发现）。
+        /// </summary>
+        public static void Forget(string vpkPath)
+        {
+            if (string.IsNullOrEmpty(vpkPath)) return;
+            string key = null;
+            lock (gate)
+            {
+                if (lastKey.TryGetValue(vpkPath, out key)) lastKey.Remove(vpkPath);
+                if (!string.IsNullOrEmpty(key)) memo.Remove(key);
+            }
+            if (string.IsNullOrEmpty(key)) return;
+            try
+            {
+                string f = Path.Combine(Dir, key + ".jpg");
+                if (File.Exists(f)) File.Delete(f);
+            }
+            catch { }
+        }
 
         public static string Dir
         {
@@ -66,6 +91,7 @@ namespace Installer
 
             lock (gate)
             {
+                lastKey[vpkPath] = key;
                 string cached;
                 if (memo.TryGetValue(key, out cached)) return cached;
             }
