@@ -2364,7 +2364,16 @@ namespace Installer
 
             if (galleryWindow != null && !galleryWindow.IsDisposed) { galleryWindow.Activate(); return; }
             galleryWindow = new GalleryForm(this);
-            galleryWindow.FormClosed += delegate { galleryWindow = null; };
+            galleryWindow.FormClosed += delegate
+            {
+                galleryWindow = null;
+                try { Activate(); BringToFront(); } catch { }   // 关掉工坊窗口后把焦点还给主界面
+            };
+            // 顺手预热一次工坊接口：第一次点位置时连接已经是热的，不用等冷启动
+            System.Threading.Tasks.Task.Run(delegate
+            {
+                try { if (Workshop.HasApiKey) Workshop.SearchItems("", "trend", 1); } catch { }
+            });
             galleryWindow.Show();
         }
 

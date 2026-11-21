@@ -492,7 +492,15 @@ namespace Installer
         public static bool IsOffline { get { lock (gate) { return DateTime.Now < offlineUntil; } } }
 
         /// <summary>用户点「重试」：立刻解除冷却，下一轮从第一档重来。</summary>
-        public static void Retry() { lock (gate) { offlineUntil = DateTime.MinValue; } }
+        public static void Retry()
+        {
+            lock (gate)
+            {
+                offlineUntil = DateTime.MinValue;
+                apiDeadUntil = DateTime.MinValue;      // 用户主动点重试：API 的冷却也一起解开
+                steamFailAt = DateTime.MinValue;
+            }
+        }
 
         /// <summary>请求成功。只有 Steam 自己的域名成功才能解除离线态 ——
         /// GameBanana 的图能下，不代表工坊复活，以前这里一律清，导致每次点位置又去敲 Steam。</summary>
@@ -512,7 +520,7 @@ namespace Installer
 
         static DateTime apiDeadUntil = DateTime.MinValue;
         internal static bool ApiOffline { get { lock (gate) { return DateTime.Now < apiDeadUntil; } } }
-        internal static void MarkApiDead() { lock (gate) { apiDeadUntil = DateTime.Now.AddMinutes(10); } }
+        internal static void MarkApiDead() { lock (gate) { apiDeadUntil = DateTime.Now.AddSeconds(90); } }   // 只歇 90 秒：这条线时通时断，锁太久反而像坏了
         internal static void MarkApiAlive() { lock (gate) { apiDeadUntil = DateTime.MinValue; } }
 
         static void GoOffline()
@@ -1117,6 +1125,12 @@ namespace Installer
             if (!string.IsNullOrEmpty(tag)) u.Append("&requiredtags%5B0%5D=").Append(Uri.EscapeDataString(tag));
 
             string json = WsNet.GetString(u.ToString(), Ua, 8000);
+            if (string.IsNullOrEmpty(json))
+            {
+                // 冷启动第一次经常空手而归（连接刚建、边缘还没热）：隔 300 毫秒再来一次
+                try { System.Threading.Thread.Sleep(300); } catch { }
+                json = WsNet.GetString(u.ToString(), Ua, 8000);
+            }
             if (string.IsNullOrEmpty(json)) return null;
             List<string> objs = SplitObjects(json, "publishedfiledetails");
             List<WsItem> outp = new List<WsItem>();
