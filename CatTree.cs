@@ -2240,6 +2240,7 @@ namespace Installer
         public void Sync()
         {
             body.Invalidate();
+            try { RefreshRecDownloaded(); } catch { }
             FillDetail();
             // 主界面一就绪就先要一批推荐：等用户点位置才去拉，第一眼必然是空的
             try { if (Current != null) PrepareRecommend(); } catch { }
@@ -4041,6 +4042,22 @@ namespace Installer
             recTitle.Text = Lang.S("诊断已复制：粘到反馈里就行");
         }
 
+        /// <summary>
+        /// 推荐卡上的「已下载」角标：下载完成后主界面 Sync 会走到这里，按磁盘对一遍。
+        /// 只在数量变化时重画 —— 下载基本都是新增，这样不用每次 Sync 都重刷整个卡片墙。
+        /// </summary>
+        private void RefreshRecDownloaded()
+        {
+            if (recGrid == null) return;
+            HashSet<string> ids = null;
+            try { ids = Workshop.LoadDownloadedIds(); } catch { }
+            if (ids == null) return;
+            if (ids.Count == recGrid.DownloadedIds.Count) return;
+            recGrid.DownloadedIds.Clear();
+            foreach (string id in ids) recGrid.DownloadedIds.Add(id);
+            recGrid.Invalidate();
+        }
+
         /// <summary>同一位置已经成功展示、或正在搜：只保证推荐区可见，不再重复发请求。</summary>
         private void ShowRecPanel()
         {
@@ -4211,6 +4228,7 @@ namespace Installer
             string meta = it.Subs > 0
                 ? Lang.F("订阅 {0} · 浏览 {1}", WsText.Compact(it.Subs), WsText.Compact(it.Views))
                 : Lang.F("浏览 {0}", WsText.Compact(it.Views));
+            if (recGrid.DownloadedIds.Contains(it.Id)) meta += Lang.S("　·　已下载");
             string desc = WsText.Clean(it.Desc ?? "");
             if (desc.Length > 700) desc = desc.Substring(0, 700) + "…";
             peek.ShowImage(it.Title ?? "", meta, Lang.S("来源：") + Workshop.SourceLabel(it), pic, "", desc);
@@ -4258,6 +4276,13 @@ namespace Installer
                 return;
             }
             recAutoRetries = 0;            // 成功一次就把自动重试计数清零
+            // 远卡之前先把「已下载」对一遍：同一个推荐可能早就下过了
+            try
+            {
+                recGrid.DownloadedIds.Clear();
+                foreach (string did in Workshop.LoadDownloadedIds()) recGrid.DownloadedIds.Add(did);
+            }
+            catch { }
             recGrid.SetItems(okItems, okPics);
             bool fromGb = false;
             foreach (WsItem oi in okItems) { if (oi.Id.StartsWith("gb", StringComparison.Ordinal)) { fromGb = true; break; } }
@@ -6883,6 +6908,8 @@ namespace Installer
     /// </summary>
     internal sealed class RecGrid : Control
     {
+        /// <summary>已下载的工坊 ID：卡片右上角打「已下载」角标（以前推荐区完全不知道这件事）。</summary>
+        public readonly HashSet<string> DownloadedIds = new HashSet<string>(StringComparer.Ordinal);
         private readonly List<WsItem> items = new List<WsItem>();
         private readonly List<Image> pics = new List<Image>();
         private bool skeleton;
@@ -7032,6 +7059,18 @@ namespace Installer
                 if (t.Length > 14) t = t.Substring(0, 13) + "…";
                 using (SolidBrush tb = new SolidBrush(Theme.Ink2))
                     g.DrawString(t, Theme.UISmall, tb, new RectangleF(r.X, r.Bottom + 1, r.Width, TH));
+                // 已下载：卡片右上角盖一个小角标，不然用户看不出这个推荐其实已经在库里了
+                if (DownloadedIds.Contains(items[i].Id))
+                {
+                    string tag = Lang.S("已下载");
+                    SizeF ss = g.MeasureString(tag, Theme.UISmall);
+                    int bw = (int)ss.Width + Dpi.S(6);
+                    int bh = Math.Max(Dpi.S(14), (int)ss.Height - Dpi.S(2));
+                    Rectangle br = new Rectangle(r.Right - bw - Dpi.S(2), r.Top + Dpi.S(2), bw, bh);
+                    using (SolidBrush bb = new SolidBrush(Color.FromArgb(200, Theme.Info))) g.FillRectangle(bb, br);
+                    using (SolidBrush fb = new SolidBrush(Color.White))
+                        g.DrawString(tag, Theme.UISmall, fb, br.X + Dpi.S(3), br.Y + (bh - ss.Height) / 2f);
+                }
             }
         }
 
