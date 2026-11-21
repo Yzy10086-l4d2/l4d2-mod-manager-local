@@ -39,6 +39,24 @@ namespace Installer
             return c ^ 0xFFFFFFFFu;
         }
 
+        /// <summary>
+        /// 把「外面套了一层」的路径剥掉：left4dead2/materials/... → materials/...，addons/xxx/models/... → models/...。
+        /// 非 ASCII 名字直接放弃：vpk 目录表是 ASCII，写进去游戏也认不出。
+        /// </summary>
+        static string NormalizeRel(string rel)
+        {
+            if (string.IsNullOrEmpty(rel)) return null;
+            foreach (char c in rel) if (c > 127) return null;
+            string low = rel.ToLowerInvariant();
+            foreach (string r in Roots)
+            {
+                int at = low.IndexOf("/" + r, StringComparison.Ordinal);
+                if (at >= 0) return rel.Substring(at + 1);
+                if (low.StartsWith(r, StringComparison.Ordinal)) return rel;
+            }
+            return null;
+        }
+
         static bool Wanted(string rel)
         {
             string low = rel.ToLowerInvariant();
@@ -49,24 +67,54 @@ namespace Installer
         /// <summary>把 srcDir 里的散文件打成 outPath。返回打进包的文件数；0 = 没有可用的游戏资源。</summary>
         public static int PackDir(string srcDir, string outPath)
         {
+            return PackDir(srcDir, outPath, null);
+        }
+
+        /// <summary>
+        /// previewBytes 不为空时会作为根目录的 addonimage.jpg 打进包 —— 游戏自己的 addons 列表和我们的卡片都用它。
+        /// </summary>
+        public static int PackDir(string srcDir, string outPath, byte[] previewBytes)
+        {
             if (!Directory.Exists(srcDir)) return 0;
             string root = srcDir.TrimEnd('\\') + "\\";
 
+            List<string> fulls = new List<string>();
             List<string> files = new List<string>();
             foreach (string full in Directory.GetFiles(srcDir, "*", SearchOption.AllDirectories))
             {
                 string rel = full.Substring(root.Length).Replace('\\', '/');
-                if (Wanted(rel)) files.Add(rel);
+                rel = NormalizeRel(rel);          // 包内路径：剥掉 left4dead2/ 这类外壳
+                if (rel == null) continue;
+                if (!Wanted(rel)) continue;
+                fulls.Add(full);                   // 读文件还得用磁盘上的真实路径
+                files.Add(rel);
             }
             if (files.Count == 0) return 0;
-            files.Sort(StringComparer.OrdinalIgnoreCase);
+
+            int[] order = new int[files.Count];
+            for (int i = 0; i < order.Length; i++) order[i] = i;
+            Array.Sort(order, delegate(int x, int y) { return string.Compare(files[x], files[y], StringComparison.OrdinalIgnoreCase); });
+            List<string> f2 = new List<string>(); List<string> u2 = new List<string>();
+            foreach (int i in order) { f2.Add(files[i]); u2.Add(fulls[i]); }
+            files = f2; fulls = u2;
 
             SortedDictionary<string, SortedDictionary<string, SortedDictionary<string, long[]>>> tree =
                 new SortedDictionary<string, SortedDictionary<string, SortedDictionary<string, long[]>>>(StringComparer.Ordinal);
             MemoryStream data = new MemoryStream();
-            foreach (string rel in files)
+            if (previewBytes != null && previewBytes.Length > 64)
             {
-                byte[] bytes = File.ReadAllBytes(Path.Combine(root, rel));
+                long[] pe = new long[] { Crc(previewBytes), data.Position, previewBytes.Length };
+                data.Write(previewBytes, 0, previewBytes.Length);
+                SortedDictionary<string, SortedDictionary<string, long[]>> jp;
+                if (!tree.TryGetValue("jpg", out jp)) { jp = new SortedDictionary<string, SortedDictionary<string, long[]>>(StringComparer.Ordinal); tree["jpg"] = jp; }
+                SortedDictionary<string, long[]> pn;
+                if (!jp.TryGetValue("", out pn)) { pn = new SortedDictionary<string, long[]>(StringComparer.Ordinal); jp[""] = pn; }
+                pn["addonimage"] = pe;
+            }
+            for (int fi = 0; fi < files.Count; fi++)
+            {
+                string rel = files[fi];
+                byte[] bytes = File.ReadAllBytes(fulls[fi]);
                 long[] e = new long[] { Crc(bytes), data.Position, bytes.Length };
                 data.Write(bytes, 0, bytes.Length);
 

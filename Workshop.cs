@@ -1404,7 +1404,13 @@ namespace Installer
         /// GameBanana 一键装：下载它的文件（zip/7z/rar）→ 解包出 vpk → 丢进 addons。
         /// 它的下载地址是重定向直链、内容不是 vpk，不能像工坊那样直接落盘到 addons 里。
         /// </summary>
-        internal static string GbInstall(WsItem it, out int added)
+        static void Say(Action<string> stage, string msg)
+        {
+            if (stage == null) return;
+            try { stage(msg); } catch { }
+        }
+
+        internal static string GbInstall(WsItem it, out int added, Action<string> stage)
         {
             added = 0;
             if (it == null) return "没有选中条目";
@@ -1426,7 +1432,12 @@ namespace Installer
             }
             catch { }
 
-            long got = WsNet.DownloadTo(url, Ua, 600000, part, 0, null);
+            Say(stage, "下载中…");
+            long got = WsNet.DownloadTo(url, Ua, 600000, part, 0, delegate(long g, long t)
+            {
+                if (t > 0) Say(stage, "下载中 " + (int)Math.Min(100, g * 100 / t) + "%  ·  " + Core.Human(g) + " / " + Core.Human(t));
+                else Say(stage, "下载中  ·  " + Core.Human(g));
+            });
             if (got <= 0) { try { File.Delete(part); } catch { } return "下载失败：GameBanana 连不上"; }
             try
             {
@@ -1457,8 +1468,15 @@ namespace Installer
                     catch (Exception ex) { return "解压失败：" + ex.Message; }
                     string src = UnwrapSingleRoot(unpack);
                     string vpk = Path.Combine(tmpDir, SafeFileName(it.Title, it.Id) + ".vpk");
-                    int packed = VpkPack.PackDir(src, vpk);
+                    Say(stage, "打包中…（把散文件打成 vpk）");
+                    byte[] shot = null;
+                    if (!string.IsNullOrEmpty(it.Preview))
+                    {
+                        try { shot = WsNet.GetBytes(it.Preview, Ua, 15000); } catch { }
+                    }
+                    int packed = VpkPack.PackDir(src, vpk, shot);
                     if (packed == 0) return "这个包是散文件（模型/材质/语音），但没有能打进 vpk 的游戏资源";
+                    Say(stage, "导入中…");
                     int sk; List<string> er;
                     string m2 = Catalog.ImportTo(new string[] { vpk }, addons, out added, out sk, out er);
                     SaveInstalledExtra(it, addons, Path.GetFileName(vpk));

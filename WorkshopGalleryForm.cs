@@ -1460,7 +1460,13 @@ namespace Installer
             {
                 int added = 0;
                 string msg;
-                try { msg = Workshop.GbInstall(it, out added); }
+                try
+                {
+                    msg = Workshop.GbInstall(it, out added, delegate(string stage)
+                    {
+                        BeginInvoke((MethodInvoker)delegate() { lblState.Text = stage; });
+                    });
+                }
                 catch (Exception ex) { msg = "安装失败：" + ex.Message; }
                 Ui(delegate()
                 {
