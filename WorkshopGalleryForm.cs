@@ -1325,7 +1325,29 @@ namespace Installer
                 }
             }
             catch { }
-            if (it.IsCollection || it.Url.Length == 0) { lblState.Text = Lang.S("这个物品没有直链，只能走 Steam 客户端订阅。"); return; }
+            if (it.IsCollection) { lblState.Text = Lang.S("这是合集，不能直接装；点「展开合集」再挑里面的物品。"); return; }
+            if (it.Url.Length == 0)
+            {
+                // 没有直链：交给 SteamCMD 兜底（走 Steam 自己的下载网络，不碰 api/cdn）
+                lblState.Text = Lang.S("没有直链，正在用 SteamCMD 下载…");
+                string subDest = "";
+                try { subDest = Workshop.DestDir(); } catch { }
+                System.Threading.Thread t0 = new System.Threading.Thread(delegate()
+                {
+                    int added = 0;
+                    string msg = subDest.Length > 0
+                        ? Workshop.DownloadViaSteamCmd(it, subDest, out added)
+                        : "找不到 addons 目录（先设置游戏根目录）";
+                    BeginInvoke((MethodInvoker)delegate()
+                    {
+                        lblState.Text = msg;
+                        if (added > 0 && owner != null) owner.RescanMods();
+                    });
+                });
+                t0.IsBackground = true;
+                t0.Start();
+                return;
+            }
             string dir;
             try { dir = Workshop.DestDir(); }
             catch (Exception ex) { lblState.Text = ex.Message; return; }

@@ -4066,7 +4066,7 @@ namespace Installer
                     steamTh = new System.Threading.Thread(delegate() { try { steamGot = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { } });
                     steamTh.IsBackground = true;
                     steamTh.Start();
-                    steamTh.Join(1200);                       // 给它 1.2 秒，回来得慢就先上来源
+                    steamTh.Join(WsNet.SteamJustFailed ? 200 : 700);   // Steam 刚就挂过就别等它了
                 }
                 if (steamGot != null && steamGot.Count > 0) got = steamGot;
                 if (got == null || got.Count == 0)

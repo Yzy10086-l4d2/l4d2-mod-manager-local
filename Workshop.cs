@@ -506,6 +506,10 @@ namespace Installer
         }
 
         // API 单独一份冷却：api.steampowered.com 和网页是两条线，可能一条死一条活
+        static DateTime steamFailAt = DateTime.MinValue;
+        /// <summary>最近 60 秒内 Steam 刚失败过：这一轮就别再等它了，直接上来源。</summary>
+        internal static bool SteamJustFailed { get { lock (gate) { return (DateTime.Now - steamFailAt).TotalSeconds < 60; } } }
+
         static DateTime apiDeadUntil = DateTime.MinValue;
         internal static bool ApiOffline { get { lock (gate) { return DateTime.Now < apiDeadUntil; } } }
         internal static void MarkApiDead() { lock (gate) { apiDeadUntil = DateTime.Now.AddMinutes(10); } }
@@ -518,6 +522,7 @@ namespace Installer
                 if (DateTime.Now < offlineUntil) return;
                 offlineUntil = DateTime.Now.AddMinutes(20);
             }
+            lock (gate) { steamFailAt = DateTime.Now; }
             LogOnce("工坊进入离线态：20 分钟内不再自动联网（点「重试」可立刻再试）");
         }
 
@@ -1161,10 +1166,19 @@ namespace Installer
             }
             else
             {
-                foreach (string kw in keys)
+                // 几个近义词并行问：串行时 4 个词要 8 秒，并行 1.9 秒（实测）
+                List<WsItem>[] buckets = new List<WsItem>[keys.Length];
+                System.Threading.Thread[] ths = new System.Threading.Thread[keys.Length];
+                for (int i = 0; i < keys.Length; i++)
                 {
-                    if (outp.Count >= perPage) break;
-                    List<WsItem> part = GbFetch(kw, page, perPage);
+                    int idx = i;
+                    ths[i] = new System.Threading.Thread(delegate() { try { buckets[idx] = GbFetch(keys[idx], page, perPage); } catch { } });
+                    ths[i].IsBackground = true;
+                    ths[i].Start();
+                }
+                foreach (System.Threading.Thread th in ths) th.Join(6000);
+                foreach (List<WsItem> part in buckets)
+                {
                     if (part == null) continue;
                     anyOk = true;
                     foreach (WsItem it in part)
@@ -1173,6 +1187,7 @@ namespace Installer
                         outp.Add(it);
                         if (outp.Count >= perPage) break;
                     }
+                    if (outp.Count >= perPage) break;
                 }
             }
             if (!anyOk) return null;
@@ -2134,6 +2149,61 @@ namespace Installer
                 return msg + "（本机已订阅，直接复制，没走网络）";
             }
             catch { return null; }
+        }
+
+        /// <summary>steamcmd 放哪：配置目录下的 steamcmd\steamcmd.exe。</summary>
+        internal static string SteamCmdPath
+        {
+            get
+            {
+                try
+                {
+                    string p = Path.Combine(Core.CfgDir, "steamcmd", "steamcmd.exe");
+                    if (File.Exists(p)) return p;
+                    p = Path.Combine(Core.PkgDir, "steamcmd", "steamcmd.exe");
+                    if (File.Exists(p)) return p;
+                }
+                catch { }
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// SteamCMD 兜底：走 Steam 自己的下载网络，不依赖 api / cdn。
+        /// 匿名优先；下完从 steamcmd 自己的 steamapps 里取 vpk，导进 addons。
+        /// </summary>
+        internal static string DownloadViaSteamCmd(WsItem it, string addons, out int added)
+        {
+            added = 0;
+            if (it == null || string.IsNullOrEmpty(it.Id)) return "没有物品 ID";
+            string exe = SteamCmdPath;
+            if (exe == null) return "没有 steamcmd：把 steamcmd.exe 放到 " + Path.Combine(Core.CfgDir, "steamcmd");
+            string work = Path.Combine(Core.CfgDir, "steamcmd");
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo(exe, "+login anonymous +workshop_download_item 550 " + it.Id + " validate +quit");
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                psi.WorkingDirectory = work;
+                using (Process p = Process.Start(psi))
+                {
+                    string outp = p.StandardOutput.ReadToEnd();
+                    p.WaitForExit(300000);
+                    if (p.ExitCode != 0) return "steamcmd 退出码 " + p.ExitCode;
+                    string dir = Path.Combine(work, "steamapps", "workshop", "content", "550", it.Id);
+                    if (!Directory.Exists(dir)) dir = Catalog.SubscribedDir(it.Id);
+                    if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+                        return "steamcmd 说下完了，但找不到文件（多半是这个物品不允许匿名下载）";
+                    string[] vpks = Directory.GetFiles(dir, "*.vpk", SearchOption.AllDirectories);
+                    if (vpks.Length == 0) return "下完了，但包里没有 vpk";
+                    int skipped; List<string> errs;
+                    string msg = Catalog.ImportTo(vpks, addons, out added, out skipped, out errs);
+                    return msg + "（SteamCMD）";
+                }
+            }
+            catch (Exception ex) { return "steamcmd 跑不起来：" + ex.Message; }
         }
 
         /// <summary>这条东西从哪来的：详情页/预览面板统一用它，别写死 Steam。</summary>

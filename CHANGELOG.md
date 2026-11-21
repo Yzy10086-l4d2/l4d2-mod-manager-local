@@ -3,6 +3,12 @@
 > 本文件从 v0.5.0 起维护。更早的版本（v0.3.0 ~ v0.4.8）请见
 > [Releases](https://github.com/Yzy10086-l4d2/l4d2-mod-manager-local/releases)。
 
+## v0.6.9
+
+- **SteamCMD 兜底**：没有直链的工坊物品改用 Steam 自己的下载网络（匿名优先），下完自动取 vpk 入库。steamcmd.exe 放在配置目录的 `steamcmd\` 下即可。
+- **近义词并行搜**：GameBanana 中文位置会拆成几个英文词，串行 4 个词要 8.4 秒，改并行后 1.9 秒（实测）。
+- **Steam 刚失败过就不等它**：等待从 1.2 秒降到 0.2 秒，点位置基本直接出来源结果。
+
 ## v0.6.8
 
 ### 提速与通道
