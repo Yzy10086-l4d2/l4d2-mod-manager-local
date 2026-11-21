@@ -1230,21 +1230,28 @@ namespace Installer
                 try
                 {
                     List<WsItem> items = Workshop.Fetch(ids);
-                    foreach (WsItem one in items)
-                    {
-                        if (one == null || one.IsCollection || one.Url.Length == 0) { fail++; continue; }
-                        try
+                    // 两路并行：单条下载受服务器/带宽限制，串行时第二件要等第一件写完。
+                    // 不再读 Workshop.LastSavedPath（那是共享静态，并发会串味），结果走 out 参数。
+                    object gate = new object();
+                    System.Threading.Tasks.Parallel.ForEach(items,
+                        new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = 2 },
+                        delegate(WsItem one)
                         {
-                            string dest = Path.Combine(dir, Workshop.SafeFileName(one.Title, one.Id));
-                            Workshop.Download(one, dest, null);
-                            if (Workshop.LastSavedPath.Length > 0) dest = Workshop.LastSavedPath;
-                            Workshop.SavePreview(one, dest);
-                            Workshop.RenameToAddonTitle(dest);
-                            if (File.Exists(dest)) gotNames.Add(Path.GetFileName(dest));
-                            ok++;
-                        }
-                        catch { fail++; }
-                    }
+                            if (one == null || one.IsCollection || one.Url.Length == 0)
+                            { System.Threading.Interlocked.Increment(ref fail); return; }
+                            try
+                            {
+                                string dest = Path.Combine(dir, Workshop.SafeFileName(one.Title, one.Id));
+                                string saved2, note2;
+                                Workshop.Download(one, dest, null, out saved2, out note2);
+                                if (!string.IsNullOrEmpty(saved2)) dest = saved2;
+                                Workshop.SavePreview(one, dest);
+                                Workshop.RenameToAddonTitle(dest);
+                                if (File.Exists(dest)) lock (gate) gotNames.Add(Path.GetFileName(dest));
+                                System.Threading.Interlocked.Increment(ref ok);
+                            }
+                            catch { System.Threading.Interlocked.Increment(ref fail); }
+                        });
                 }
                 catch { }
                 int okF = ok, failF = fail;

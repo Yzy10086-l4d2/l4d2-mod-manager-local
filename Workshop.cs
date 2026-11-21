@@ -412,13 +412,34 @@ namespace Installer
         public static long DownloadTo(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress)
         {
             Tune();
-            long got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, true);
+            Uri u = null;
+            try { u = new Uri(url); } catch { }
+            string host = u == null ? null : u.Host;
+
+            // 阶梯和网页请求一致：优选 IP 直连 → 域名直连 → 系统代理 → 公共 DNS 重解析再直连。
+            // 以前这里把代理写死成 null（req.Proxy = null），装了加速器的人下载根本走不了代理，
+            // 直连不上就只剩失败 —— 这是「下载慢/下不来」最实际的一条。
+            // 每一档都从已下好的 .part 续传，不再把进度清零重来。
+            long got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, true, null);
             if (got > 0) return got;
-            try { if (File.Exists(partPath)) File.Delete(partPath); } catch { }
-            return TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false);
+            got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null);
+            if (got > 0) return got;
+            IWebProxy px = SystemProxy();
+            if (px != null)
+            {
+                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px);
+                if (got > 0) { try { Core.Log("INFO", "下载：直连不通，改走系统代理成功"); } catch { } return got; }
+            }
+            if (host != null && ResolveByPublicDns(host))
+            {
+                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, true, null);
+                if (got > 0) { try { Core.Log("INFO", "下载：换公共 DNS 解析后成功"); } catch { } return got; }
+            }
+            return -1;
         }
 
-        static long TryDownload(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, bool allowPin)
+        /// <summary>单次下载尝试。part 已存在就从断点续（HTTP Range）；总时长/卡死由 HttpWebRequest 超时管。</summary>
+        static long TryDownload(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, bool allowPin, IWebProxy proxy)
         {
             Uri u = null;
             try { u = new Uri(url); } catch { }
@@ -435,6 +456,10 @@ namespace Installer
                         pinnedUrl = ub.Uri.AbsoluteUri;
                     }
                 }
+                long already = 0;
+                try { if (File.Exists(partPath)) already = new FileInfo(partPath).Length; } catch { already = 0; }
+                if (totalHint > 0 && already >= totalHint) already = 0;   // 比目标还大：是旧垃圾，从头来
+
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create(pinnedUrl ?? url);
                 if (pinnedUrl != null) req.Host = u.Host;
                 req.UserAgent = ua;
@@ -442,15 +467,21 @@ namespace Installer
                 req.ReadWriteTimeout = 60000;
                 req.AllowAutoRedirect = true;
                 req.KeepAlive = true;
-                try { req.Proxy = null; } catch { }
+                try { req.Proxy = proxy; } catch { }
+                if (already > 0) { try { req.AddRange(already); } catch { } }
+
                 using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
                 {
-                    long total = r.ContentLength > 0 ? r.ContentLength : totalHint;
+                    // 206 = 服务器按 Range 续上了；200 = 它不理 Range，只能从头写
+                    bool append = r.StatusCode == HttpStatusCode.PartialContent && already > 0;
+                    long baseLen = append ? already : 0;
+                    long total = r.ContentLength > 0 ? r.ContentLength + baseLen : totalHint;
                     using (Stream src = r.GetResponseStream())
-                    using (FileStream fs = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536))
+                    using (FileStream fs = new FileStream(partPath, append ? FileMode.Append : FileMode.Create,
+                        FileAccess.Write, FileShare.None, 131072))
                     {
-                        byte[] buf = new byte[65536];
-                        long got = 0;
+                        byte[] buf = new byte[131072];
+                        long got = baseLen;
                         int n;
                         while ((n = src.Read(buf, 0, buf.Length)) > 0)
                         {
@@ -463,10 +494,20 @@ namespace Installer
                     }
                 }
             }
+            catch (WebException wex)
+            {
+                // 416 = 断点位置越界（文件被换过/服务器不认）：把 part 清掉，下次从头来
+                HttpWebResponse bad = wex.Response as HttpWebResponse;
+                if (bad != null && bad.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
+                {
+                    try { if (File.Exists(partPath)) File.Delete(partPath); } catch { }
+                }
+                if (allowPin && u != null) DropPin(u.Host);
+                return -1;      // 其他失败留着 part，下次续传
+            }
             catch
             {
                 if (allowPin && u != null) DropPin(u.Host);
-                try { if (File.Exists(partPath)) File.Delete(partPath); } catch { }
                 return -1;
             }
         }
@@ -1884,10 +1925,25 @@ namespace Installer
         /// </summary>
         public static void Download(WsItem it, string dest, Action<long, long> progress)
         {
+            string saved, note;
+            Download(it, dest, progress, out saved, out note);
+            LastSavedPath = saved;
+            LastDownloadNote = note;
+        }
+
+        /// <summary>
+        /// 下载的「可并发版」：结果走 out 参数，不碰静态字段。
+        /// 合集/配套那批以前是一条一条下（每条都等上一条写完），两路并行能明显缩短整批时间。
+        /// </summary>
+        public static void Download(WsItem it, string dest, Action<long, long> progress, out string savedPath, out string note)
+        {
+            savedPath = "";
+            note = "";
             string part = dest + ".part";
+            // part 是断点续传的凭据，不能一来就删。只有它已经 >= 目标大小（旧垃圾/换过文件）才清掉。
             try
             {
-                if (File.Exists(part)) File.Delete(part);
+                if (File.Exists(part) && it.Size > 0 && new FileInfo(part).Length >= it.Size) File.Delete(part);
             }
             catch { }
 
@@ -1909,8 +1965,8 @@ namespace Installer
             }
             // 认真实容器（不看扩展名）：作者可能用 zip/rar/7z 传播，甚至把压缩包命名成 .vpk。
             // 只有"网页/图片"才是真的下错了；其余一律保存下来并提示，不能替作者判"失败"（用户 2026-11-21 要求）。
-            LastDownloadNote = "";
-            LastSavedPath = "";
+            note = "";
+            savedPath = "";
             string kind = ContainerKind(part);
             if (kind == "html" || kind == "image")
             {
@@ -1921,7 +1977,7 @@ namespace Installer
             {
                 string why;
                 if (!Vpk.VerifyComplete(part, out why))
-                    LastDownloadNote = "这个 vpk 结构不完整（" + why + "），先留着，进游戏可能缺件";
+                    note = "这个 vpk 结构不完整（" + why + "），先留着，进游戏可能缺件";
             }
             else if (kind == "zip" || kind == "rar" || kind == "7z")
             {
@@ -1936,16 +1992,16 @@ namespace Installer
                     while (File.Exists(cand)) { cand = stem + " (" + n + ")" + ext; n++; }
                     dest = cand;
                 }
-                LastDownloadNote = "这是 " + kind + " 压缩包（不是单个 vpk）：已按压缩包存好，解压/装配由库处理";
+                note = "这是 " + kind + " 压缩包（不是单个 vpk）：已按压缩包存好，解压/装配由库处理";
             }
             else
             {
-                LastDownloadNote = "下到的文件不是标准 vpk/压缩包（未知格式），先原样留着";
+                note = "下到的文件不是标准 vpk/压缩包（未知格式），先原样留着";
             }
 
             if (File.Exists(dest)) File.Delete(dest);
             File.Move(part, dest);
-            LastSavedPath = dest;
+            savedPath = dest;
         }
 
         /// <summary>是不是 vpk（看头 4 字节）。</summary>
@@ -2419,7 +2475,8 @@ namespace Installer
             string work = Path.Combine(Core.CfgDir, "steamcmd");
             try
             {
-                ProcessStartInfo psi = new ProcessStartInfo(exe, "+login anonymous +workshop_download_item 550 " + it.Id + " validate +quit");
+                // 首次下载不需要 validate（那是给「校验已有文件」用的，会多重扫一遍，白慢一截）
+                ProcessStartInfo psi = new ProcessStartInfo(exe, "+login anonymous +workshop_download_item 550 " + it.Id + " +quit");
                 psi.UseShellExecute = false;
                 psi.CreateNoWindow = true;
                 psi.RedirectStandardOutput = true;
