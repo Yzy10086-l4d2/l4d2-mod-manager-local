@@ -1433,7 +1433,7 @@ namespace Installer
             catch { }
 
             Say(stage, "下载中…");
-            long got = WsNet.DownloadTo(url, Ua, 600000, part, 0, delegate(long g, long t)
+            long got = WsNet.DownloadTo(url, Ua, 120000, part, 0, delegate(long g, long t)
             {
                 if (t > 0) Say(stage, "下载中 " + (int)Math.Min(100, g * 100 / t) + "%  ·  " + Core.Human(g) + " / " + Core.Human(t));
                 else Say(stage, "下载中  ·  " + Core.Human(g));

@@ -77,6 +77,7 @@ namespace Installer
         private int retryPage;              // 上次搜索失败的页码，>0 表示底部提示是「重试」而不是「加载更多」
         private bool retryAppend;           // 重试的是追加页（已有卡片要留着）还是首屏
         private volatile bool busy;
+        private DateTime busySince;          // 看门狗：超过 120 秒就自己解锁，别让按钮永远灰着
         private int detailToken;
         private bool showZh;
         private bool langTouched;             // 用户自己点过原文/译文：之后别自动替他改回来
@@ -556,7 +557,19 @@ namespace Installer
         /// </summary>
         private void LoadPage(int p, bool append)
         {
-            if (busy) return;
+            if (busy)
+            {
+                if ((DateTime.Now - busySince).TotalSeconds < 120)
+                {
+                    Core.Log("INFO", "搜索被上一个操作占着（" + (int)(DateTime.Now - busySince).TotalSeconds + " 秒），等它结束");
+                    return;
+                }
+                busy = false;
+                btnSearch.Enabled = true;
+                btnGet.Enabled = true;
+                lblStatus.Text = Lang.S("上一个操作卡住了，已自动恢复，可以继续搜");
+                Core.Log("WARN", "看门狗：busy 超过 120 秒，已强制解锁");
+            }
             GalChoice c = cboCat.SelectedItem as GalChoice;
             string q = txtQuery.Text.Trim();
             string tag = "";
@@ -565,6 +578,7 @@ namespace Installer
             string sort = s == null ? "mostsubscribed" : s.Sort;
 
             busy = true;
+            busySince = DateTime.Now;
             btnSearch.Enabled = false;
             btnPrevPage.Enabled = false;
             btnNextPage.Enabled = false;
@@ -725,8 +739,8 @@ namespace Installer
                 string err = null;
                 try
                 {
-                    List<string> ids = Workshop.Search(q, sort, p);
-                    got = ids.Count == 0 ? new List<WsItem>() : Workshop.Fetch(ids);
+                    // 预扫也走统一入口：有 key 走 API、没有就落来源，别再单独去啃被墙的网页
+                    got = Workshop.SearchItems(q, sort, p, null);
                 }
                 catch (Exception ex) { err = ex.Message; }
 
@@ -1451,6 +1465,7 @@ namespace Installer
         private void DownloadGb(WsItem it)
         {
             busy = true;
+            busySince = DateTime.Now;
             btnGet.Enabled = false;
             lblState.Text = Lang.S("正在从 GameBanana 下载并安装…");
             barLoad.Style = ProgressBarStyle.Marquee;
