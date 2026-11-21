@@ -380,7 +380,7 @@ namespace Installer
                     + "steamcommunity.com：" + web + "\r\n\r\n"
                     + "系统代理：" + px + "\r\n"
                     + "Steam API key：" + key;
-                SafeBeginInvoke(delegate()
+                BeginInvoke((MethodInvoker)delegate()
                 {
                     lblCfg.Text = Lang.F("配置：{0}", Core.CfgPath);
                     MessageBox.Show(this, msg, Lang.S("工坊线路自检"), MessageBoxButtons.OK, MessageBoxIcon.Information);
