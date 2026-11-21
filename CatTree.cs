@@ -2240,6 +2240,8 @@ namespace Installer
         {
             body.Invalidate();
             FillDetail();
+            // 主界面一就绪就先要一批推荐：等用户点位置才去拉，第一眼必然是空的
+            try { if (Current != null) PrepareRecommend(); } catch { }
         }
 
         /// <summary>
@@ -4237,8 +4239,10 @@ namespace Installer
                 mf.OpenWorkshopFor(recKey, it);
                 return;
             }
-            // 其它配置来源（kind=html）：只出卡片，点开就是浏览器
-            if (!string.IsNullOrEmpty(it.Url) && it.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            // 只有「配置里的网页来源」（id 形如 sXxx:123）才跳浏览器；
+            // Steam 条目的 Url 是文件直链，跳过去会直接开始下载 —— 那是 bug。
+            if (it.Id.StartsWith("s", StringComparison.Ordinal) && it.Id.IndexOf(':') > 0
+                && !string.IsNullOrEmpty(it.Url) && it.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             {
                 try { System.Diagnostics.Process.Start(it.Url); } catch { }
                 return;
