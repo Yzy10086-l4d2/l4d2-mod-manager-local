@@ -477,6 +477,18 @@ namespace Installer
         /// 外部（方案树的推荐区）点了某一张：直接进它的详情页，而不是停在一墙搜索结果上。
         /// 顺手把搜索词填好、后台铺一页，这样点「← 返回」回到的是这一类的结果墙，不是空墙。
         /// </summary>
+        /// <summary>文件被删掉了：卡片上的「已下载」标记也跟着撤掉。</summary>
+        internal void ForgetDownloaded(string id)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(id)) return;
+                grid.DownloadedIds.Remove(id);
+                grid.Invalidate();
+            }
+            catch { }
+        }
+
         internal void ShowItemFrom(string query, WsItem it)
         {
             if (it == null) return;

@@ -2105,6 +2105,25 @@ namespace Installer
             return list;
         }
 
+        /// <summary>删掉某个工坊物品的「已下载」标记（文件都删了，记录留着会一直显示已下载）。</summary>
+        internal static void ForgetDownloaded(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            try
+            {
+                if (!File.Exists(IdMapPath)) return;
+                List<string> keep = new List<string>();
+                foreach (string line in File.ReadAllLines(IdMapPath, Encoding.UTF8))
+                {
+                    int bar = line.IndexOf('|');
+                    if (bar > 0 && string.Equals(line.Substring(0, bar).Trim(), id, StringComparison.Ordinal)) continue;
+                    keep.Add(line);
+                }
+                File.WriteAllLines(IdMapPath, keep.ToArray(), Encoding.UTF8);
+            }
+            catch { }
+        }
+
         internal static HashSet<string> LoadDownloadedIds()
         {
             HashSet<string> set = new HashSet<string>(StringComparer.Ordinal);

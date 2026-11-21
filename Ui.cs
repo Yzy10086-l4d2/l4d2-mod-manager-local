@@ -1504,7 +1504,20 @@ namespace Installer
             int n = 0;
             foreach (ModItem it in parts)
             {
-                try { if (Work.DeleteMod(it) == null) { n++; checkedKeys.Remove(it.Key); } }
+                try
+                {
+                    if (Work.DeleteMod(it) == null)
+                    {
+                        n++;
+                        checkedKeys.Remove(it.Key);
+                        // 文件没了，工坊里的「已下载」标记也要撤（否则再搜到还显示已下载）
+                        if (!string.IsNullOrEmpty(it.WorkshopId))
+                        {
+                            Workshop.ForgetDownloaded(it.WorkshopId);
+                            if (galleryWindow != null && !galleryWindow.IsDisposed) galleryWindow.ForgetDownloaded(it.WorkshopId);
+                        }
+                    }
+                }
                 catch (Exception ex) { Core.Log("WARN", "删除 " + it.Name + " 失败: " + ex.Message); }
             }
             Core.Log("OK", "方案树里删掉 " + n + " 个 vpk：" + name);
@@ -2251,6 +2264,22 @@ namespace Installer
         /// 两种活法：不知道装什么时看图扫；知道要哪几个时进列表一次勾完。
         /// </summary>
         /// <summary>方案树推荐区点一张：打开工坊并把这个位置对应的搜索词填进去（同一个窗口，不另开）。</summary>
+        /// <summary>
+        /// 下载列表里删掉一个文件之后：抹掉「已下载」标记、刷新方案树和游戏现状。
+        /// 以前只删文件，树和标记都不动，于是工坊里还显示「已下载」。
+        /// </summary>
+        internal void AfterDownloadDeleted(string workshopId)
+        {
+            try
+            {
+                Workshop.ForgetDownloaded(workshopId);
+                if (galleryWindow != null && !galleryWindow.IsDisposed) galleryWindow.ForgetDownloaded(workshopId);
+                RescanMods();
+                Core.Log("INFO", "工坊：已删除后刷新（id=" + workshopId + "）");
+            }
+            catch (Exception ex) { Core.Log("WARN", "删除后刷新失败: " + ex.Message); }
+        }
+
         internal void OpenWorkshopFor(string query) { OpenWorkshopFor(query, null); }
 
         /// <summary>item 不为空就直达它的详情页（推荐区点一张），否则只按搜索词打开。</summary>

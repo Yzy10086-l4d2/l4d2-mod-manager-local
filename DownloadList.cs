@@ -599,6 +599,7 @@ namespace Installer
                 File.Delete(d.Path);
                 Core.Log("OK", "工坊：已删除下载文件 " + d.Path);
                 WorkshopDownloads.Remove(d);      // 文件都没了，这条记录留着只会误导
+                if (owner != null) owner.AfterDownloadDeleted(d.Id);   // 撤销「已下载」标记 + 重扫库
                 SetMsg("已删除：" + Path.GetFileName(d.Path));
             }
             catch (Exception ex)
