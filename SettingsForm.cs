@@ -20,7 +20,9 @@ namespace Installer
         private Segmented segAppearance, segLang, segName;
         private Toggle tglMotion;
         private ComboBox cboGame;
-        private Label lblSourceState;
+        private Label lblKeyState;
+        private CheckBox chkSteam, chkGb;
+        private TextBox txtApiKey;
         private FlatButton btnGameBrowse, btnGameFind, btnSave;
         private FlatButton btnImport;
         private Label lblGameState, lblCfg, lblLog;
@@ -54,7 +56,7 @@ namespace Installer
 
             Text = Lang.S("设置 · L4D2 MOD 管理工具");
             Theme.UseDpi(this);
-            ClientSize = Dpi.Sz(620, 878);
+            ClientSize = Dpi.Sz(620, 934);
             Font = Theme.UI;
             BackColor = Theme.Bg;
             ForeColor = Theme.Ink;
@@ -272,25 +274,48 @@ namespace Installer
         /// </summary>
         private void BuildWorkshop()
         {
-            Card s = AddGroup(Lang.S("MOD 来源"), 496, 96);
+            Card s = AddGroup(Lang.S("MOD 来源"), 496, 156);
 
-            RowTitle(s, Lang.S("来源与 Steam API key"), 16, 8, 360);
-            RowNote(s, Lang.S("Steam 全站搜索必须填 key（免 key 只能按 ID/合集导入）；不填也能用 GameBanana 兜底"), 16, 28, 548);
+            // 左：Steam 工坊 + key
+            RowTitle(s, Lang.S("Steam 创意工坊"), 16, 8, 250);
+            chkSteam = new CheckBox();
+            chkSteam.Text = Lang.S("启用");
+            chkSteam.SetBounds(16, 30, 240, 22);
+            chkSteam.Font = Theme.UI;
+            chkSteam.Checked = Core.Cfg.SteamEnabled;
+            s.Controls.Add(chkSteam);
 
-            lblSourceState = new Label();
-            lblSourceState.SetBounds(16, 50, 400, 26);
-            lblSourceState.Font = Theme.UISmall;
-            lblSourceState.ForeColor = Theme.Ink2;
-            lblSourceState.AutoEllipsis = true;
-            s.Controls.Add(lblSourceState);
+            RowNote(s, Lang.S("全站搜索必须填 key；不填只能按 ID / 合集导入"), 16, 54, 250);
 
-            FlatButton srcBtn = SoftButton(s, Lang.S("来源…"), 452, 48, 132, 28);
-            srcBtn.Click += delegate
-            {
-                using (SourcesForm f = new SourcesForm()) f.ShowDialog(this);
-                UpdateSourceState();
-            };
-            UpdateSourceState();
+            txtApiKey = new TextBox();
+            txtApiKey.SetBounds(16, 76, 168, 26);
+            txtApiKey.BorderStyle = BorderStyle.FixedSingle;
+            txtApiKey.Font = Theme.UI;
+            txtApiKey.Text = Core.Cfg.WsApiKey ?? "";
+            Theme.Dress(txtApiKey);
+            s.Controls.Add(txtApiKey);
+
+            FlatButton help = SoftButton(s, Lang.S("怎么拿 key"), 192, 76, 76, 26);
+            help.Click += delegate { ShowApiKeyHelp(); };
+
+            lblKeyState = new Label();
+            lblKeyState.SetBounds(16, 108, 250, 18);
+            lblKeyState.Font = Theme.UISmall;
+            lblKeyState.ForeColor = Theme.Ink3;
+            lblKeyState.AutoEllipsis = true;
+            s.Controls.Add(lblKeyState);
+            UpdateKeyState();
+
+            // 右：GameBanana
+            RowTitle(s, Lang.S("GameBanana"), 292, 8, 250);
+            chkGb = new CheckBox();
+            chkGb.Text = Lang.S("启用");
+            chkGb.SetBounds(292, 30, 240, 22);
+            chkGb.Font = Theme.UI;
+            chkGb.Checked = Sources.IsEnabled("gb");
+            s.Controls.Add(chkGb);
+
+            RowNote(s, Lang.S("第三方站点，非 Steam 生态；L4D2 约 1800 个 MOD。默认关闭，Steam 不通时可当兜底"), 292, 54, 250);
         }
 
         private void ShowApiKeyHelp()
@@ -304,29 +329,26 @@ namespace Installer
                 Lang.S("怎么拿 Steam API key"), MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        /// <summary>来源状态那一行：开了哪些、Steam key 填没填。</summary>
-        private void UpdateSourceState()
+        /// <summary>key 那一行状态：填没填、API 现在通不通。</summary>
+        private void UpdateKeyState()
         {
-            if (lblSourceState == null) return;
+            if (lblKeyState == null) return;
             try
             {
-                Sources.Load(true);
-                List<string> on = new List<string>();
-                if (Core.Cfg.SteamEnabled) on.Add("Steam");
-                lock (Sources.All) { foreach (SourceDef d in Sources.All) if (d.Enabled) on.Add(d.Name); }
                 bool hasKey = (Core.Cfg.WsApiKey ?? "").Trim().Length > 0;
-                string apiState = !Core.Cfg.SteamEnabled ? "Steam 已关"
-                    : (WsNet.ApiOffline ? "API 最近失败过" : "API 可用");
-                lblSourceState.Text = string.Join("、", on.ToArray())
-                    + "　·　" + apiState
-                    + "　·　key：" + (hasKey ? "已填（可全站搜）" : "未填（只能按 ID/合集导入）");
+                string api = WsNet.ApiOffline ? "API 最近失败过" : "API 可用";
+                lblKeyState.Text = (hasKey ? "key：已填（可全站搜）" : "key：未填（只能按 ID/合集导入）") + "　·　" + api;
             }
-            catch { lblSourceState.Text = ""; }
+            catch { lblKeyState.Text = ""; }
         }
+
+        internal bool WantSteamEnabled { get { return chkSteam != null && chkSteam.Checked; } }
+        internal bool WantGbEnabled { get { return chkGb != null && chkGb.Checked; } }
+        internal string WantApiKey { get { return txtApiKey == null ? "" : txtApiKey.Text.Trim(); } }
 
         private void BuildDiagnostics()
         {
-            Card s = AddGroup(Lang.S("位置与诊断"), 620, 120);
+            Card s = AddGroup(Lang.S("位置与诊断"), 676, 120);
 
             lblCfg = new Label();
             lblCfg.SetBounds(16, 8, 548, 16);
@@ -422,13 +444,13 @@ namespace Installer
         private void BuildFooter()
         {
             Panel rule = new Panel();
-            rule.SetBounds(20, 770, 580, 0);
+            rule.SetBounds(20, 826, 580, 0);
             rule.BackColor = Theme.Line;
             Controls.Add(rule);
 
             Label note = new Label();
             note.Text = Lang.S("保存后立即生效，不改已经装进游戏的文件。");
-            note.SetBounds(20, 774, 360, 20);
+            note.SetBounds(20, 830, 360, 20);
             note.Font = Theme.UISmall;
             note.ForeColor = Theme.Ink3;
             note.BackColor = Color.Transparent;
@@ -437,13 +459,13 @@ namespace Installer
             FlatButton cancel = new FlatButton();
             cancel.Text = Lang.S("取消");
             cancel.Plain = true;
-            cancel.SetBounds(408, 822, 88, 32);
+            cancel.SetBounds(408, 878, 88, 32);
             cancel.DialogResult = DialogResult.Cancel;
             Controls.Add(cancel);
 
             btnSave = new FlatButton();
             btnSave.Text = Lang.S("保存设置");
-            btnSave.SetBounds(504, 822, 96, 32);
+            btnSave.SetBounds(504, 878, 96, 32);
             btnSave.Primary = true;
             btnSave.DialogResult = DialogResult.OK;
             // 校验放进点击里：以前是「先关窗、再在 ShowSettings 里发现路径不对」，
@@ -716,6 +738,28 @@ namespace Installer
                     Core.Cfg.Appearance = Theme.ModeKey;
                     Core.SaveConfig();
                     Core.Log("INFO", "设置：外观→" + Theme.ModeLabel);
+                }
+
+                // 来源开关：Steam（配置项）+ key + GameBanana（写回来源.ini 的 enabled）
+                if (f.WantSteamEnabled != Core.Cfg.SteamEnabled)
+                {
+                    Core.Cfg.SteamEnabled = f.WantSteamEnabled;
+                    Core.SaveConfig();
+                    Core.Log("INFO", "设置：Steam 来源" + (Core.Cfg.SteamEnabled ? "开" : "关"));
+                }
+                string newKey = f.WantApiKey;
+                if (!string.Equals(newKey, Core.Cfg.WsApiKey ?? "", StringComparison.Ordinal))
+                {
+                    Core.Cfg.WsApiKey = newKey;
+                    Core.SaveConfig();
+                    WsNet.Retry();
+                    Core.Log("INFO", "设置：Steam API key " + (newKey.Length > 0 ? "已填（" + newKey.Length + " 位）" : "已清空"));
+                }
+                bool gbWant = f.WantGbEnabled;
+                if (gbWant != Sources.IsEnabled("gb"))
+                {
+                    Sources.SetEnabled("gb", gbWant);
+                    Core.Log("INFO", "设置：GameBanana 来源" + (gbWant ? "开" : "关"));
                 }
 
 

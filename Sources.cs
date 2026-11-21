@@ -40,7 +40,7 @@ namespace Installer
                 sb.AppendLine("[gb]");
                 sb.AppendLine("name=GameBanana");
                 sb.AppendLine("kind=json");
-                sb.AppendLine("enabled=1");
+                sb.AppendLine("enabled=0");
                 sb.AppendLine();
                 File.WriteAllText(FilePath, sb.ToString(), Encoding.UTF8);
             }
@@ -100,11 +100,45 @@ namespace Installer
             }
         }
 
+        /// <summary>某个来源现在开没开（读配置，现读现算）。</summary>
+        internal static bool IsEnabled(string id)
+        {
+            try
+            {
+                Load(true);
+                lock (All) { foreach (SourceDef d in All) if (string.Equals(d.Id, id, StringComparison.OrdinalIgnoreCase)) return d.Enabled; }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>改某个来源的开关，直接写回来源.ini（只动 enabled 那一行，注释和正则原样留着）。</summary>
+        internal static void SetEnabled(string id, bool on)
+        {
+            try
+            {
+                EnsureDefault();
+                List<string> lines = new List<string>(File.ReadAllLines(FilePath, Encoding.UTF8));
+                string section = "";
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    string s = lines[i].Trim();
+                    if (s.StartsWith("[") && s.EndsWith("]")) { section = s.Substring(1, s.Length - 2).Trim(); continue; }
+                    if (!string.Equals(section, id, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (s.StartsWith("enabled=", StringComparison.OrdinalIgnoreCase))
+                        lines[i] = "enabled=" + (on ? "1" : "0");
+                }
+                File.WriteAllLines(FilePath, lines.ToArray(), Encoding.UTF8);
+                Load(true);
+            }
+            catch { }
+        }
+
         /// <summary>按配置顺序问一遍：第一个有结果的来源生效。返回 null 表示全都没结果/没成功。</summary>
         internal static List<WsItem> Take(string query, int page, int perPage, out string sourceName)
         {
             sourceName = "";
-            Load(false);
+            Load(true);          // 每次现读：开关刚改完不该被 30 秒缓存挡住
 
             // 先看磁盘缓存（1 小时）：同一个位置反复点，不该每次都打网络
             string cachedName;
