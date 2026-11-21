@@ -4058,8 +4058,13 @@ namespace Installer
             if (q.Length == 0 && tag.Length == 0) { recGen++; recKey = ""; recBusyKey = ""; recPanel.Visible = false; return; }
             // Steam 处于离线冷却时不再去敲它，但也不能就此空白：下面直接走 GameBanana 兜底
             // 有 key 时看 API 通不通：steamcommunity 被墙不代表 API 不通（实测前者被 RST、后者仍能搜）
+            // 体检说过主站不通、或最近刚失败过，就别再为它等：直接走备用源（「直接走活路线」）。
+            // 填了 key 时网页和 API 是两条独立的线：API 还活就照样能搜，不能因为网页挂了就跳过 Steam。
+            bool webDead = WsNet.SteamProbed && !WsNet.SteamRouteAlive;
             bool steamDead = !Core.Cfg.SteamEnabled
-                || (Workshop.HasApiKey ? WsNet.ApiOffline : (WsNet.IsOffline && !recForced));
+                || (Workshop.HasApiKey
+                    ? (WsNet.ApiOffline && webDead)
+                    : (webDead || (WsNet.IsOffline && !recForced)));
             recForced = false;
             string want = q + "\u0001" + tag;
             // 同一位置已经搜成功过：直接复用现有卡片，别重复打接口
@@ -4095,9 +4100,11 @@ namespace Installer
                     steamTh = new System.Threading.Thread(delegate() { try { steamGot = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { } });
                     steamTh.IsBackground = true;
                     steamTh.Start();
-                    // 700ms 对慢线路太短：Steam 还在路上就被判失败，接着去问 GameBanana，结果两次都空 → 用户得反复点。
-                    // 给到 1.2s；Steam 刚挂过的时候仍然只等 200ms，别在死路上耗。
-                    steamTh.Join(WsNet.SteamJustFailed ? 200 : 1200);
+                    // 体检确认主站这条线是活的：多等一会儿（it 通常会响），别刚发出去就判定失败。
+                    // 没体检结果时保守等 1.2s；刚失败过仍只等 200ms，不在死路上耗。
+                    int waitMs = WsNet.SteamJustFailed ? 200
+                        : (WsNet.SteamProbed && WsNet.SteamRouteAlive ? 2200 : 1200);
+                    steamTh.Join(waitMs);
                 }
                 if (steamGot != null && steamGot.Count > 0) got = steamGot;
                 if (got == null || got.Count == 0)

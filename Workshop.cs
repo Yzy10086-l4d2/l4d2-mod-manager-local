@@ -94,13 +94,9 @@ namespace Installer
             {
                 foreach (string h in PinHosts) { try { Dns.GetHostAddresses(h); } catch { } }
                 foreach (string h in PinHosts) { try { Pick(h); } catch { } }
-                // 启动后先探一下主站：挂了就立刻进离线态，第一次点位置也不用再空等三轮
-                try
-                {
-                    if (TryGet("https://steamcommunity.com/", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", 3000, true, null) == null)
-                        GoOffline();
-                }
-                catch { }
+                // 启动体检：三条线路各测一次，选最快的那条，之后所有 Steam 请求先走它。
+                // 以前每条请求都按「直连→代理→DNS」硬走，线路死了每次白等 7.5 秒，推荐区自然「点几下才出来」。
+                ProbeRoutes();
             });
         }
 
@@ -181,25 +177,186 @@ namespace Installer
             if (IsOffline && IsSteamHost(host)) return null;
             int cap = Math.Min(timeoutMs, TierMs);
 
-            byte[] b = TryGet(url, ua, cap, true, null);
-            if (b != null) { MarkOnline(host); return b; }
-
-            IWebProxy px = SystemProxy();
-            if (px != null)
+            // 体检过就先走最快的那条；这一趟失败再退回常规阶梯（一次抖动不该锁死整轮）
+            NetRoute pref = Preferred(host);
+            bool triedDirect = pref == NetRoute.Direct, triedProxy = pref == NetRoute.Proxy, triedDns = pref == NetRoute.Dns;
+            byte[] b = null;
+            if (pref != NetRoute.Unknown)
             {
-                b = TryGet(url, ua, cap, false, px);
-                if (b != null) { MarkOnline(host); try { Core.Log("INFO", "工坊：直连不通，改走系统代理连上了"); } catch { } return b; }
+                b = TryTransport(url, ua, cap, pref);
+                if (b != null) { MarkOnline(host); return b; }
+                Invalidate(host);              // 体检结论这次不灵：回退常规阶梯，但别重复试同一条
             }
 
-            if (host != null && ResolveByPublicDns(host))
+            if (b == null && !triedDirect)
             {
                 b = TryGet(url, ua, cap, true, null);
-                if (b != null) { MarkOnline(host); try { Core.Log("INFO", "工坊：换公共 DNS 解析后连上了"); } catch { } return b; }
+                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Direct); return b; }
+            }
+
+            IWebProxy px = SystemProxy();
+            if (b == null && !triedProxy && px != null)
+            {
+                b = TryGet(url, ua, cap, false, px);
+                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Proxy); try { Core.Log("INFO", "工坊：直连不通，改走系统代理连上了"); } catch { } return b; }
+            }
+
+            if (b == null && !triedDns && host != null && ResolveByPublicDns(host))
+            {
+                b = TryGet(url, ua, cap, true, null);
+                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Dns); try { Core.Log("INFO", "工坊：换公共 DNS 解析后连上了"); } catch { } return b; }
             }
 
             // 只有工坊主站挂了才进离线态：封面 CDN 偶尔抽风不该把整个功能锁死
             if (host != null && host.EndsWith("steamcommunity.com", StringComparison.OrdinalIgnoreCase)) GoOffline();
             return null;
+        }
+
+        // ---------------- 线路体检：直连优选IP / 系统代理 / 公共DNS ----------------
+
+        internal enum NetRoute { Unknown = 0, Direct = 1, Proxy = 2, Dns = 3 }
+
+        static NetRoute steamRoute = NetRoute.Unknown;
+        static int steamRouteMs = -1;
+        static bool steamProbed;
+        static NetRoute apiRoute = NetRoute.Unknown;
+        static int apiRouteMs = -1;
+
+        /// <summary>体检跑完了没有（没跑完之前不要拿「不通」下结论）。</summary>
+        internal static bool SteamProbed { get { lock (gate) { return steamProbed; } } }
+        /// <summary>体检结果：主站这条线现在是活的。</summary>
+        internal static bool SteamRouteAlive { get { lock (gate) { return steamProbed && steamRoute != NetRoute.Unknown; } } }
+        internal static int SteamRouteMs { get { lock (gate) { return steamRouteMs; } } }
+
+        static string RouteName(NetRoute r)
+        {
+            switch (r)
+            {
+                case NetRoute.Direct: return "直连";
+                case NetRoute.Proxy: return "系统代理";
+                case NetRoute.Dns: return "公共DNS";
+            }
+            return "未知";
+        }
+
+        static byte[] TryTransport(string url, string ua, int cap, NetRoute route)
+        {
+            switch (route)
+            {
+                case NetRoute.Direct: return TryGet(url, ua, cap, true, null);
+                case NetRoute.Proxy:
+                {
+                    IWebProxy px = SystemProxy();
+                    return px == null ? null : TryGet(url, ua, cap, false, px);
+                }
+                case NetRoute.Dns:
+                {
+                    string host = HostOf(url);
+                    if (host == null || !ResolveByPublicDns(host)) return null;
+                    return TryGet(url, ua, cap, true, null);
+                }
+            }
+            return null;
+        }
+
+        static NetRoute Preferred(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return NetRoute.Unknown;
+            lock (gate)
+            {
+                string h = host.ToLowerInvariant();
+                if (h.EndsWith("steamcommunity.com", StringComparison.Ordinal)) return steamRoute;
+                if (h.EndsWith("api.steampowered.com", StringComparison.Ordinal)) return apiRoute;
+            }
+            return NetRoute.Unknown;
+        }
+
+        /// <summary>体检结论作废（这次请求没走通）：下一轮别死抱着它，但对推荐区仍算「已知不通」。</summary>
+        static void Invalidate(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return;
+            lock (gate)
+            {
+                string h = host.ToLowerInvariant();
+                if (h.EndsWith("steamcommunity.com", StringComparison.Ordinal)) steamRoute = NetRoute.Unknown;
+                else if (h.EndsWith("api.steampowered.com", StringComparison.Ordinal)) apiRoute = NetRoute.Unknown;
+            }
+        }
+
+        /// <summary>某条线走通了：记成首选，下次直接用。</summary>
+        static void LearnRoute(string host, NetRoute route)
+        {
+            if (string.IsNullOrEmpty(host) || route == NetRoute.Unknown) return;
+            lock (gate)
+            {
+                string h = host.ToLowerInvariant();
+                if (h.EndsWith("steamcommunity.com", StringComparison.Ordinal)) { steamRoute = route; if (steamRouteMs < 0) steamRouteMs = 0; }
+                else if (h.EndsWith("api.steampowered.com", StringComparison.Ordinal)) apiRoute = route;
+            }
+        }
+
+        /// <summary>
+        /// 启动体检：三条线各测一次（并行，单条最多 3 秒），选最快的一条当默认。
+        /// 只测「主站首页」这种小请求，不扰动工坊列表接口。
+        /// </summary>
+        static void ProbeRoutes()
+        {
+            NetRoute[] routes = new NetRoute[] { NetRoute.Direct, NetRoute.Proxy, NetRoute.Dns };
+            int[] ms = new int[routes.Length];
+            byte[][] got = new byte[routes.Length][];
+            System.Threading.Tasks.Parallel.For(0, routes.Length, delegate(int i)
+            {
+                Stopwatch sw = Stopwatch.StartNew();
+                try { got[i] = TryTransport("https://steamcommunity.com/", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", 3000, routes[i]); } catch { }
+                sw.Stop();
+                ms[i] = got[i] != null ? (int)sw.ElapsedMilliseconds : -1;
+            });
+            int best = -1;
+            for (int i = 0; i < ms.Length; i++) if (ms[i] >= 0 && (best < 0 || ms[i] < ms[best])) best = i;
+            bool any = best >= 0;
+            lock (gate)
+            {
+                steamProbed = true;
+                steamRoute = any ? routes[best] : NetRoute.Unknown;
+                steamRouteMs = any ? ms[best] : -1;
+            }
+            // 每次启动都留一行明细：用户反馈「推荐出不来」时，看这一行就知道该走哪条、哪条死了
+            try
+            {
+                string line = "线路体检：直连=" + (ms[0] >= 0 ? ms[0] + "ms" : "✗")
+                    + "，代理=" + (ms[1] >= 0 ? ms[1] + "ms" : "✗")
+                    + "，DNS=" + (ms[2] >= 0 ? ms[2] + "ms" : "✗")
+                    + (any ? " → 主站走「" + RouteName(routes[best]) + "」" : " → 都不通，先按离线处理");
+                Core.Log(any ? "INFO" : "WARN", line);
+            }
+            catch { }
+            if (!any)
+            {
+                GoOffline();
+                return;
+            }
+
+            // API 是另一条线，单独测（没填 key 就不测）
+            if (Workshop.HasApiKey)
+            {
+                int[] ams = new int[routes.Length];
+                System.Threading.Tasks.Parallel.For(0, routes.Length, delegate(int i)
+                {
+                    Stopwatch sw = Stopwatch.StartNew();
+                    byte[] b = null;
+                    try { b = TryTransport("https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", 2500, routes[i]); } catch { }
+                    sw.Stop();
+                    ams[i] = b != null ? (int)sw.ElapsedMilliseconds : -1;
+                });
+                int abest = -1;
+                for (int i = 0; i < ams.Length; i++) if (ams[i] >= 0 && (abest < 0 || ams[i] < ams[abest])) abest = i;
+                lock (gate)
+                {
+                    apiRoute = abest >= 0 ? routes[abest] : NetRoute.Unknown;
+                    apiRouteMs = abest >= 0 ? ams[abest] : -1;
+                }
+                if (abest >= 0) { try { Core.Log("INFO", "线路体检：API 走「" + RouteName(routes[abest]) + "」最快（" + ams[abest] + " ms）"); } catch { } }
+            }
         }
 
         static byte[] TryGet(string url, string ua, int timeoutMs, bool allowPin, IWebProxy proxy)
@@ -755,6 +912,13 @@ namespace Installer
             b.Append("版本 ").Append(Version()).Append("\r\n");
             b.Append("原因：").Append(LastFailHint()).Append("\r\n");
             b.Append("系统代理：").Append(SystemProxy() != null ? "有" : "无").Append("\r\n");
+            string rr;
+            lock (gate)
+            {
+                rr = "主站=" + (steamRoute == NetRoute.Unknown ? "不通" : RouteName(steamRoute) + " " + steamRouteMs + "ms");
+                if (apiRoute != NetRoute.Unknown) rr += "，API=" + RouteName(apiRoute) + " " + apiRouteMs + "ms";
+            }
+            b.Append("线路体检：").Append(rr).Append("\r\n");
             string d; lock (gate) { d = probeNote ?? ""; }
             if (d.Length > 0) b.Append("探针：").Append(d).Append("\r\n");
             string w; lock (gate) { w = lastWhy ?? ""; }
