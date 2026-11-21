@@ -1179,6 +1179,8 @@ namespace Installer
             recGrid = new RecGrid();
             recGrid.HoverItem += delegate(WsItem it) { ShowRecDetail(it); };
             recGrid.Pick += delegate(WsItem it) { OpenRecPick(it); };
+            recGrid.Retry += delegate { RefreshRecommend(); };
+            recGrid.CopyDiag += delegate { CopyWorkshopDiag(); };
             recPanel.Controls.Add(recGrid);
 
             btnRecShuffle.Text = Lang.S("换一换");
@@ -4013,8 +4015,19 @@ namespace Installer
         {
             if (recPanel == null) return;
             if (RecQuery().Length == 0 && RecTag().Length == 0) return;
+            recForced = true;              // 手动点重试/换一换：解除「离线冷却」
+            WsNet.Retry();
             recKey = "";
             PrepareRecommend();
+        }
+
+        private bool recForced;        // 用户主动点了重试：这一轮无视离线冷却
+
+        /// <summary>把一段诊断文本塞进剪贴板 —— 傻瓜用户的「反馈」就这一步。</summary>
+        private void CopyWorkshopDiag()
+        {
+            try { Clipboard.SetText(WsNet.Diagnostics()); } catch { }
+            recTitle.Text = Lang.S("诊断已复制：粘到反馈里就行");
         }
 
         private void PrepareRecommend()
@@ -4023,6 +4036,9 @@ namespace Installer
             string q = RecQuery();
             string tag = RecTag();
             if (q.Length == 0 && tag.Length == 0) { recGen++; recKey = ""; recPanel.Visible = false; return; }
+            // Steam 处于离线冷却时不再去敲它，但也不能就此空白：下面直接走 GameBanana 兜底
+            bool steamDead = !Core.Cfg.SteamEnabled || (WsNet.IsOffline && !recForced);
+            recForced = false;
             string want = q + "\u0001" + tag;
             if (want == recKey) return;
             recKey = want;
@@ -4042,7 +4058,12 @@ namespace Installer
                 int pg = recRnd.Next(1, 4);
                 if (pg == recPage) pg = pg % 3 + 1;      // 换一换别撞回同一页
                 recPage = pg;
-                try { got = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { }
+                if (!steamDead) { try { got = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { } }
+                if (got == null || got.Count == 0)
+                {
+                    // Steam 走不通（或没结果）：按「来源.ini」的顺序挨个问，第一个有结果的上
+                    try { string nm; List<WsItem> alt = Sources.Take(key, pg, 24, out nm); if (alt != null && alt.Count > 0) got = alt; } catch { }
+                }
                 if (got != null) { try { got = new List<WsItem>(got); } catch { } }
                 // 缩略图并发取（6 路）：单线程下 8 张图就是 8 个往返
                 List<WsItem> cand = new List<WsItem>();
@@ -4074,7 +4095,16 @@ namespace Installer
                     BeginInvoke((MethodInvoker)delegate
                     {
                         if (gen != recGen) { foreach (Image p in pics) { try { p.Dispose(); } catch { } } return; }
-                        if (got == null) { recTitle.Text = Lang.S("工坊推荐：连不上，稍后再试"); return; }
+                        if (got == null)
+                        {
+                            // 说清为什么连不上，再给一张能点的卡：以前只改标题、骨架还留着，看着像还在搜
+                            string why = Lang.S(WsNet.LastFailHint());
+                            recTitle.Text = Lang.S("工坊推荐：连不上");
+                            recGrid.ShowEmpty(why, WsNet.IsOffline ? Lang.S("5 分钟后自动再试，或点这里马上重试") : Lang.S("点这里重试"));
+                            if (mf != null) mf.NoteWorkshopOffline(WsNet.IsOffline);
+                            LayoutSelf();
+                            return;
+                        }
                         FillRecUi(key, got, pics);
                         LayoutSelf();
                     });
@@ -4107,7 +4137,7 @@ namespace Installer
                 : Lang.F("浏览 {0}", WsText.Compact(it.Views));
             string desc = WsText.Clean(it.Desc ?? "");
             if (desc.Length > 700) desc = desc.Substring(0, 700) + "…";
-            peek.ShowImage(it.Title ?? "", meta, Lang.S("来源：Steam 创意工坊"), pic, "", desc);
+            peek.ShowImage(it.Title ?? "", meta, it.Id.StartsWith("gb", StringComparison.Ordinal) ? Lang.S("来源：GameBanana") : Lang.S("来源：Steam 创意工坊"), pic, "", desc);
 
             // 卡片图只有 104×58，塞进详情栏必然糊；后台按详情尺寸再取一张大的换上去
             string url = it.Preview, id = it.Id, title = it.Title ?? "";
@@ -4143,15 +4173,35 @@ namespace Installer
                 okItems.Add(items[i]);
                 okPics.Add(pics[i]);
             }
+            if (okItems.Count == 0)
+            {
+                recGrid.ShowEmpty(Lang.S("工坊里没搜到相关 MOD"), Lang.S("换个位置，或点这里重试"));
+                recTitle.Text = Lang.S("工坊推荐：没搜到");
+                return;
+            }
             recGrid.SetItems(okItems, okPics);
-            recTitle.Text = okItems.Count > 0 ? Lang.S("工坊推荐 · ") + q
-                                              : Lang.S("工坊里没搜到相关 MOD：") + q;
+            bool fromGb = false;
+            foreach (WsItem oi in okItems) { if (oi.Id.StartsWith("gb", StringComparison.Ordinal)) { fromGb = true; break; } }
+            recTitle.Text = (fromGb ? Lang.S("GameBanana 推荐 · ") : Lang.S("工坊推荐 · ")) + q;
+            if (mf != null && !fromGb) mf.NoteWorkshopOffline(false);   // 走 GameBanana 时 Steam 其实还挂着
         }
 
         /// <summary>点一张推荐 = 单开一个工坊窗口，按这个词看（推荐区本身不是搜索页）。</summary>
         private void OpenRecPick(WsItem it)
         {
             if (it == null || mf == null) return;
+            // GameBanana 的条目：开我们自己的详情页（正文/作者后台补），不再跳浏览器
+            if (it.Id.StartsWith("gb", StringComparison.Ordinal))
+            {
+                mf.OpenWorkshopFor(recKey, it);
+                return;
+            }
+            // 其它配置来源（kind=html）：只出卡片，点开就是浏览器
+            if (!string.IsNullOrEmpty(it.Url) && it.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                try { System.Diagnostics.Process.Start(it.Url); } catch { }
+                return;
+            }
             // 点哪张就打开哪张的详情页（以前只按分类打开搜索结果墙，用户 2026-11-21 反馈）
             mf.OpenWorkshopFor(recKey, it);
         }
@@ -6759,6 +6809,11 @@ namespace Installer
 
         public event Action<WsItem> Pick;
         public event Action<WsItem> HoverItem;
+        public event Action Retry;                 // 失败态那张卡片：点一下就重搜
+        public event Action CopyDiag;              // 卡片右下角「复制诊断」：用户粘给我们看
+
+        private string emptyText = "", emptyHint = "";
+        private bool emptyHot, copyHot;
 
         private int G { get { return Dpi.S(8); } }
         private int CW { get { return Dpi.S(104); } }
@@ -6786,7 +6841,7 @@ namespace Installer
 
         public void ShowSkeleton()
         {
-            skeleton = true; hover = -1;
+            skeleton = true; hover = -1; emptyText = ""; emptyHint = "";
             foreach (Image p in pics) { try { p.Dispose(); } catch { } }
             pics.Clear(); items.Clear();
             shimmerX = -Dpi.S(240);
@@ -6799,10 +6854,24 @@ namespace Installer
             foreach (Image p in pics) { try { p.Dispose(); } catch { } }
             pics.Clear(); items.Clear();
             if (shimmer.Enabled) shimmer.Stop();
-            skeleton = false; hover = -1;
+            skeleton = false; hover = -1; emptyText = ""; emptyHint = "";
             int n = Math.Min(its.Count, imgs.Count);
             for (int i = 0; i < n; i++) { items.Add(its[i]); pics.Add(imgs[i]); }
             imgs.Clear();                       // 所有权转过来，调用方别再释放
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 失败态：**不能留骨架** —— 骨架还在扫光，看起来像「仍在加载」，用户会一直等。
+        /// 画一张虚线说明卡，点一下重试（和工坊窗口的「点这里重试」一个意思）。
+        /// </summary>
+        public void ShowEmpty(string text, string hint)
+        {
+            foreach (Image p in pics) { try { p.Dispose(); } catch { } }
+            pics.Clear(); items.Clear();
+            if (shimmer.Enabled) shimmer.Stop();
+            skeleton = false; hover = -1; emptyHot = false;
+            emptyText = text ?? ""; emptyHint = hint ?? "";
             Invalidate();
         }
 
@@ -6864,6 +6933,7 @@ namespace Installer
                 }
                 return;
             }
+            if (items.Count == 0 && emptyText.Length > 0) { DrawEmpty(g); return; }
             int cap = Math.Min(items.Count, Capacity);
             for (int i = 0; i < cap; i++)
             {
@@ -6882,6 +6952,32 @@ namespace Installer
             }
         }
 
+        /// <summary>失败/空结果那张卡：虚线框 + 两行字（第二行就是「点这里重试」）。</summary>
+        private void DrawEmpty(Graphics g)
+        {
+            Rectangle r = new Rectangle(Pad, Pad, Math.Max(1, Width - Pad * 2), Math.Max(1, Height - Pad * 2));
+            using (GraphicsPath p = Theme.Round(r, Dpi.S(10)))
+            {
+                using (SolidBrush b = new SolidBrush(emptyHot ? Theme.SurfaceAlt : Theme.Surface)) g.FillPath(b, p);
+                using (Pen pen = new Pen(emptyHot ? Theme.Accent : Theme.CardEdge)) { pen.DashStyle = DashStyle.Dash; g.DrawPath(pen, p); }
+            }
+            int cy = r.Y + Math.Max(Dpi.S(10), (r.Height - Dpi.S(40)) / 2);
+            Rectangle rt = new Rectangle(r.X + Dpi.S(8), cy, r.Width - Dpi.S(16), Dpi.S(20));
+            TextRenderer.DrawText(g, emptyText, Theme.UIBold, rt, Theme.Ink2,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+            if (emptyHint.Length > 0)
+                TextRenderer.DrawText(g, emptyHint, Theme.UISmall, new Rectangle(rt.X, rt.Bottom + Dpi.S(2), rt.Width, Dpi.S(18)), Theme.Ink3,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+            TextRenderer.DrawText(g, Lang.S("复制诊断"), Theme.UISmall, CopyRect(Width, Height), copyHot ? Theme.Accent : Theme.Ink3,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+
+        /// <summary>右下角那块「复制诊断」的位置（卡片右下角，不跟主点击区重叠）。</summary>
+        private Rectangle CopyRect(int w, int h)
+        {
+            return new Rectangle(Math.Max(0, w - Dpi.S(88) - Pad * 2), Math.Max(0, h - Dpi.S(20) - Pad), Dpi.S(88), Dpi.S(18));
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing) { try { shimmer.Stop(); shimmer.Dispose(); } catch { } }
@@ -6891,6 +6987,12 @@ namespace Installer
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
+            if (items.Count == 0 && emptyText.Length > 0)
+            {
+                bool onCopy = CopyRect(Width, Height).Contains(e.Location);
+                if (onCopy != copyHot || emptyHot == onCopy) { copyHot = onCopy; emptyHot = !onCopy; Cursor = Cursors.Hand; Invalidate(); }
+                return;
+            }
             int i = HitTest(e.Location);
             if (i == hover) return;
             hover = i;
@@ -6901,6 +7003,7 @@ namespace Installer
         protected override void OnMouseLeave(EventArgs e)
         {
             base.OnMouseLeave(e);
+            if (emptyHot || copyHot) { emptyHot = false; copyHot = false; Cursor = Cursors.Default; Invalidate(); }
             if (hover < 0) return;
             hover = -1;
             Invalidate();
@@ -6909,6 +7012,12 @@ namespace Installer
         protected override void OnMouseClick(MouseEventArgs e)
         {
             base.OnMouseClick(e);
+            if (items.Count == 0 && emptyText.Length > 0)
+            {
+                if (CopyRect(Width, Height).Contains(e.Location)) { if (CopyDiag != null) CopyDiag(); }
+                else if (Retry != null) Retry();
+                return;
+            }
             int i = HitTest(e.Location);
             if (i >= 0 && i < items.Count && Pick != null) Pick(items[i]);
         }

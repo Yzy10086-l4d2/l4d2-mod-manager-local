@@ -20,6 +20,7 @@ namespace Installer
         private Segmented segAppearance, segLang, segName;
         private Toggle tglMotion;
         private ComboBox cboGame;
+        private Label lblSourceState;
         private FlatButton btnGameBrowse, btnGameFind, btnSave;
         private FlatButton btnImport;
         private Label lblGameState, lblCfg, lblLog;
@@ -53,7 +54,7 @@ namespace Installer
 
             Text = Lang.S("设置 · L4D2 MOD 管理工具");
             Theme.UseDpi(this);
-            ClientSize = Dpi.Sz(620, 728);
+            ClientSize = Dpi.Sz(620, 878);
             Font = Theme.UI;
             BackColor = Theme.Bg;
             ForeColor = Theme.Ink;
@@ -74,6 +75,7 @@ namespace Installer
 
             BuildGeneral();
             BuildGameDir();
+            BuildWorkshop();
             BuildDiagnostics();
             BuildFooter();
 
@@ -264,9 +266,63 @@ namespace Installer
             RowNote(s, Lang.S("选里面有 left4dead2.exe 的那一层；本地模式只扫这里的 left4dead2\\addons。"), 16, 88, 548);
         }
 
+        /// <summary>
+        /// 工坊用哪条路：填了 key 走 api.steampowered.com（不经过被墙的网页），留空保持原来的网页路由。
+        /// 这一栏是唯一一个「用户要自己弄」的设置，所以旁边必须写清怎么拿 key。
+        /// </summary>
+        private void BuildWorkshop()
+        {
+            Card s = AddGroup(Lang.S("MOD 来源"), 496, 96);
+
+            RowTitle(s, Lang.S("来源与 Steam API key"), 16, 8, 360);
+            RowNote(s, Lang.S("在哪开哪些来源、填 Steam API key，都在这个按钮里（填了 key 才能全站搜工坊）"), 16, 28, 548);
+
+            lblSourceState = new Label();
+            lblSourceState.SetBounds(16, 50, 400, 26);
+            lblSourceState.Font = Theme.UISmall;
+            lblSourceState.ForeColor = Theme.Ink2;
+            lblSourceState.AutoEllipsis = true;
+            s.Controls.Add(lblSourceState);
+
+            FlatButton srcBtn = SoftButton(s, Lang.S("来源…"), 452, 48, 132, 28);
+            srcBtn.Click += delegate
+            {
+                using (SourcesForm f = new SourcesForm()) f.ShowDialog(this);
+                UpdateSourceState();
+            };
+            UpdateSourceState();
+        }
+
+        private void ShowApiKeyHelp()
+        {
+            MessageBox.Show(this,
+                Lang.S("key 在 Steam 官网页上拿，拿到后粘到左边输入框，保存设置即可。") + "\r\n\r\n" +
+                Lang.S("1. 打开 steamcommunity.com/dev/apikey（网页打不开时，用 Steam 客户端里的内置浏览器，或手机开流量）") + "\r\n" +
+                Lang.S("2. 登录 Steam，按提示填个名字（随便写，例如 l4d2local）") + "\r\n" +
+                Lang.S("3. 把得到的一长串字符粘进来，点「保存设置」") + "\r\n\r\n" +
+                Lang.S("这个 key 只存在你自己电脑的配置文件里，不上传任何地方。"),
+                Lang.S("怎么拿 Steam API key"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        /// <summary>来源状态那一行：开了哪些、Steam key 填没填。</summary>
+        private void UpdateSourceState()
+        {
+            if (lblSourceState == null) return;
+            try
+            {
+                Sources.Load(true);
+                List<string> on = new List<string>();
+                if (Core.Cfg.SteamEnabled) on.Add("Steam");
+                lock (Sources.All) { foreach (SourceDef d in Sources.All) if (d.Enabled) on.Add(d.Name); }
+                lblSourceState.Text = string.Join("、", on.ToArray())
+                    + "　·　Steam key：" + ((Core.Cfg.WsApiKey ?? "").Trim().Length > 0 ? "已填" : "未填");
+            }
+            catch { lblSourceState.Text = ""; }
+        }
+
         private void BuildDiagnostics()
         {
-            Card s = AddGroup(Lang.S("位置与诊断"), 504, 120);
+            Card s = AddGroup(Lang.S("位置与诊断"), 620, 120);
 
             lblCfg = new Label();
             lblCfg.SetBounds(16, 8, 548, 16);
@@ -329,13 +385,13 @@ namespace Installer
         private void BuildFooter()
         {
             Panel rule = new Panel();
-            rule.SetBounds(20, 620, 580, 0);
+            rule.SetBounds(20, 770, 580, 0);
             rule.BackColor = Theme.Line;
             Controls.Add(rule);
 
             Label note = new Label();
             note.Text = Lang.S("保存后立即生效，不改已经装进游戏的文件。");
-            note.SetBounds(20, 624, 360, 20);
+            note.SetBounds(20, 774, 360, 20);
             note.Font = Theme.UISmall;
             note.ForeColor = Theme.Ink3;
             note.BackColor = Color.Transparent;
@@ -344,13 +400,13 @@ namespace Installer
             FlatButton cancel = new FlatButton();
             cancel.Text = Lang.S("取消");
             cancel.Plain = true;
-            cancel.SetBounds(408, 672, 88, 32);
+            cancel.SetBounds(408, 822, 88, 32);
             cancel.DialogResult = DialogResult.Cancel;
             Controls.Add(cancel);
 
             btnSave = new FlatButton();
             btnSave.Text = Lang.S("保存设置");
-            btnSave.SetBounds(504, 672, 96, 32);
+            btnSave.SetBounds(504, 822, 96, 32);
             btnSave.Primary = true;
             btnSave.DialogResult = DialogResult.OK;
             // 校验放进点击里：以前是「先关窗、再在 ShowSettings 里发现路径不对」，
@@ -624,6 +680,8 @@ namespace Installer
                     Core.SaveConfig();
                     Core.Log("INFO", "设置：外观→" + Theme.ModeLabel);
                 }
+
+
 
                 if (gameChanged) ReloadLibrary("正在按新的游戏目录重扫…");
             }

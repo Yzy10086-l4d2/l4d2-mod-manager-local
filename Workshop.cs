@@ -70,6 +70,11 @@ namespace Installer
             "images.steamusercontent.com", "api.steampowered.com"
         };
 
+        // 最近一次失败的原因 + 探针明细：界面要能说清「为什么连不上」，日志要能看出探了哪些 IP
+        static string lastWhy;
+        static string probeNote;
+        static DateTime lastLogAt;
+
         public static void Tune()
         {
             lock (gate) { if (tuned) return; tuned = true; }
@@ -89,6 +94,13 @@ namespace Installer
             {
                 foreach (string h in PinHosts) { try { Dns.GetHostAddresses(h); } catch { } }
                 foreach (string h in PinHosts) { try { Pick(h); } catch { } }
+                // 启动后先探一下主站：挂了就立刻进离线态，第一次点位置也不用再空等三轮
+                try
+                {
+                    if (TryGet("https://steamcommunity.com/", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", 3000, true, null) == null)
+                        GoOffline();
+                }
+                catch { }
             });
         }
 
@@ -105,6 +117,17 @@ namespace Installer
             catch { return false; }
         }
 
+        /// <summary>是不是 Steam 的域名（离线冷却只对它们生效）。</summary>
+        static bool IsSteamHost(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return false;
+            string h = host.ToLowerInvariant();
+            return h.EndsWith("steamcommunity.com", StringComparison.Ordinal)
+                || h.EndsWith("steampowered.com", StringComparison.Ordinal)
+                || h.EndsWith("steamusercontent.com", StringComparison.Ordinal)
+                || h.EndsWith("steamstatic.com", StringComparison.Ordinal);
+        }
+
         static bool IsPinHost(string host)
         {
             foreach (string h in PinHosts) if (string.Equals(h, host, StringComparison.OrdinalIgnoreCase)) return true;
@@ -117,21 +140,47 @@ namespace Installer
             return b == null ? null : Encoding.UTF8.GetString(b);
         }
 
+        /// <summary>
+        /// 阶梯：① 直连（优选 IP）→ ② 系统代理 → ③ 换公共 DNS 重新解析再直连。
+        /// 每档 4 秒封顶、总共约 12 秒 —— 让人等 30 秒再告诉他「连不上」是最差的体验。
+        /// 阶梯里没有一处需要用户去填东西：装了 Clash / 加速器的，第二档自动吃上。
+        /// </summary>
         public static byte[] GetBytes(string url, string ua, int timeoutMs)
         {
             Tune();
-            byte[] first = TryGet(url, ua, timeoutMs, true);
-            if (first != null) return first;
-            return TryGet(url, ua, timeoutMs, false);
+            string host = HostOf(url);
+            // 离线冷却只针对 Steam 那几个域名：GameBanana 这类备用源不该被一起锁死
+            if (IsOffline && IsSteamHost(host)) return null;
+            int cap = Math.Min(timeoutMs, TierMs);
+
+            byte[] b = TryGet(url, ua, cap, true, null);
+            if (b != null) { MarkOnline(host); return b; }
+
+            IWebProxy px = SystemProxy();
+            if (px != null)
+            {
+                b = TryGet(url, ua, cap, false, px);
+                if (b != null) { MarkOnline(host); try { Core.Log("INFO", "工坊：直连不通，改走系统代理连上了"); } catch { } return b; }
+            }
+
+            if (host != null && ResolveByPublicDns(host))
+            {
+                b = TryGet(url, ua, cap, true, null);
+                if (b != null) { MarkOnline(host); try { Core.Log("INFO", "工坊：换公共 DNS 解析后连上了"); } catch { } return b; }
+            }
+
+            // 只有工坊主站挂了才进离线态：封面 CDN 偶尔抽风不该把整个功能锁死
+            if (host != null && host.EndsWith("steamcommunity.com", StringComparison.OrdinalIgnoreCase)) GoOffline();
+            return null;
         }
 
-        static byte[] TryGet(string url, string ua, int timeoutMs, bool allowPin)
+        static byte[] TryGet(string url, string ua, int timeoutMs, bool allowPin, IWebProxy proxy)
         {
             Uri u = null;
             try { u = new Uri(url); } catch { }
+            string pinnedUrl = null;
             try
             {
-                string pinnedUrl = null;
                 if (allowPin && u != null)
                 {
                     string ip = Pick(u.Host);
@@ -149,7 +198,7 @@ namespace Installer
                 req.Timeout = timeoutMs;
                 req.ReadWriteTimeout = timeoutMs;
                 req.KeepAlive = true;
-                try { req.Proxy = null; } catch { }
+                try { req.Proxy = proxy; } catch { }
                 try { req.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate; } catch { }
                 using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
                 using (Stream s = r.GetResponseStream())
@@ -159,13 +208,17 @@ namespace Installer
                     int n;
                     while ((n = s.Read(buf, 0, buf.Length)) > 0) ms.Write(buf, 0, n);
                     byte[] data = ms.ToArray();
-                    if (data.Length == 0 && pinnedUrl != null) { if (u != null) DropPin(u.Host); return null; }
+                    if (data.Length == 0 && pinnedUrl != null) { DropPin(u.Host); return null; }
+                    lock (gate) { lastWhy = null; }              // 通了就别再记着上一次的失败
                     return data;
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                if (allowPin && u != null) DropPin(u.Host);
+                NoteFail(ex);
+                // 只记最终那次（退回域名）的失败：优选 IP 那趟失败是预期内的，记了反而误导
+                if (!allowPin) LogOnce("工坊请求失败: " + (u != null ? u.Host : url) + " → " + ex.Message);
+                if (pinnedUrl != null) DropPin(u.Host);
                 return null;
             }
         }
@@ -240,28 +293,41 @@ namespace Installer
             string best = Probe(host);
             lock (gate) { if (best != null) pinned[host] = best; else skip[host] = true; }
             if (best != null) { try { Core.Log("INFO", "工坊优选 IP: " + host + " → " + best); } catch { } }
+            else
+            {
+                // 「优选 IP 失败」这句不带明细等于没说：用户反馈时唯一能看的就是这一行
+                string d; lock (gate) { d = probeNote ?? ""; }
+                try { Core.Log("WARN", "工坊优选 IP 全部失败，改用域名: " + host + (d.Length > 0 ? " ← " + d : "")); } catch { }
+            }
             return best;
         }
 
         static void DropPin(string host)
         {
             lock (gate) { pinned.Remove(host); skip[host] = true; }
-            try { Core.Log("WARN", "工坊优选 IP 失败，改用域名: " + host); } catch { }
+            try { Core.Log("WARN", "工坊优选 IP 用不上（请求失败），改用域名: " + host); } catch { }
         }
 
         /// <summary>候选 IP 各连一次 443，取毫秒数最小的（最多 4 个，单个上限 700ms）。</summary>
         static string Probe(string host)
         {
             System.Net.IPAddress[] ips;
-            try { ips = Dns.GetHostAddresses(host); } catch { return null; }
+            try { ips = Dns.GetHostAddresses(host); }
+            catch (Exception ex) { lock (gate) { probeNote = "域名解析失败: " + ex.Message; } return null; }
             if (ips == null || ips.Length == 0) return null;
             int take = Math.Min(ips.Length, 4);
             int[] ms = new int[take];
             for (int i = 0; i < take; i++) ms[i] = -1;
             System.Threading.Tasks.Parallel.For(0, take, delegate(int i) { ms[i] = TcpProbe(ips[i].ToString(), 443, 700); });
             int best = -1;
+            StringBuilder d = new StringBuilder();
             for (int i = 0; i < take; i++)
+            {
                 if (ms[i] >= 0 && (best < 0 || ms[i] < ms[best])) best = i;
+                if (i > 0) d.Append(", ");
+                d.Append(ips[i]).Append(ms[i] >= 0 ? "(" + ms[i] + "ms)" : "(700ms 无响应)");
+            }
+            lock (gate) { probeNote = d.ToString(); }
             return best >= 0 ? ips[best].ToString() : null;
         }
 
@@ -279,6 +345,386 @@ namespace Installer
                 }
             }
             catch { return -1; }
+        }
+
+        /// <summary>
+        /// 失败的「翻译」：把所有异常收敛成一句人话（连接被重置 / 请求超时 / 连不上服务器…）。
+        /// 之前这里全被 catch 吞掉，界面只能写「连不上」，用户和自己的诊断都没抓手。
+        /// </summary>
+        static void NoteFail(Exception ex)
+        {
+            string why = "网络错误";
+            WebException we = ex as WebException;
+            if (we != null)
+            {
+                switch (we.Status)
+                {
+                    case WebExceptionStatus.Timeout: why = "请求超时"; break;
+                    case WebExceptionStatus.NameResolutionFailure: why = "域名解析失败"; break;
+                    case WebExceptionStatus.ConnectFailure: why = "连不上服务器"; break;
+                    case WebExceptionStatus.TrustFailure: why = "证书校验失败"; break;
+                    case WebExceptionStatus.SecureChannelFailure: why = "连接被重置"; break;
+                    default:
+                        // 被 RST 时 .NET 常报「基础连接已经关闭：接收时发生错误」，归到「连接被重置」
+                        string m = we.Message ?? "";
+                        if (m.IndexOf("关闭", StringComparison.Ordinal) >= 0
+                            || m.IndexOf("closed", StringComparison.OrdinalIgnoreCase) >= 0) why = "连接被重置";
+                        break;
+                }
+            }
+            else if (ex is IOException) why = "连接被重置";
+            lock (gate) { lastWhy = why; }
+        }
+
+        /// <summary>最近一次失败是什么（空串 = 没失败过，或者刚成功过）。</summary>
+        public static string LastWhy { get { lock (gate) { return lastWhy ?? ""; } } }
+
+        /// <summary>给界面的那句话：为什么连不上 + 一句怎么办。调用方外面再包 Lang.S。</summary>
+        internal static string LastFailHint()
+        {
+            string why = LastWhy;
+            if (why.Length == 0) return "工坊网页连不上";
+            // hosts 指到本机、但本机没人监听：这是一条死配置，不说清楚用户永远查不出来
+            if (TcpProbe("127.0.0.1", 443, 300) < 0
+                && (HostsPointsToLocalhost("steamcommunity.com") || HostsPointsToLocalhost("api.steampowered.com")))
+                return "本机 hosts 把 Steam 域名指到了 127.0.0.1，但没有工具在监听：打开对应加速工具，或删掉 hosts 里那一行";
+            if (why == "连接被重置")
+            {
+                string acc = AcceleratorName();
+                if (acc != null && SystemProxy() == null)
+                    return "连不上 Steam：检测到" + acc + "在跑，但它多半只加速游戏本体 —— 打开它的「Steam 社区」加速再试";
+                return "连接被重置（可能需要开 Steam 社区加速）";
+            }
+            if (why == "请求超时") return "请求超时（这条线路到 Steam 不通）";
+            if (why == "连不上服务器") return "连不上服务器（DNS 给的 IP 都不通）";
+            return "连不上（" + why + "）";
+        }
+
+        /// <summary>本机有没有装加速器（只认进程名，纯提示用，不参与连接）。</summary>
+        static string AcceleratorName()
+        {
+            try
+            {
+                foreach (System.Diagnostics.Process p in System.Diagnostics.Process.GetProcesses())
+                {
+                    string n;
+                    try { n = p.ProcessName.ToLowerInvariant(); } catch { continue; }
+                    if (n.StartsWith("uu_")) return "UU";
+                    if (n.StartsWith("leigod")) return "雷神";
+                    if (n.StartsWith("xunyou") || n.StartsWith("qyclient")) return "迅游";
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>hosts 里是否把这个域名指到了本机 —— 指了却没人监听，就是一条会误导人的死配置。</summary>
+        static bool HostsPointsToLocalhost(string host)
+        {
+            try
+            {
+                string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"drivers\etc\hosts");
+                if (!File.Exists(path)) return false;
+                foreach (string raw in File.ReadAllLines(path))
+                {
+                    string line = raw;
+                    int hash = line.IndexOf('#');
+                    if (hash >= 0) line = line.Substring(0, hash);
+                    string[] parts = line.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length < 2) continue;
+                    bool hostHit = false, local = false;
+                    foreach (string part in parts)
+                    {
+                        if (string.Equals(part, host, StringComparison.OrdinalIgnoreCase)) hostHit = true;
+                        else if (part == "127.0.0.1" || part == "::1") local = true;
+                    }
+                    if (hostHit && local) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>失败日志：封面会并发抓好几张，全挂了别刷屏 —— 5 秒一条，够追问题。</summary>
+        static void LogOnce(string msg)
+        {
+            lock (gate)
+            {
+                if ((DateTime.Now - lastLogAt).TotalSeconds < 5) return;
+                lastLogAt = DateTime.Now;
+            }
+            try { Core.Log("WARN", msg); } catch { }
+        }
+
+        // ---------------- 阶梯重试 / 离线态 / 系统代理 / 公共 DNS ----------------
+
+        const int TierMs = 2500;                    // 单档上限：三档合计 7.5 秒就要收手，别让人干等
+        static DateTime offlineUntil = DateTime.MinValue;
+
+        public static bool IsOffline { get { lock (gate) { return DateTime.Now < offlineUntil; } } }
+
+        /// <summary>用户点「重试」：立刻解除冷却，下一轮从第一档重来。</summary>
+        public static void Retry() { lock (gate) { offlineUntil = DateTime.MinValue; } }
+
+        /// <summary>请求成功。只有 Steam 自己的域名成功才能解除离线态 ——
+        /// GameBanana 的图能下，不代表工坊复活，以前这里一律清，导致每次点位置又去敲 Steam。</summary>
+        static void MarkOnline(string host)
+        {
+            lock (gate)
+            {
+                lastWhy = null;
+                if (IsSteamHost(host)) offlineUntil = DateTime.MinValue;
+            }
+        }
+
+        // API 单独一份冷却：api.steampowered.com 和网页是两条线，可能一条死一条活
+        static DateTime apiDeadUntil = DateTime.MinValue;
+        internal static bool ApiOffline { get { lock (gate) { return DateTime.Now < apiDeadUntil; } } }
+        internal static void MarkApiDead() { lock (gate) { apiDeadUntil = DateTime.Now.AddMinutes(10); } }
+        internal static void MarkApiAlive() { lock (gate) { apiDeadUntil = DateTime.MinValue; } }
+
+        static void GoOffline()
+        {
+            lock (gate)
+            {
+                if (DateTime.Now < offlineUntil) return;
+                offlineUntil = DateTime.Now.AddMinutes(20);
+            }
+            LogOnce("工坊进入离线态：20 分钟内不再自动联网（点「重试」可立刻再试）");
+        }
+
+        static string HostOf(string url)
+        {
+            try { return new Uri(url).Host; } catch { return null; }
+        }
+
+        static IWebProxy systemProxy;
+        static bool systemProxyRead;
+        static DateTime systemProxyAt;
+
+        /// <summary>
+        /// 本机系统代理（Clash / v2rayN / 加速器设的那种）。只读注册表，不触发 IE 自动探测那几秒卡顿。
+        /// 缓存 60 秒：用户中途把加速器开起来，下一轮就能用上。
+        /// </summary>
+        static IWebProxy SystemProxy()
+        {
+            lock (gate)
+            {
+                if (systemProxyRead && (DateTime.Now - systemProxyAt).TotalSeconds < 60) return systemProxy;
+            }
+            IWebProxy px = null;
+            try
+            {
+                using (Microsoft.Win32.RegistryKey k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Internet Settings"))
+                {
+                    if (k != null && Convert.ToInt32(k.GetValue("ProxyEnable") ?? 0) != 0)
+                    {
+                        string srv = ((k.GetValue("ProxyServer") as string) ?? "").Trim();
+                        string addr = PickProxyAddress(srv);
+                        if (addr.Length > 0)
+                        {
+                            if (addr.IndexOf("://", StringComparison.Ordinal) < 0) addr = "http://" + addr;
+                            px = new WebProxy(addr);
+                        }
+                    }
+                }
+            }
+            catch { }
+            lock (gate) { systemProxy = px; systemProxyRead = true; systemProxyAt = DateTime.Now; }
+            return px;
+        }
+
+        /// <summary>注册表里可能是 "1.2.3.4:7890"，也可能是 "http=...;https=..." —— 优先取 https 那段。</summary>
+        static string PickProxyAddress(string srv)
+        {
+            if (srv.Length == 0) return "";
+            if (srv.IndexOf('=') < 0) return srv;
+            string https = "", http = "";
+            foreach (string part in srv.Split(';'))
+            {
+                int at = part.IndexOf('=');
+                if (at <= 0) continue;
+                string key = part.Substring(0, at).Trim().ToLowerInvariant();
+                string val = part.Substring(at + 1).Trim();
+                if (key == "https") https = val;
+                else if (key == "http") http = val;
+            }
+            return https.Length > 0 ? https : http;
+        }
+
+        static readonly string[] PublicDns = new string[] { "223.5.5.5", "119.29.29.29" };
+
+        /// <summary>
+        /// 换公共 DNS 重新解析，把能连的那个 IP 写进 pinned —— 系统 DNS 被投毒时这是唯一干净的来源。
+        /// 拿到 IP 还要证明它能连（探 443），否则等于把「优选 IP」自家人为拉黑。
+        /// </summary>
+        static bool ResolveByPublicDns(string host)
+        {
+            foreach (string dns in PublicDns)
+            {
+                List<IPAddress> ips = DnsLookupA(host, dns);
+                if (ips == null || ips.Count == 0) continue;
+                int bestMs = -1; string bestIp = null;
+                foreach (IPAddress ip in ips)
+                {
+                    int ms = TcpProbe(ip.ToString(), 443, 1200);
+                    if (ms >= 0 && (bestMs < 0 || ms < bestMs)) { bestMs = ms; bestIp = ip.ToString(); }
+                }
+                if (bestIp == null) continue;
+                lock (gate) { pinned[host] = bestIp; skip.Remove(host); }
+                return true;
+            }
+            return false;
+        }
+
+        static List<IPAddress> DnsLookupA(string host, string server)
+        {
+            int id = Environment.TickCount & 0xFFFF;
+            byte[] q = DnsQuery(host, id);
+            if (q == null) return null;
+            byte[] resp = DnsExchangeUdp(server, q);
+            // 截断位（TC）：换 TCP 重问一次
+            if (resp != null && resp.Length > 2 && (resp[2] & 0x02) != 0) resp = DnsExchangeTcp(server, q);
+            return DnsParseA(resp, id);
+        }
+
+        static byte[] DnsQuery(string host, int id)
+        {
+            try
+            {
+                List<byte> b = new List<byte>(64);
+                b.Add((byte)(id >> 8)); b.Add((byte)(id & 0xFF));
+                b.Add(0x01); b.Add(0x00);                   // 标准查询，要递归
+                b.Add(0); b.Add(1);                         // QDCOUNT
+                for (int i = 0; i < 6; i++) b.Add(0);       // AN / NS / AR
+                foreach (string label in host.Split('.'))
+                {
+                    byte[] lb = Encoding.ASCII.GetBytes(label);
+                    if (lb.Length == 0 || lb.Length > 63) return null;
+                    b.Add((byte)lb.Length); b.AddRange(lb);
+                }
+                b.Add(0);
+                b.Add(0); b.Add(1);                         // Type A
+                b.Add(0); b.Add(1);                         // Class IN
+                return b.ToArray();
+            }
+            catch { return null; }
+        }
+
+        static byte[] DnsExchangeUdp(string server, byte[] q)
+        {
+            try
+            {
+                using (System.Net.Sockets.UdpClient u = new System.Net.Sockets.UdpClient())
+                {
+                    u.Client.ReceiveTimeout = 1500;
+                    IPEndPoint ep = new IPEndPoint(IPAddress.Parse(server), 53);
+                    u.Send(q, q.Length, ep);
+                    IPEndPoint from = new IPEndPoint(IPAddress.Any, 0);
+                    return u.Receive(ref from);
+                }
+            }
+            catch { return null; }
+        }
+
+        static byte[] DnsExchangeTcp(string server, byte[] q)
+        {
+            try
+            {
+                using (System.Net.Sockets.TcpClient c = new System.Net.Sockets.TcpClient())
+                {
+                    c.ReceiveTimeout = 1500;
+                    if (!c.ConnectAsync(server, 53).Wait(1500)) return null;
+                    Stream s = c.GetStream();
+                    byte[] packet = new byte[q.Length + 2];
+                    packet[0] = (byte)(q.Length >> 8); packet[1] = (byte)(q.Length & 0xFF);
+                    Buffer.BlockCopy(q, 0, packet, 2, q.Length);
+                    s.Write(packet, 0, packet.Length);
+                    byte[] head = new byte[2];
+                    if (!ReadFull(s, head, 2)) return null;
+                    int len = (head[0] << 8) | head[1];
+                    if (len <= 0 || len > 4096) return null;
+                    byte[] body = new byte[len];
+                    return ReadFull(s, body, len) ? body : null;
+                }
+            }
+            catch { return null; }
+        }
+
+        static bool ReadFull(Stream s, byte[] buf, int n)
+        {
+            int got = 0;
+            while (got < n)
+            {
+                int r = s.Read(buf, got, n - got);
+                if (r <= 0) return false;
+                got += r;
+            }
+            return true;
+        }
+
+        static List<IPAddress> DnsParseA(byte[] r, int id)
+        {
+            if (r == null || r.Length < 12) return null;
+            if (((r[0] << 8) | r[1]) != id) return null;
+            int qd = (r[4] << 8) | r[5];
+            int an = (r[6] << 8) | r[7];
+            if (an <= 0) return null;
+            int at = 12;
+            for (int i = 0; i < qd; i++)
+            {
+                at = SkipName(r, at);
+                if (at < 0 || at + 4 > r.Length) return null;
+                at += 4;
+            }
+            List<IPAddress> outp = new List<IPAddress>();
+            for (int i = 0; i < an; i++)
+            {
+                at = SkipName(r, at);
+                if (at < 0 || at + 10 > r.Length) break;
+                int type = (r[at] << 8) | r[at + 1];
+                int rdlen = (r[at + 8] << 8) | r[at + 9];
+                at += 10;
+                if (at + rdlen > r.Length) break;
+                if (type == 1 && rdlen == 4)
+                    outp.Add(new IPAddress(new byte[] { r[at], r[at + 1], r[at + 2], r[at + 3] }));
+                at += rdlen;
+            }
+            return outp;
+        }
+
+        static int SkipName(byte[] r, int at)
+        {
+            while (at >= 0 && at < r.Length)
+            {
+                int len = r[at];
+                if (len == 0) return at + 1;
+                if ((len & 0xC0) == 0xC0) return at + 2;     // 压缩指针：名字到此结束
+                at += len + 1;
+            }
+            return -1;
+        }
+
+        /// <summary>「复制诊断」：傻瓜用户不会去 %APPDATA% 找日志，让他粘一段发过来就行。</summary>
+        public static string Diagnostics()
+        {
+            StringBuilder b = new StringBuilder();
+            b.Append("工坊连不上（").Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm")).Append("）\r\n");
+            b.Append("版本 ").Append(Version()).Append("\r\n");
+            b.Append("原因：").Append(LastFailHint()).Append("\r\n");
+            b.Append("系统代理：").Append(SystemProxy() != null ? "有" : "无").Append("\r\n");
+            string d; lock (gate) { d = probeNote ?? ""; }
+            if (d.Length > 0) b.Append("探针：").Append(d).Append("\r\n");
+            string w; lock (gate) { w = lastWhy ?? ""; }
+            if (w.Length > 0) b.Append("判定：").Append(w).Append("\r\n");
+            b.Append("已试：直连 → 系统代理 → 公共 DNS");
+            return b.ToString();
+        }
+
+        static string Version()
+        {
+            try { return typeof(WsNet).Assembly.GetName().Version.ToString(); } catch { return "?"; }
         }
     }
 
@@ -333,7 +779,8 @@ namespace Installer
         {
             // 走联网层：连接数/代理/协议调好，Steam 域名优选 IP，失败自动退回域名
             string s = WsNet.GetString(url, Ua, 25000);
-            if (s == null) throw new WebException("工坊请求失败: " + url);
+            // 带上失败原因：这句话会一路显示到推荐区/工坊窗口的空态上
+            if (s == null) throw new WebException("工坊请求失败：" + WsNet.LastFailHint());
             return s;
         }
 
@@ -361,6 +808,24 @@ namespace Installer
         /// </summary>
         internal static List<WsItem> SearchItems(string query, string sort, int page, string tag = null)
         {
+            if (!Core.Cfg.SteamEnabled) throw new InvalidOperationException("Steam 来源已在「来源」里关闭");
+            // 填了 key 就先走 API：steamcommunity 被墙时这是唯一能出列表的路，失败再退回网页
+            if (HasApiKey && !WsNet.ApiOffline)
+            {
+                try
+                {
+                    List<WsItem> viaApi = SearchByApi(query, sort, page, tag);
+                    if (viaApi != null && viaApi.Count > 0) { WsNet.MarkApiAlive(); return viaApi; }
+                    try { Core.Log("WARN", "工坊 API 这一页没结果，退回网页路由"); } catch { }
+                }
+                catch (Exception ex)
+                {
+                    // 失败一次就歇 10 分钟：不然每点一个位置都要先陪 API 等 30 秒
+                    WsNet.MarkApiDead();
+                    try { Core.Log("WARN", "工坊 API 失败，10 分钟内不再尝试，退回网页/备用源: " + ex.Message); } catch { }
+                }
+            }
+
             StringBuilder u = new StringBuilder();
             u.Append("https://steamcommunity.com/workshop/browse/?appid=").Append(AppId);
             u.Append("&section=readytouseitems");
@@ -548,20 +1013,444 @@ namespace Installer
 
         static string Post(string path, string body)
         {
+            return PostUrl(ApiRoot + path, body, 20000);
+        }
+
+        static string PostUrl(string url, string body, int timeoutMs)
+        {
             WsNet.Tune();                                   // 全局连接/代理设置先调好（POST 不走优选 IP）
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(ApiRoot + path);
+            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "POST";
             req.ContentType = "application/x-www-form-urlencoded";
             req.UserAgent = Ua;
-            req.Timeout = 20000;
-            req.ReadWriteTimeout = 20000;
+            req.Timeout = timeoutMs;
+            req.ReadWriteTimeout = timeoutMs;
             byte[] data = Encoding.UTF8.GetBytes(body);
             req.ContentLength = data.Length;
             using (Stream s = req.GetRequestStream()) s.Write(data, 0, data.Length);
             using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
             using (StreamReader sr = new StreamReader(r.GetResponseStream(), Encoding.UTF8))
                 return sr.ReadToEnd();
+        }
+
+        // ---------------- 工坊 API 路线（填了 key 才走，绕开被墙的网页） ----------------
+
+        const string PubRoot = "https://api.steampowered.com/IPublishedFileService/";
+
+        /// <summary>用户自己填的 Steam Web API key；空 = 不用 API 路线。</summary>
+        internal static string ApiKey { get { return (Core.Cfg.WsApiKey ?? "").Trim(); } }
+        internal static bool HasApiKey { get { return ApiKey.Length >= 20; } }
+
+        /// <summary>排序 → QueryFiles 的 query_type 枚举。有搜索词时按文本搜索，否则按热度/订阅。</summary>
+        static int ApiQueryType(string sort, string query)
+        {
+            if (!string.IsNullOrEmpty(query)) return 11;                      // RankedByTextSearch
+            if (string.Equals(sort, "trend", StringComparison.OrdinalIgnoreCase)) return 3;   // RankedByTrend
+            if (string.Equals(sort, "mostsubscribed", StringComparison.OrdinalIgnoreCase)) return 12;
+            if (string.Equals(sort, "mostrecent", StringComparison.OrdinalIgnoreCase)) return 1;
+            return 3;
+        }
+
+        /// <summary>
+        /// 用 QueryFiles 拿一页结果。不需要 steamcommunity，只要 key。
+        /// 返回 null 表示这次 API 没成功（调用方退回网页路由）。
+        /// </summary>
+        static List<WsItem> SearchByApi(string query, string sort, int page, string tag)
+        {
+            StringBuilder b = new StringBuilder();
+            b.Append("key=").Append(ApiKey);
+            b.Append("&appid=").Append(AppId);
+            b.Append("&page=").Append(page);
+            b.Append("&numperpage=30");
+            b.Append("&return_short_description=true");
+            b.Append("&query_type=").Append(ApiQueryType(sort, query));
+            if (!string.IsNullOrEmpty(query)) b.Append("&search_text=").Append(Uri.EscapeDataString(query));
+            if (!string.IsNullOrEmpty(tag)) b.Append("&requiredtags[0]=").Append(Uri.EscapeDataString(tag));
+
+            // 接口路径是 IPublishedFileService/QueryFiles/v1/ —— 多写一个 "PublishedFile." 会直接 404
+            string json = null;
+            for (int attempt = 0; attempt < 2 && json == null; attempt++)
+            {
+                try { json = PostUrl(PubRoot + "QueryFiles/v1/?format=json", b.ToString(), 6000); }
+                catch (WebException we)
+                {
+                    if (attempt > 0 || we.Status != WebExceptionStatus.Timeout) throw;
+                    try { Core.Log("WARN", "工坊 API 超时，重试一次"); } catch { }
+                }
+            }
+            List<string> objs = SplitObjects(json, "publishedfiledetails");
+            List<WsItem> outp = new List<WsItem>();
+            foreach (string o in objs)
+            {
+                string id = JStr(o, "publishedfileid");
+                if (id.Length == 0) continue;
+                WsItem it = new WsItem();
+                it.Id = id;
+                it.Title = JStr(o, "title").Trim();
+                it.Preview = JStr(o, "preview_url");
+                it.Size = JNum(o, "file_size");
+                it.Subs = JNum(o, "subscriptions");
+                it.Views = JNum(o, "views");
+                it.Created = JNum(o, "time_created");
+                it.Updated = JNum(o, "time_updated");
+                it.Desc = JStr(o, "short_description");
+                if (it.Desc.Length == 0) it.Desc = JStr(o, "description");
+                it.Tags = TagsOf(o);
+                it.DetailsLoaded = true;
+                outp.Add(it);
+            }
+            return outp;
+        }
+
+        // ---------------- GameBanana：Steam 整条不通时的备用内容源 ----------------
+
+        const int GbGameL4D2 = 3456;   // GameBanana 上「Left 4 Dead 2」的游戏 id
+
+        /// <summary>
+        /// GameBanana 搜索/浏览。它家 API 不走 Steam，工坊被墙时这是唯一还能出东西的路。
+        /// 返回 null = 没成功；返回空表 = 真没搜到。
+        /// </summary>
+        static readonly Dictionary<string, List<WsItem>> gbCache = new Dictionary<string, List<WsItem>>(StringComparer.Ordinal);
+        static readonly Dictionary<string, DateTime> gbCacheAt = new Dictionary<string, DateTime>(StringComparer.Ordinal);
+        static readonly object gbGate = new object();
+
+        internal static List<WsItem> AltSearch(string query, int page, int perPage)
+        {
+            // 10 分钟内同一个词直接给缓存：来回切位置不该每次都重新打网络
+            string ck = (query ?? "") + "|" + page;
+            lock (gbGate)
+            {
+                DateTime at;
+                List<WsItem> hit;
+                if (gbCacheAt.TryGetValue(ck, out at) && (DateTime.Now - at).TotalMinutes < 10 && gbCache.TryGetValue(ck, out hit))
+                    return hit;
+            }
+
+            // 中文/别名先翻成英文关键词（GameBanana 只有英文库），一个词搜不到就接着试下一个
+            string[] keys = GbKeywords(query);
+            List<WsItem> outp = new List<WsItem>();
+            HashSet<string> seen = new HashSet<string>(StringComparer.Ordinal);
+            bool anyOk = false;
+            if (keys.Length == 0)
+            {
+                List<WsItem> all = GbFetch("", page, perPage);
+                if (all != null) { anyOk = true; outp = all; }
+            }
+            else
+            {
+                foreach (string kw in keys)
+                {
+                    if (outp.Count >= perPage) break;
+                    List<WsItem> part = GbFetch(kw, page, perPage);
+                    if (part == null) continue;
+                    anyOk = true;
+                    foreach (WsItem it in part)
+                    {
+                        if (!seen.Add(it.Id)) continue;
+                        outp.Add(it);
+                        if (outp.Count >= perPage) break;
+                    }
+                }
+            }
+            if (!anyOk) return null;
+            try { Core.Log("INFO", "GameBanana 兜底：" + outp.Count + " 条（" + query + "）"); } catch { }
+            lock (gbGate) { gbCache[ck] = outp; gbCacheAt[ck] = DateTime.Now; }
+            return outp;
+        }
+
+        /// <summary>问 GameBanana 一次。返回 null = 网络失败，「空表」= 真没搜到。</summary>
+        static List<WsItem> GbFetch(string keyword, int page, int perPage)
+        {
+            StringBuilder u = new StringBuilder("https://gamebanana.com/apiv11/");
+            if (!string.IsNullOrEmpty(keyword))
+            {
+                u.Append("Util/Search/Results?_sSearchString=").Append(Uri.EscapeDataString(keyword));
+                u.Append("&_sModelName=Mod&_idGameRow=").Append(GbGameL4D2);
+                u.Append("&_nPerpage=").Append(perPage).Append("&_nPage=").Append(page);
+            }
+            else
+            {
+                u.Append("Mod/Index?_nPerpage=").Append(perPage).Append("&_nPage=").Append(page);
+                u.Append("&_aFilters%5BGeneric_Game%5D=").Append(GbGameL4D2);
+            }
+            string json = WsNet.GetString(u.ToString(), Ua, 12000);
+            if (string.IsNullOrEmpty(json)) return null;
+
+            List<WsItem> outp = new List<WsItem>();
+            foreach (string o in SplitObjects(json, "_aRecords"))
+            {
+                long raw = JNum(o, "_idRow");
+                if (raw <= 0) continue;
+                WsItem it = new WsItem();
+                it.Id = "gb" + raw;                       // 前缀区分来源：详情/点击都靠它分流
+                it.Title = JStr(o, "_sName").Trim();
+                it.Preview = GbImage(o);
+                it.Created = JNum(o, "_tsDateAdded");
+                it.Updated = JNum(o, "_tsDateModified");
+                it.Note = "GameBanana";
+                if (it.Title.Length == 0 || it.Preview.Length == 0) continue;
+                outp.Add(it);
+            }
+            return outp;
+        }
+
+        /// <summary>
+        /// 关键词表：GameBanana 是英文库，中文位置名原样发过去必然零结果。
+        /// 一个中文词给 3~4 个英文近义词，多搜几趟合并去重 —— 比只翻一个词命中率高得多。
+        /// </summary>
+        static string[] GbKeywords(string q)
+        {
+            string k = (q ?? "").Trim().ToLowerInvariant();
+            if (k.Length == 0) return new string[0];
+
+            if (k.Contains("手枪")) return new string[] { "pistol", "glock", "deagle", "beretta" };
+            if (k.Contains("霰弹") || k.Contains("连喷") || k.Contains("铁喷")) return new string[] { "shotgun", "remington", "spas" };
+            if (k.Contains("狙击")) return new string[] { "sniper", "awp", "scout" };
+            if (k.Contains("冲锋")) return new string[] { "smg", "uzi", "mp5" };
+            if (k.Contains("步枪") || k.Contains("突击")) return new string[] { "rifle", "ak-47", "m16" };
+            if (k.Contains("近战") || k.Contains("刀")) return new string[] { "melee", "katana", "axe" };
+            if (k.Contains("投掷") || k.Contains("手雷") || k.Contains("燃烧")) return new string[] { "grenade", "molotov", "pipe bomb" };
+            if (k.Contains("人物") || k.Contains("幸存者") || k.Contains("角色")) return new string[] { "survivor", "zoey", "bill", "coach" };
+            if (k.Contains("特感") || k.Contains("感染")) return new string[] { "infected", "tank", "witch", "hunter" };
+            if (k.Contains("地图") || k.Contains("战役")) return new string[] { "campaign", "map" };
+            if (k.Contains("喷漆")) return new string[] { "spray", "spraypaint" };
+            if (k.Contains("音效") || k.Contains("语音")) return new string[] { "sound", "voice", "audio" };
+            if (k.Contains("医疗") || k.Contains("药")) return new string[] { "medkit", "pills" };
+
+            // 英文：常见写法归一（ak47 / ak-47，deagle / desert eagle）
+            List<string> outp = new List<string>();
+            outp.Add(k);
+            string squash = k.Replace("-", "").Replace(" ", "");
+            if (squash.Length > 0 && squash != k) outp.Add(squash);
+            else if (squash.Length > 0) outp.Add(squash.Replace("ak47", "ak-47"));
+            if (squash == "deagle") outp.Add("desert eagle");
+            if (squash == "awp") outp.Add("magnum sniper");
+            return outp.ToArray();
+        }
+
+        /// <summary>GameBanana 的详情：它没有 Steam 那套接口，字段全在 ProfilePage 这一份 JSON 里。</summary>
+        internal static WsItem GbDetail(string rawId)
+        {
+            if (string.IsNullOrEmpty(rawId)) return null;
+            string json = WsNet.GetString("https://gamebanana.com/apiv11/Mod/" + rawId + "/ProfilePage", Ua, 12000);
+            if (string.IsNullOrEmpty(json)) return null;
+
+            WsItem it = new WsItem();
+            it.Id = "gb" + rawId;
+            it.Title = GbField(json, "_sName").Trim();
+            it.Preview = GbImage(json);
+            it.Desc = GbText(GbField(json, "_sDescription"));
+            it.Creator = GbNested(json, "_aSubmitter", "_sName");
+            it.Tags = GbText(GbNested(json, "_aCategory", "_sName"));
+            it.Created = JNum(json, "_tsDateAdded");
+            it.Updated = JNum(json, "_tsDateModified");
+            it.Note = "GameBanana";
+            it.DetailsLoaded = true;          // 有这一行，详情页就不会再去问 Steam 要它
+            try
+            {
+                int at = json.IndexOf("\"_aFiles\"", StringComparison.Ordinal);
+                if (at >= 0)
+                {
+                    string seg = json.Substring(at);
+                    it.Url = GbField(seg.Length > 2000 ? seg.Substring(0, 2000) : seg, "_sDownloadUrl");
+                }
+            }
+            catch { }
+            return it;
+        }
+
+        /// <summary>取一个字段，并还原 JSON 转义。</summary>
+        static string GbField(string json, string key)
+        {
+            Match m = Regex.Match(json, "\"" + key + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+            return m.Success ? GbUnescape(m.Groups[1].Value) : "";
+        }
+
+        /// <summary>嵌套对象里的字段（作者名在 _aSubmitter 里，分类名在 _aCategory 里）。</summary>
+        static string GbNested(string json, string objKey, string field)
+        {
+            int at = json.IndexOf("\"" + objKey + "\"", StringComparison.Ordinal);
+            if (at < 0) return "";
+            int end = json.IndexOf("\"_a", at + objKey.Length + 4, StringComparison.Ordinal);
+            string seg = end > at ? json.Substring(at, end - at) : json.Substring(at, Math.Min(800, json.Length - at));
+            return GbField(seg, field);
+        }
+
+        static string GbUnescape(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Replace("\\/", "/").Replace("\\\"", "\"").Replace("\\n", "\n").Replace("\\r", "").Replace("\\t", " ").Replace("\\\\", "\\");
+        }
+
+        /// <summary>把 HTML/BBCode 去掉，只留能塞进详情框的纯文字。</summary>
+        static string GbText(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            s = Regex.Replace(s, "<[^>]+>", " ");
+            s = Regex.Replace(s, "\\[/?[a-zA-Z]+[^\\]]*\\]", " ");
+            s = s.Replace("[*]", "· ");
+            s = Regex.Replace(s, "[ \\t]+", " ");
+            s = Regex.Replace(s, "\\n{3,}", "\n\n");
+            return s.Trim();
+        }
+
+        /// <summary>
+        /// 装完补两样：库里卡片的预览图，以及「这个 MOD 从哪来的」记录。
+        /// 后者写成 vpk 旁边的 .url.txt，右键「打开工坊详情页」靠它开网页。
+        /// </summary>
+        static void SaveInstalledExtra(WsItem it, string addons, string fileName)
+        {
+            try
+            {
+                if (it == null || string.IsNullOrEmpty(fileName)) return;
+                string installed = Path.Combine(addons, Path.GetFileName(fileName));
+                SavePreview(it, installed);
+                if (it.Id.StartsWith("gb", StringComparison.Ordinal))
+                    File.WriteAllText(installed + ".url.txt", "https://gamebanana.com/mods/" + it.Id.Substring(2), Encoding.UTF8);
+            }
+            catch { }
+        }
+
+        /// <summary>zip 里有没有现成的 vpk（有就直接用，没有才需要打包）。</summary>
+        static bool HasVpkInside(string zipPath)
+        {
+            try
+            {
+                using (System.IO.Compression.ZipArchive za = System.IO.Compression.ZipFile.OpenRead(zipPath))
+                {
+                    foreach (System.IO.Compression.ZipArchiveEntry e in za.Entries)
+                        if (e.FullName.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase)) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>很多包外面套了一层同名文件夹（addons/xxx 或 hitman_pistol/），往里剥到真正的根。</summary>
+        static string UnwrapSingleRoot(string dir)
+        {
+            try
+            {
+                for (int guard = 0; guard < 3; guard++)
+                {
+                    string[] subs = Directory.GetDirectories(dir);
+                    string[] files = Directory.GetFiles(dir);
+                    if (files.Length == 0 && subs.Length == 1) { dir = subs[0]; continue; }
+                    break;
+                }
+            }
+            catch { }
+            return dir;
+        }
+
+        /// <summary>按文件头认容器（不信扩展名：工坊和 GameBanana 都有把 zip 叫成别的的包）。</summary>
+        static string DetectContainerExt(string path)
+        {
+            try
+            {
+                byte[] head = new byte[8];
+                using (FileStream fs = File.OpenRead(path))
+                {
+                    if (fs.Read(head, 0, head.Length) < 4) return "";
+                }
+                if (head[0] == 0x50 && head[1] == 0x4B) return ".zip";
+                if (head[0] == 0x37 && head[1] == 0x7A && head[2] == 0xBC && head[3] == 0xAF) return ".7z";
+                if (head[0] == 0x52 && head[1] == 0x61 && head[2] == 0x72 && head[3] == 0x21) return ".rar";
+                if (head[0] == 0x34 && head[1] == 0x12 && head[2] == 0xAA && head[3] == 0x55) return ".vpk";
+            }
+            catch { }
+            return "";
+        }
+
+        /// <summary>
+        /// GameBanana 一键装：下载它的文件（zip/7z/rar）→ 解包出 vpk → 丢进 addons。
+        /// 它的下载地址是重定向直链、内容不是 vpk，不能像工坊那样直接落盘到 addons 里。
+        /// </summary>
+        internal static string GbInstall(WsItem it, out int added)
+        {
+            added = 0;
+            if (it == null) return "没有选中条目";
+            string url = it.Url ?? "";
+            if (string.IsNullOrEmpty(url) && it.Id.StartsWith("gb", StringComparison.Ordinal))
+            {
+                WsItem full = GbDetail(it.Id.Substring(2));
+                if (full != null) url = full.Url;
+            }
+            if (string.IsNullOrEmpty(url)) return "这个条目没有可下载的文件";
+
+            string tmpDir = Path.Combine(Path.GetTempPath(), "l4d2gb");
+            string part = Path.Combine(tmpDir, it.Id + ".part");
+            string file = Path.Combine(tmpDir, it.Id + ".pkg");
+            try
+            {
+                Directory.CreateDirectory(tmpDir);
+                if (File.Exists(part)) File.Delete(part);
+            }
+            catch { }
+
+            long got = WsNet.DownloadTo(url, Ua, 600000, part, 0, null);
+            if (got <= 0) { try { File.Delete(part); } catch { } return "下载失败：GameBanana 连不上"; }
+            try
+            {
+                if (File.Exists(file)) File.Delete(file);
+                File.Move(part, file);
+                // 导入器只认 .vpk/.zip/.rar/.7z 这几个后缀：按文件头把后缀改成真的那种
+                string ext = DetectContainerExt(file);
+                if (ext.Length > 0)
+                {
+                    string renamed = Path.ChangeExtension(file, ext);
+                    if (File.Exists(renamed)) File.Delete(renamed);
+                    File.Move(file, renamed);
+                    file = renamed;
+                }
+            }
+            catch (Exception ex) { return "下载后保存失败：" + ex.Message; }
+
+            string addons = Core.GameAddonsDir();
+            string unpack = Path.Combine(tmpDir, "unpack");
+            try
+            {
+                // 散文件包（materials/、models/ 这种）：addons 只认 vpk，先打成一个 vpk 再导入
+                if (file.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && !HasVpkInside(file))
+                {
+                    try { if (Directory.Exists(unpack)) Directory.Delete(unpack, true); } catch { }
+                    Directory.CreateDirectory(unpack);
+                    try { System.IO.Compression.ZipFile.ExtractToDirectory(file, unpack); }
+                    catch (Exception ex) { return "解压失败：" + ex.Message; }
+                    string src = UnwrapSingleRoot(unpack);
+                    string vpk = Path.Combine(tmpDir, SafeFileName(it.Title, it.Id) + ".vpk");
+                    int packed = VpkPack.PackDir(src, vpk);
+                    if (packed == 0) return "这个包是散文件（模型/材质/语音），但没有能打进 vpk 的游戏资源";
+                    int sk; List<string> er;
+                    string m2 = Catalog.ImportTo(new string[] { vpk }, addons, out added, out sk, out er);
+                    SaveInstalledExtra(it, addons, Path.GetFileName(vpk));
+                    try { File.Delete(vpk); } catch { }
+                    return m2 + "（已把 " + packed + " 个散文件打包成 vpk）";
+                }
+
+                int skipped;
+                List<string> errs;
+                string msg = Catalog.ImportTo(new string[] { file }, addons, out added, out skipped, out errs);
+                SaveInstalledExtra(it, addons, Path.GetFileName(file));
+                return msg;
+            }
+            finally
+            {
+                try { File.Delete(file); } catch { }
+                try { if (Directory.Exists(unpack)) Directory.Delete(unpack, true); } catch { }
+            }
+        }
+
+        /// <summary>GameBanana 的图分两段给：_sBaseUrl + _sFile，拼起来才是完整地址。</summary>
+        static string GbImage(string o)
+        {
+            Match b = Regex.Match(o, "\"_sBaseUrl\"\\s*:\\s*\"([^\"]+)\"");
+            Match f = Regex.Match(o, "\"_sFile\"\\s*:\\s*\"([^\"]+)\"");
+            if (!b.Success || !f.Success) return "";
+            // JSON 里的斜杠是转义的（https:\/\/images...），不还原的话拼出来的地址根本请求不出去
+            string u = b.Groups[1].Value.Replace("\\/", "/") + "/" + f.Groups[1].Value.Replace("\\/", "/");
+            return u;
         }
 
         /// <summary>批量查详情。接口一次最多 100 个，这里按 100 分组。</summary>

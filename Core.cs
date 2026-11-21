@@ -72,6 +72,8 @@ namespace Installer
         /// 空 = 自动找：程序目录旁边 → 主库盘的 `游戏内容\求生之路2各项MOD\扩展平台` → U 盘三层扫。
         /// </summary>
         public string PkgRoot = "";
+        public string WsApiKey = "";          // 工坊 API key（用户自己填，留空就走网页）
+        public bool SteamEnabled = true;      // 「来源」里 Steam 这一项的总开关
         public bool DrawerOpen = false;     // 左栏默认收起：主界面就是三列（方案树 / 候选 / 详情），要看现状再点「面板」
         public int TreeW = 0;               // 方案树宽度（设计像素，0 = 自动）
         public int DetailW = 0;             // 右侧详情宽度（设计像素，0 = 自动）
@@ -544,6 +546,8 @@ namespace Installer
                     else if (k == "Appearance") Cfg.Appearance = v;
                     else if (k == "LibraryRoot") Cfg.LibraryRoot = v;
                     else if (k == "PkgRoot") Cfg.PkgRoot = v;
+                    else if (k == "WsApiKey") Cfg.WsApiKey = v;
+                    else if (k == "SteamEnabled") Cfg.SteamEnabled = (v != "0");
                     else if (k == "Drawer") Cfg.DrawerOpen = (v != "0");
                     else if (k == "TreeW") { int n; if (int.TryParse(v, out n)) Cfg.TreeW = n; }
                     else if (k == "DetailW") { int n; if (int.TryParse(v, out n)) Cfg.DetailW = n; }
@@ -577,6 +581,8 @@ namespace Installer
                 sb.AppendLine("Mode=" + (ModeLock ?? Cfg.Mode));
                 sb.AppendLine("Appearance=" + Cfg.Appearance);
                 sb.AppendLine("LibraryRoot=" + Cfg.LibraryRoot);
+                sb.AppendLine("WsApiKey=" + (Cfg.WsApiKey ?? ""));
+                sb.AppendLine("SteamEnabled=" + (Cfg.SteamEnabled ? "1" : "0"));
                 sb.AppendLine("PkgRoot=" + Cfg.PkgRoot);
                 sb.AppendLine("Drawer=" + (Cfg.DrawerOpen ? "1" : "0"));
                 sb.AppendLine("TreeW=" + Cfg.TreeW);

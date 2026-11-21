@@ -480,6 +480,12 @@ namespace Installer
         {
             if (it == null) return;
             if (!string.IsNullOrEmpty(query)) txtQuery.Text = query;
+            // 外部来源（GameBanana 等）的条目：直接进详情，不再去敲 Steam 搜索
+            if (it.Id.StartsWith("gb", StringComparison.Ordinal) || it.Id.StartsWith("s", StringComparison.Ordinal))
+            {
+                ShowDetail(it);
+                return;
+            }
             if (ready && !busy) DoSearch(1);
             ShowDetail(it);
         }
@@ -576,12 +582,24 @@ namespace Installer
                 List<WsItem> got = null;
                 int idCount = 0;
                 string err = null;
+                bool gbUsed = false;
                 try
                 {
                     got = Workshop.SearchItems(q, sort, p, tag);   // 浏览页直解：省掉详情接口整趟往返
                     idCount = got.Count;
                 }
                 catch (Exception ex) { err = ex.Message; }
+                if (got == null && err != null)
+                {
+                    // 工坊整条不通：换 GameBanana，别让搜索窗口只剩一句「搜索失败」
+                    try
+                    {
+                        string srcName;
+                        List<WsItem> alt = Sources.Take(q, p, 30, out srcName);
+                        if (alt != null && alt.Count > 0) { got = alt; idCount = alt.Count; err = null; gbUsed = true; }
+                    }
+                    catch { }
+                }
 
                 Ui(delegate()
                 {
@@ -607,6 +625,7 @@ namespace Installer
                     }
 
                     page = p;
+                    if (gbUsed) lblStatus.Text = Lang.S("工坊连不上，下面是 GameBanana 的搜索结果");
                     // 去重：排序变化时同一物品可能在相邻两页都出现，重复卡片比少几张更让人困惑
                     List<WsItem> fresh = new List<WsItem>();
                     foreach (WsItem one in got)
@@ -794,6 +813,30 @@ namespace Installer
 
         private void ShowDetail(WsItem it)
         {
+            // 配置来源（kind=html）的条目：没有可读的详情，直接用浏览器打开
+            if (it != null && it.Id.StartsWith("s", StringComparison.Ordinal) && !it.Id.StartsWith("sgb:", StringComparison.Ordinal)
+                && !string.IsNullOrEmpty(it.Url))
+            {
+                try { System.Diagnostics.Process.Start(it.Url); }
+                catch (Exception ex) { lblState.Text = Lang.S("打不开浏览器：") + ex.Message; }
+                return;
+            }
+            // GameBanana 的条目：也走我们自己的详情页，正文/作者后台补（它没有 Steam 那套接口）
+            if (it != null && it.Id.StartsWith("gb", StringComparison.Ordinal) && !it.DetailsLoaded)
+            {
+                string rawId = it.Id.Substring(2);
+                Thread th = new Thread(delegate()
+                {
+                    WsItem full = null;
+                    try { full = Workshop.GbDetail(rawId); } catch { }
+                    if (full == null) return;
+                    if (full.Title.Length == 0) full.Title = it.Title;
+                    if (full.Preview.Length == 0) full.Preview = it.Preview;
+                    Ui(delegate() { ShowDetail(full); });
+                });
+                th.IsBackground = true;
+                th.Start();
+            }
             // 合集判定兜底：浏览页来的条目带 IsCollection，接口直查的没有 —— 按文件名/直链再判一次
             if (it != null) it.IsCollection = it.IsCollection || Workshop.LooksLikeCollection(it);
             if (it == null) return;
@@ -822,6 +865,7 @@ namespace Installer
             try { saveTo = "保存到 " + ShortPath(Workshop.DestDir()) + "（点这里改）"; }
             catch (Exception ex) { saveTo = ex.Message; }
             lblState.Text = where + saveTo;
+            // GameBanana 的文件是 zip/7z 打包：按钮照常给，点下去走「下载 → 解包 → 导入 addons」
             btnGet.Enabled = !it.IsCollection && it.Url.Length > 0;
 
             if (picHero.Image != null) { Image old = picHero.Image; picHero.Image = null; old.Dispose(); }
@@ -880,7 +924,9 @@ namespace Installer
                 {
                     try
                     {
-                        List<WsItem> full = Workshop.Fetch(new List<string>(new string[] { it.Id }));
+                        List<WsItem> full = it.Id.StartsWith("gb", StringComparison.Ordinal)
+                            ? new List<WsItem>()                              // GameBanana 没有 Steam 详情可补
+                            : Workshop.Fetch(new List<string>(new string[] { it.Id }));
                         if (full.Count > 0)
                         {
                             WsItem f2 = full[0];
@@ -1262,6 +1308,7 @@ namespace Installer
         {
             WsItem it = detailItem;
             if (busy || it == null) return;
+            if (it.Id.StartsWith("gb", StringComparison.Ordinal)) { DownloadGb(it); return; }
             if (it.IsCollection || it.Url.Length == 0) { lblState.Text = Lang.S("这个物品没有直链，只能走 Steam 客户端订阅。"); return; }
             string dir;
             try { dir = Workshop.DestDir(); }
@@ -1362,12 +1409,43 @@ namespace Installer
             barLoad.Visible = detailLoading > 0 && !sampleMode;
         }
 
+        /// <summary>GameBanana：下载 → 解包 → 导入 addons → 重扫。整个过程在后台线程，界面只报进度。</summary>
+        private void DownloadGb(WsItem it)
+        {
+            busy = true;
+            btnGet.Enabled = false;
+            lblState.Text = Lang.S("正在从 GameBanana 下载并安装…");
+            barLoad.Style = ProgressBarStyle.Marquee;
+            barLoad.MarqueeAnimationSpeed = 30;
+            barLoad.Visible = true;
+            Thread t = new Thread(delegate()
+            {
+                int added = 0;
+                string msg;
+                try { msg = Workshop.GbInstall(it, out added); }
+                catch (Exception ex) { msg = "安装失败：" + ex.Message; }
+                Ui(delegate()
+                {
+                    busy = false;
+                    btnGet.Enabled = true;
+                    barLoad.Visible = false;
+                    lblState.Text = msg;
+                    if (added > 0 && owner != null) owner.RescanMods();
+                });
+            });
+            t.IsBackground = true;
+            t.Start();
+        }
+
         private void OpenInBrowser()
         {
             if (detailItem == null) return;
             try
             {
-                System.Diagnostics.Process.Start("https://steamcommunity.com/sharedfiles/filedetails/?id=" + detailItem.Id);
+                if (detailItem.Id.StartsWith("gb", StringComparison.Ordinal))
+                    System.Diagnostics.Process.Start("https://gamebanana.com/mods/" + detailItem.Id.Substring(2));
+                else
+                    System.Diagnostics.Process.Start("https://steamcommunity.com/sharedfiles/filedetails/?id=" + detailItem.Id);
             }
             catch (Exception ex) { lblState.Text = "打不开浏览器：" + ex.Message; }
         }

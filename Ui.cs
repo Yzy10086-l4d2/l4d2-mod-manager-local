@@ -42,6 +42,7 @@ namespace Installer
         private LoadingPane lblLoading;          // 读取/重扫期间的加载占位（启动报步骤 / 重扫报细条），平时藏着
         private CatTree treeView;                // 方案树：按「能替换的东西」看，一个位置只留一个 MOD
         private Label lblStatus, lblConflict;
+        private string statusBase = "", wsSuffix = "";   // 状态行正文 + 「工坊：离线」这类的常驻后缀
         // 底栏总高（设计值）：按钮行 36 + 间距 12 + 状态栏 20 + 触底 8。
         // 原来是 116，按钮下面空出 68px，「下巴」明显偏厚；收到 76 之后按钮行和状态栏只隔 12px。
         // 底部动作区高度。曾经试过「没有一键还原就收到 56」——实测按钮被挤到窗口边缘、
@@ -1369,6 +1370,17 @@ namespace Installer
             if (g == null && one == null) { MessageBox.Show("先右键点一行 MOD。"); return; }
 
             List<ModItem> parts = g != null ? g.Parts : new List<ModItem>(new ModItem[] { one });
+
+            // 从外部来源（GameBanana）装的：vpk 旁边有 .url.txt，直接开它自己的页面
+            foreach (ModItem p in parts)
+            {
+                if (p == null || string.IsNullOrEmpty(p.FullPath)) continue;
+                string side = p.FullPath + ".url.txt";
+                if (!File.Exists(side)) continue;
+                try { System.Diagnostics.Process.Start(File.ReadAllText(side).Trim()); } catch { }
+                return;
+            }
+
             string id = "";
             foreach (ModItem p in parts)
                 if (p != null && !string.IsNullOrEmpty(p.WorkshopId)) { id = p.WorkshopId.Trim(); break; }
@@ -5008,7 +5020,8 @@ namespace Installer
         {
             SafeInvoke(delegate
             {
-                lblStatus.Text = s;
+                statusBase = s;
+                lblStatus.Text = s + wsSuffix;
                 // 结果状态不只靠文字：失败/停止用强调色，部分完成用警告色，过程信息保持次级色。
                 if (s.IndexOf("失败", StringComparison.Ordinal) >= 0
                     || s.IndexOf("停止", StringComparison.Ordinal) >= 0
@@ -5019,6 +5032,17 @@ namespace Installer
                     lblStatus.ForeColor = Theme.Warn;
                 else
                     lblStatus.ForeColor = Theme.Ink2;
+            });
+        }
+
+        /// <summary>状态行常驻一句「工坊：离线」—— 别等用户点到推荐区才发现工坊不能用。</summary>
+        internal void NoteWorkshopOffline(bool off)
+        {
+            SafeInvoke(delegate
+            {
+                wsSuffix = off ? "　·　工坊：离线" : "";
+                lblStatus.Text = statusBase + wsSuffix;
+                lblStatus.ForeColor = off ? Theme.Accent : Theme.Ink2;
             });
         }
 
