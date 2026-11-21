@@ -384,6 +384,29 @@ namespace Installer
 
             FlatButton lines = SoftButton(s, Lang.S("测工坊线路"), 460, 52, 108, 28);
             lines.Click += delegate { TestLines(); };
+
+            FlatButton covers = SoftButton(s, Lang.S("补封面"), 460, 88, 108, 28);
+            covers.Click += delegate { BackfillCovers(); };
+        }
+
+        /// <summary>补封面：库里带工坊 ID 的 vpk，能安全写进去的把封面写进包，写不进的退回旁边放图。</summary>
+        private void BackfillCovers()
+        {
+            lblCfg.Text = Lang.S("正在补封面…");
+            System.Threading.Thread t = new System.Threading.Thread(delegate()
+            {
+                int failed = 0;
+                int ok = 0;
+                try { ok = Workshop.BackfillCovers(delegate(string s) { }, out failed); } catch { }
+                BeginInvoke((MethodInvoker)delegate()
+                {
+                    lblCfg.Text = Lang.F("配置：{0}", Core.CfgPath);
+                    MessageBox.Show(this, Lang.F("补封面完成：写进 vpk {0} 个，跳过 {1} 个。\r\n\r\n跳过的是多卷/带 preload 的包（重写有风险），仍用旁边的同名图片。", ok, failed),
+                        Lang.S("补封面"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                });
+            });
+            t.IsBackground = true;
+            t.Start();
         }
 
         /// <summary>

@@ -2309,16 +2309,74 @@ namespace Installer
                 string dir = Path.GetDirectoryName(savedPath);
                 string stem = Path.GetFileNameWithoutExtension(savedPath);
                 if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(stem)) return;
+                byte[] b = WsNet.GetBytes(FixImageUrl(it.Preview), Ua, 15000);
+                if (b == null || b.Length < 64) return;
+                // 优先塞进 vpk（游戏和程序看到同一份，目录里也不多一个文件）
+                if (savedPath.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase) && VpkPack.InjectImage(savedPath, b))
+                {
+                    CleanSidecarImages(dir, stem);       // 旧版本在旁边留过同名图，顺手清掉
+                    Core.Log("OK", "工坊：封面已写进 vpk " + Path.GetFileName(savedPath));
+                    return;
+                }
                 string low = it.Preview.ToLowerInvariant();
                 string ext = low.Contains(".png") ? ".png" : (low.Contains(".gif") ? ".gif" : ".jpg");
                 string dst = Path.Combine(dir, stem + ext);
-                if (File.Exists(dst) && new FileInfo(dst).Length > 1024) return;     // 已经在（重下同一份）就不重复拉
-                byte[] b = WsNet.GetBytes(it.Preview, Ua, 15000);
-                if (b == null || b.Length < 64) return;
+                if (File.Exists(dst) && new FileInfo(dst).Length > 1024) return;
                 File.WriteAllBytes(dst, b);
                 Core.Log("OK", "工坊：预览图已保存 " + Path.GetFileName(dst));
             }
             catch (Exception ex) { Core.Log("WARN", "工坊：预览图保存失败 " + ex.Message); }
+        }
+
+        /// <summary>删掉旧版本留在 vpk 旁边的同名封面，保持目录干净。</summary>
+        static void CleanSidecarImages(string dir, string stem)
+        {
+            foreach (string e in new string[] { ".jpg", ".jpeg", ".png", ".gif" })
+            {
+                try { string p = Path.Combine(dir, stem + e); if (File.Exists(p)) File.Delete(p); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 补封面：库里带工坊 ID 的 vpk，逐个取 preview_url 塞进包（addonimage.jpg）。
+        /// 返回补成功几个，failed 返回失败几个。
+        /// </summary>
+        internal static int BackfillCovers(Action<string> stage, out int failed)
+        {
+            failed = 0;
+            int ok = 0;
+            try
+            {
+                List<ModItem> mods = Core.ModList;
+                List<string> ids = new List<string>();
+                foreach (ModItem m in mods)
+                {
+                    if (m == null || string.IsNullOrEmpty(m.WorkshopId) || string.IsNullOrEmpty(m.FullPath)) continue;
+                    if (!m.FullPath.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!ids.Contains(m.WorkshopId)) ids.Add(m.WorkshopId);
+                }
+                if (ids.Count == 0) { if (stage != null) stage("库里没有带工坊 ID 的 vpk，没什么可补的"); return 0; }
+                if (stage != null) stage("要补 " + ids.Count + " 个物品的封面…");
+                List<WsItem> items = Fetch(ids);
+                Dictionary<string, string> prev = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (WsItem it in items) if (it != null && !string.IsNullOrEmpty(it.Preview)) prev[it.Id] = it.Preview;
+                int idx = 0;
+                foreach (ModItem m in mods)
+                {
+                    if (m == null || string.IsNullOrEmpty(m.WorkshopId) || string.IsNullOrEmpty(m.FullPath)) continue;
+                    if (!m.FullPath.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase)) continue;
+                    idx++;
+                    string url;
+                    if (!prev.TryGetValue(m.WorkshopId, out url)) { failed++; continue; }
+                    byte[] b = null;
+                    try { b = WsNet.GetBytes(FixImageUrl(url), Ua, 15000); } catch { }
+                    if (b == null || b.Length < 64) { failed++; continue; }
+                    if (VpkPack.InjectImage(m.FullPath, b)) ok++; else failed++;
+                    if (stage != null) stage("补封面 " + idx + "/" + ids.Count + (ok > 0 ? "（成功 " + ok + "）" : ""));
+                }
+            }
+            catch { }
+            return ok;
         }
 
         /// <summary>

@@ -165,6 +165,145 @@ namespace Installer
             return files.Count;
         }
 
+        private sealed class Ent
+        {
+            public string Ext = "", Path = "", Name = "";
+            public uint Crc, Offset, Length;
+            public int Preload;
+            public int Archive;
+        }
+
+        static string ReadStr(byte[] b, ref int p)
+        {
+            int s = p;
+            while (p < b.Length && b[p] != 0) p++;
+            string v = Encoding.ASCII.GetString(b, s, Math.Max(0, p - s));
+            if (p < b.Length) p++;
+            return v;
+        }
+
+        /// <summary>
+        /// 往现成的 vpk 里塞一张封面（addonimage.jpg），不额外留同名图片文件。
+        /// 做法是把原 vpk 拆开重写：目录表照抄、数据段照搬，只多一条 jpg 记录。
+        /// 只处理单文件 v1/v2（L4D2 的工坊包基本都是），多卷或带 preload 的直接放弃，交给调用方兜底。
+        /// </summary>
+        public static bool InjectImage(string vpkPath, byte[] jpg)
+        {
+            if (!File.Exists(vpkPath) || jpg == null || jpg.Length < 64) return false;
+            try
+            {
+                byte[] all = File.ReadAllBytes(vpkPath);
+                if (all.Length < 12) return false;
+                uint sig = BitConverter.ToUInt32(all, 0);
+                uint ver = BitConverter.ToUInt32(all, 4);
+                uint tree = BitConverter.ToUInt32(all, 8);
+                if (sig != 0x55AA1234 || tree == 0) return false;
+                int hdr = 12 + (ver == 2 ? 16 : 0);
+                int treeEnd = hdr + (int)tree;
+                if (treeEnd > all.Length) return false;
+
+                List<Ent> ents = new List<Ent>();
+                int p = hdr;
+                while (p + 1 < treeEnd && !(all[p] == 0xFF && all[p + 1] == 0xFF))
+                {
+                    string ext = ReadStr(all, ref p);
+                    while (p + 1 < treeEnd && !(all[p] == 0xFF && all[p + 1] == 0xFF))
+                    {
+                        string dir = ReadStr(all, ref p);
+                        while (p + 1 < treeEnd && !(all[p] == 0xFF && all[p + 1] == 0xFF))
+                        {
+                            Ent e = new Ent();
+                            e.Ext = ext; e.Path = dir; e.Name = ReadStr(all, ref p);
+                            if (p + 16 > all.Length) return false;
+                            e.Crc = BitConverter.ToUInt32(all, p); p += 4;
+                            e.Preload = BitConverter.ToUInt16(all, p); p += 2;
+                            e.Archive = BitConverter.ToUInt16(all, p); p += 2;
+                            e.Offset = BitConverter.ToUInt32(all, p); p += 4;
+                            e.Length = BitConverter.ToUInt32(all, p); p += 4;
+                            ents.Add(e);
+                        }
+                        p += 2;
+                    }
+                    p += 2;
+                }
+
+                if (ver != 1) return false;          // v2 头结构不同，不去动它
+                // 实测大量现成 vpk 是多卷（数据在 _001.vpk 等分卷里）或带 preload，
+                // 这种包重写极易写坏 —— 宁可退回旁边放图，也不冒险动用户 20MB 的包。
+                foreach (Ent e in ents)
+                    if (e.Archive != 0x7FFF || e.Preload != 0) return false;
+
+                // preload 区紧跟在目录表后面，数据区起点 = treeEnd + 所有 preload 之和
+                long totalPreload = 0;
+                foreach (Ent e in ents) totalPreload += e.Preload;
+                if (treeEnd + totalPreload > all.Length) return false;
+
+                // 旧封面在目录表里就先摘掉，新封面追加到文件尾部（不动别的条目一个字节）
+                ents.RemoveAll(delegate(Ent e) { return e.Ext == "jpg" && e.Path.Length == 0 && string.Equals(e.Name, "addonimage", StringComparison.OrdinalIgnoreCase); });
+
+                Ent img = new Ent();
+                img.Ext = "jpg"; img.Path = ""; img.Name = "addonimage";
+                img.Crc = Crc(jpg);
+                img.Archive = 0x7FFF;
+                img.Preload = 0;
+                img.Offset = (uint)Math.Max(0, (all.Length - treeEnd) - totalPreload);
+                img.Length = (uint)jpg.Length;
+                ents.Add(img);
+
+                // 按扩展名 → 路径 → 名称排序后写树（原有条目的字段原样照抄）
+                ents.Sort(delegate(Ent x, Ent y)
+                {
+                    int c = string.Compare(x.Ext, y.Ext, StringComparison.Ordinal); if (c != 0) return c;
+                    c = string.Compare(x.Path, y.Path, StringComparison.Ordinal); if (c != 0) return c;
+                    return string.Compare(x.Name, y.Name, StringComparison.Ordinal);
+                });
+
+                MemoryStream t = new MemoryStream();
+                string curExt = null, curPath = null;
+                foreach (Ent e in ents)
+                {
+                    if (e.Ext != curExt)
+                    {
+                        if (curExt != null) { WriteU16(t, 0xFFFF); }
+                        WriteStr(t, e.Ext); curExt = e.Ext; curPath = null;
+                    }
+                    if (e.Path != curPath)
+                    {
+                        if (curPath != null) { WriteU16(t, 0xFFFF); }
+                        WriteStr(t, e.Path); curPath = e.Path;
+                    }
+                    WriteStr(t, e.Name);
+                    WriteU32(t, e.Crc); WriteU16(t, e.Preload); WriteU16(t, e.Archive);
+                    WriteU32(t, e.Offset); WriteU32(t, e.Length);
+                }
+                WriteU16(t, 0xFFFF);
+                WriteU16(t, 0xFFFF);
+                WriteU16(t, 0xFFFF);
+
+                string tmp = vpkPath + ".tmpimg";
+                using (FileStream fs = new FileStream(tmp, FileMode.Create, FileAccess.Write))
+                {
+                    WriteU32(fs, 0x55AA1234);
+                    WriteU32(fs, 1);
+                    WriteU32(fs, (uint)t.Length);
+                    t.WriteTo(fs);
+                    fs.Write(all, treeEnd, all.Length - treeEnd);   // 原有 preload + 数据区，原样照搬
+                    fs.Write(jpg, 0, jpg.Length);                   // 新封面追加在最后
+                }
+                File.Delete(vpkPath);
+                File.Move(tmp, vpkPath);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        static uint Crc2(byte[] b, int start, int len)
+        {
+            uint c = 0xFFFFFFFFu;
+            for (int i = 0; i < len; i++) c = Table[(c ^ b[start + i]) & 0xFF] ^ (c >> 8);
+            return c ^ 0xFFFFFFFFu;
+        }
+
         static void WriteStr(Stream s, string v)
         {
             byte[] b = Encoding.ASCII.GetBytes(v ?? "");
