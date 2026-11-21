@@ -4023,6 +4023,7 @@ namespace Installer
             recAutoRetries = 0;            // 用户主动重试：自动重试额度重新给满
             recKey = "";
             recOkKey = "";                 // 换一换 = 要新的一批；不清掉会命中「已成功」短路，点着没反应
+            recBusyKey = "";               // 正在搜的时候点换一换也要真的重开一批
             PrepareRecommend();
         }
 
@@ -4031,6 +4032,7 @@ namespace Installer
         private string recBusyKey = "";   // 正在搜的键（同一位置重复触发时别再发一遍）
         private string recOkKey = "";     // 已经成功展示过的键（同一位置不重复打接口）
         private string recLastWant = "";  // 上一次是哪个位置在要推荐：换位置时重试计数归零
+        private int recBusyGen;           // 在途请求的代次：旧请求回来时别把新请求的 busy 标记清掉
 
         /// <summary>把一段诊断文本塞进剪贴板 —— 傻瓜用户的「反馈」就这一步。</summary>
         private void CopyWorkshopDiag()
@@ -4069,6 +4071,7 @@ namespace Installer
             recKey = want;
             recBusyKey = want;
             int gen = ++recGen;
+            recBusyGen = gen;
             recPanel.Visible = true;
             recTitle.Text = Lang.S("工坊推荐：正在搜…");
             ShowRecSkeleton();
@@ -4130,7 +4133,7 @@ namespace Installer
                 {
                     BeginInvoke((MethodInvoker)delegate
                     {
-                        if (gen != recGen) { if (recBusyKey == want) recBusyKey = ""; foreach (Image p in pics) { try { p.Dispose(); } catch { } } return; }
+                        if (gen != recGen) { if (recBusyGen == gen) recBusyKey = ""; foreach (Image p in pics) { try { p.Dispose(); } catch { } } return; }
                         if (got == null)
                         {
                             // 失败不留「已成功」标记：下次切回这个位置会重新试，不用用户点「换一换」
