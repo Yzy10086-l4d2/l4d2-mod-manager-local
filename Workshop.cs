@@ -403,8 +403,15 @@ namespace Installer
                     string host = HostOf(url);
                     if (host == null) return null;
                     // API 与 CDN 的域名 SNI 在国内会被掐，走同集群未阻断的 Akamai 前置域名（SNI Fronting + 原 Host 头）
-                    // 前置握手比直连慢半拍，给足 6 秒，别用 2.5 秒的档位上限把它判死
-                    if (CanFrontHost(host)) return TryGetFronted(url, ua, Math.Max(cap, 6000), FrontDomain, null);
+                    // 前置握手慢，工坊详情页是 75~130KB 的 HTML，实测要 7~10 秒传完：网页给 20 秒，接口给 8 秒。
+                    // （以前一律 6 秒，于是「主站」永远判不通，连带配套 MOD 识别也失效）
+                    if (CanFrontHost(host))
+                    {
+                        int fc = host.EndsWith("steamcommunity.com", StringComparison.OrdinalIgnoreCase)
+                            ? Math.Max(cap, 20000)
+                            : Math.Max(cap, 8000);
+                        return TryGetFronted(url, ua, fc, FrontDomain, null);
+                    }
                     if (!ResolveByPublicDns(host)) return null;
                     return TryGet(url, ua, cap, IsPinHost(host), null);
                 }
@@ -634,6 +641,9 @@ namespace Installer
             catch (Exception ex)
             {
                 NoteFail(ex);
+                // 前置域名这次不通：把选中的那个作废，下次重新探一轮（否则会一直抱着一个坏域名）
+                if (!string.IsNullOrEmpty(frontHost))
+                    lock (gate) { if (string.Equals(frontChosen, frontHost, StringComparison.OrdinalIgnoreCase)) frontChosen = null; }
                 return null;
             }
         }
@@ -1442,7 +1452,7 @@ namespace Installer
             if (d.Length > 0) b.Append("探针：").Append(d).Append("\r\n");
             string w; lock (gate) { w = lastWhy ?? ""; }
             if (w.Length > 0) b.Append("判定：").Append(w).Append("\r\n");
-            b.Append("已试：直连 → 系统代理 → 公共 DNS");
+            b.Append("已试：直连 → 系统代理 → Akamai 前置（公共 DNS）");
             return b.ToString();
         }
 
