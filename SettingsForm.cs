@@ -328,15 +328,23 @@ namespace Installer
             RowNote(s, Lang.S("同一文件切成两段同时下；服务器不支持或任一段失败会自动退回单连接。效果看线路，不灵就关掉"), 292, 108, 250);
         }
 
+        /// <summary>
+        /// 「怎么拿 key」：开向导，一步一步走完再把 key 交回输入框。
+        /// 真正落盘仍归「保存设置」—— 向导不另开一处写配置的地方。
+        /// </summary>
         private void ShowApiKeyHelp()
         {
-            MessageBox.Show(this,
-                Lang.S("key 在 Steam 官网页上拿，拿到后粘到左边输入框，保存设置即可。") + "\r\n\r\n" +
-                Lang.S("1. 打开 steamcommunity.com/dev/apikey（网页打不开时，用 Steam 客户端里的内置浏览器，或手机开流量）") + "\r\n" +
-                Lang.S("2. 登录 Steam，按提示填个名字（随便写，例如 l4d2local）") + "\r\n" +
-                Lang.S("3. 把得到的一长串字符粘进来，点「保存设置」") + "\r\n\r\n" +
-                Lang.S("这个 key 只存在你自己电脑的配置文件里，不上传任何地方。"),
-                Lang.S("怎么拿 Steam API key"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+            using (KeyGuideForm w = new KeyGuideForm(txtApiKey == null ? "" : txtApiKey.Text.Trim()))
+            {
+                if (w.ShowDialog(this) != DialogResult.OK) return;
+                if (txtApiKey != null)
+                {
+                    txtApiKey.Text = w.Key;
+                    txtApiKey.SelectionStart = txtApiKey.Text.Length;
+                    txtApiKey.SelectionLength = 0;
+                }
+                UpdateKeyState();
+            }
         }
 
         /// <summary>key 那一行状态：填没填、API 现在通不通。</summary>
@@ -844,6 +852,259 @@ namespace Installer
             });
             th.IsBackground = true;
             th.Start();
+        }
+    }
+
+    /// <summary>
+    /// 「怎么拿 Steam API key」向导：把这件唯一要用户自己动手的事拆成 5 步，
+    /// 一路「下一步」走完，和新手机开机引导同一个节奏 —— 一屏只讲一件事，随时看到还剩几步。
+    ///
+    /// 为什么值得单独一个窗口：原来是一整段 MessageBox 文字，用户得边读边切浏览器、
+    /// 再自己找回输入框；这里把「为什么需要」「去哪拿」「填什么」「粘进来验一下」
+    /// 收进同一条路径，最后一步把 key 原样交回设置窗口，落盘仍由「保存设置」负责。
+    /// </summary>
+    internal sealed class KeyGuideForm : Form
+    {
+        private const int Steps = 5;
+        private const int Pad = 28;      // 左/右内边距，与设置窗口同一档
+        private const int W = 520;
+        private const int Ht = 520;
+
+        private int step;
+        private Label lblTitle, lblStep, lblHint, lblResult;
+        private Panel[] bar = new Panel[Steps];
+        private FlatButton btnBack, btnNext, btnOpen, btnTest;
+        private TextBox txtKey;
+        private bool testing;
+
+        /// <summary>向导里填的 key（已去首尾空格）。调用方负责把它塞回设置窗口。</summary>
+        internal string Key { get { return txtKey == null ? "" : txtKey.Text.Trim(); } }
+
+        public KeyGuideForm(string current)
+        {
+            Theme.UseDpi(this);
+            Text = Lang.S("怎么拿 Steam API key");
+            ClientSize = Dpi.Sz(W, Ht);
+            Font = Theme.UI;
+            BackColor = Theme.Bg;
+            ForeColor = Theme.Ink;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.CenterParent;
+            DoubleBuffered = true;
+            KeyPreview = true;
+
+            lblTitle = new Label();
+            lblTitle.SetBounds(Pad, 24, W - Pad * 2, 32);
+            lblTitle.Font = Theme.H1;
+            Theme.Dress(lblTitle);
+            lblTitle.ForeColor = Theme.Ink;
+            Controls.Add(lblTitle);
+
+            lblStep = new Label();
+            lblStep.SetBounds(Pad, 60, 300, 16);
+            lblStep.Font = Theme.UISmall;
+            Theme.Dress(lblStep);
+            lblStep.ForeColor = Theme.Ink3;
+            Controls.Add(lblStep);
+
+            // 进度：5 小段。走过的填 Accent，没走的填 Line —— 一眼知道还差几步。
+            int segW = (W - Pad * 2 - (Steps - 1) * 6) / Steps;
+            for (int i = 0; i < Steps; i++)
+            {
+                bar[i] = new Panel();
+                bar[i].SetBounds(Pad + i * (segW + 6), 82, segW, 4);
+                bar[i].BackColor = Theme.Line;
+                Controls.Add(bar[i]);
+            }
+
+            lblHint = new Label();
+            lblHint.SetBounds(Pad, 104, W - Pad * 2, 200);
+            lblHint.Font = Theme.UI;
+            Theme.Dress(lblHint);
+            lblHint.ForeColor = Theme.Ink2;
+            Controls.Add(lblHint);
+
+            // 第 2 步：打开申请页
+            btnOpen = new FlatButton();
+            btnOpen.Text = Lang.S("打开申请页");
+            btnOpen.Soft = true;
+            btnOpen.SetBounds(Pad, 312, 132, Theme.H);
+            btnOpen.Click += delegate { OpenPage(); };
+            Controls.Add(btnOpen);
+
+            // 第 4 步：粘 key + 实测
+            txtKey = new TextBox();
+            txtKey.SetBounds(Pad, 312, 300, 26);
+            txtKey.BorderStyle = BorderStyle.FixedSingle;
+            txtKey.Font = Theme.UI;
+            txtKey.Text = current == null ? "" : current;
+            Theme.Dress(txtKey);
+            Controls.Add(txtKey);
+
+            btnTest = new FlatButton();
+            btnTest.Text = Lang.S("测试一下");
+            btnTest.Soft = true;
+            btnTest.SetBounds(Pad + 312, 312, 100, 26);
+            btnTest.Click += delegate { RunTest(); };
+            Controls.Add(btnTest);
+
+            lblResult = new Label();
+            lblResult.SetBounds(Pad, 348, W - Pad * 2, 44);
+            lblResult.Font = Theme.UISmall;
+            Theme.Dress(lblResult);
+            lblResult.ForeColor = Theme.Ink3;
+            Controls.Add(lblResult);
+
+            btnBack = new FlatButton();
+            btnBack.Text = Lang.S("上一步");
+            btnBack.SetBounds(Pad, 464, 84, Theme.H);
+            btnBack.Click += delegate { if (step > 0) ShowStep(step - 1); };
+            Controls.Add(btnBack);
+
+            btnNext = new FlatButton();
+            btnNext.Text = Lang.S("下一步");
+            btnNext.Primary = true;
+            btnNext.SetBounds(W - Pad - 112, 464, 112, Theme.H);
+            btnNext.Click += delegate { Next(); };
+            Controls.Add(btnNext);
+
+            AcceptButton = btnNext;
+            KeyDown += delegate(object s, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Escape) { DialogResult = DialogResult.Cancel; Close(); }
+            };
+            Load += delegate { Theme.ApplyChrome(this); };
+            Shown += delegate { Theme.ApplyChrome(this); Theme.DeepNative(this); };
+
+            ShowStep(0);
+        }
+
+        /// <summary>画某一屏：标题 / 正文 / 该屏专属控件 / 进度条 / 按钮文案，一处改完。</summary>
+        private void ShowStep(int i)
+        {
+            step = i;
+            bool isOpen = i == 1, isPaste = i == 3;
+            btnOpen.Visible = isOpen;
+            txtKey.Visible = isPaste;
+            btnTest.Visible = isPaste;
+            lblResult.Visible = isPaste && lblResult.Text.Length > 0;
+            btnBack.Visible = i > 0;
+            btnNext.Text = Lang.S(i == Steps - 1 ? "完成" : (i == 0 ? "开始" : "下一步"));
+            lblStep.Text = Lang.F("第 {0} 步 · 共 {1} 步", i + 1, Steps);
+            for (int k = 0; k < Steps; k++) bar[k].BackColor = k <= i ? Theme.Accent : Theme.Line;
+
+            switch (i)
+            {
+                case 0:
+                    lblTitle.Text = Lang.S("为什么需要这个 key");
+                    lblHint.Text =
+                        Lang.S("全站搜索走的是 Steam 官方接口，它要求每个用户自己申请一个 key。") + "\r\n\r\n" +
+                        Lang.S("不填也能用：按 MOD ID 搜索、粘贴合集链接导入，照样能装。") + "\r\n\r\n" +
+                        Lang.S("key 只写进你这台机器的配置文件，不会上传到任何地方。");
+                    break;
+                case 1:
+                    lblTitle.Text = Lang.S("第一步 · 打开申请页");
+                    lblHint.Text =
+                        Lang.S("在浏览器里打开下面这个页面，用你的 Steam 账号登录：") + "\r\n\r\n" +
+                        "https://steamcommunity.com/dev/apikey\r\n\r\n" +
+                        Lang.S("打不开的话：用 Steam 客户端自带的浏览器，或者手机开流量打开，再把 key 抄过来。");
+                    break;
+                case 2:
+                    lblTitle.Text = Lang.S("第二步 · 页面上怎么填");
+                    lblHint.Text =
+                        Lang.S("· 域名那一栏随便写，例如 l4d2local —— 它只是个标记，不影响使用") + "\r\n\r\n" +
+                        Lang.S("· 勾上同意条款，点「注册」") + "\r\n\r\n" +
+                        Lang.S("· 页面会显示一串 32 位的字母加数字，这就是 key") + "\r\n\r\n" +
+                        Lang.S("看到之后先点一次「复制」，下一步粘进来。");
+                    break;
+                case 3:
+                    lblTitle.Text = Lang.S("第三步 · 粘进来");
+                    lblHint.Text =
+                        Lang.S("把复制到的 key 粘到下面，点「测试一下」确认能用。") + "\r\n\r\n" +
+                        Lang.S("测试只查两件事：这台机器连不连得上 Steam 接口、这个 key 认不认。");
+                    break;
+                default:
+                    lblTitle.Text = Lang.S("完成了");
+                    lblHint.Text =
+                        Lang.S("点「完成」，key 会填进设置窗口的输入框。") + "\r\n\r\n" +
+                        Lang.S("记得再点一次「保存设置」—— 只有那一步才真正写进配置文件。");
+                    break;
+            }
+        }
+
+        private void Next()
+        {
+            if (step == 3)
+            {
+                if (Key.Length == 0)
+                {
+                    ShowResult(Lang.S("还没粘 key。拿不到也没关系：直接关掉这个窗口，以后在设置里补。"), false);
+                    return;
+                }
+                if (Key.Length < 20)
+                {
+                    ShowResult(Lang.S("这串太短了，key 是 32 位 —— 多半没复制全，回去再复制一次。"), false);
+                    return;
+                }
+            }
+            if (step >= Steps - 1) { DialogResult = DialogResult.OK; Close(); return; }
+            ShowStep(step + 1);
+        }
+
+        private void OpenPage()
+        {
+            try { Process.Start("https://steamcommunity.com/dev/apikey"); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, Lang.S("打不开浏览器"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        /// <summary>实测放后台线程：接口慢的时候窗口不能卡成假死，按钮置灰就够说明它在跑。</summary>
+        private void RunTest()
+        {
+            if (testing) return;
+            string key = Key;
+            if (key.Length < 20)
+            {
+                ShowResult(Lang.S("先粘上完整的 key（32 位）再测。"), false);
+                return;
+            }
+
+            testing = true;
+            btnTest.Enabled = false;
+            ShowResult(Lang.S("正在测试…"), true);
+
+            Thread th = new Thread(delegate()
+            {
+                string why = "";
+                try { why = Workshop.TestApiKey(key); }
+                catch (Exception ex) { why = ex.Message; }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate()
+                    {
+                        testing = false;
+                        btnTest.Enabled = true;
+                        if (why.Length == 0) ShowResult(Lang.S("能用：这个 key 通过了 Steam 接口的验证。"), true);
+                        else ShowResult(why, false);
+                    });
+                }
+                catch { }
+            });
+            th.IsBackground = true;
+            th.Start();
+        }
+
+        private void ShowResult(string text, bool ok)
+        {
+            if (lblResult == null) return;
+            lblResult.Text = text;
+            lblResult.ForeColor = ok ? Theme.Ok : Theme.Warn;
+            if (step == 3) lblResult.Visible = true;
         }
     }
 }

@@ -470,7 +470,18 @@ namespace Installer
                     }
                     catch { }
                 }
-                if (n > 0) Log("INFO", "清掉上次中断留下的临时文件 " + n + " 个（*.part）");
+                // 分片下载的临时目录也在系统临时目录里：上次强退留下的整目录一起清（含里面的 p0…p7）
+                foreach (string d in Directory.GetDirectories(Path.GetTempPath(), "l4d2dl-*"))
+                {
+                    try
+                    {
+                        if (Directory.GetLastWriteTimeUtc(d) > cutoff) continue;
+                        Directory.Delete(d, true);
+                        n++;
+                    }
+                    catch { }
+                }
+                if (n > 0) Log("INFO", "清掉上次中断留下的临时文件 " + n + " 个（*.part / 分片目录）");
             }
             catch { }
         }

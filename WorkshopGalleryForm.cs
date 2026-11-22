@@ -1127,7 +1127,7 @@ namespace Installer
                 {
                     if (token != detailToken) return;          // 期间换了条目：结果丢掉
                     translating = false;
-                    if (!busy) barLoad.Visible = false;        // 正在下载就让人家接着走，别抢进度条
+                    if (WorkshopDownloads.RunningCount == 0) barLoad.Visible = false;   // 有下载在跑就让人家接着走，别抢进度条
                     bool ok = zh != null && zh.Length > 0 && zh != clean;
                     if (ok)
                     {
@@ -1170,6 +1170,8 @@ namespace Installer
                 b.Font = Theme.UISmall;
                 string t = "• " + (string.IsNullOrEmpty(rq.Title) ? rq.Id : rq.Title);
                 if (t.Length > 44) t = t.Substring(0, 43) + "…";
+                // 已经是本机有的：标出来，别让人以为还得再下一遍（用户 2026-11-22 要求）
+                if (Workshop.IsInstalledLocally(rq.Id, rq.Title)) t += Lang.S("　·　已装");
                 b.Text = t;
                 b.Height = S(21);
                 b.Width = Math.Max(S(120), detail.ClientSize.Width - S(8));
@@ -1208,6 +1210,7 @@ namespace Installer
             foreach (WsItem rq in depItems)
             {
                 if (rq == null || string.IsNullOrEmpty(rq.Id)) continue;
+                if (Workshop.IsInstalledLocally(rq.Id, rq.Title)) continue;   // 本机已有：不再重下
                 ids.Add(rq.Id);
                 if (ids.Count <= 8) names += "\r\n  · " + (string.IsNullOrEmpty(rq.Title) ? rq.Id : rq.Title);
             }
@@ -1354,7 +1357,15 @@ namespace Installer
         private void DownloadOne()
         {
             WsItem it = detailItem;
-            if (busy || it == null) return;
+            if (it == null) return;
+            // 只有「这一条自己已经在下载」才拦。以前用窗口级 busy 一刀切：
+            // 后台在下别的东西、或者列表正在搜，点击都被静默吞掉，表现就是「点了没反应，要多点几次」（用户 2026-11-22 反馈）
+            foreach (WsDownload d in WorkshopDownloads.All())
+                if (d.Running && string.Equals(d.Id, it.Id, StringComparison.Ordinal))
+                {
+                    lblState.Text = Lang.S("这个 MOD 正在下载中…");
+                    return;
+                }
             if (it.Id.StartsWith("gb", StringComparison.Ordinal)) { DownloadGb(it); return; }
 
             // 本机已经订阅并下好：直接复制进 addons，一个字节都不下载
@@ -1399,22 +1410,31 @@ namespace Installer
             catch (Exception ex) { lblState.Text = ex.Message; return; }
 
             // Steam 工坊式询问：有配套就选「只下这个」还是「连配套一起下」（用户 2026-11-21 要求）
+            // 只有「本机还没有」的配套才值得问；已经装了的直接跳过（用户 2026-11-22 要求）
+            List<WsItem> missingDeps = new List<WsItem>();
+            foreach (WsItem d in depItems)
+                if (d != null && !Workshop.IsInstalledLocally(d.Id, d.Title)) missingDeps.Add(d);
             bool withDeps = false;
-            if (depItems.Count > 0)
+            if (missingDeps.Count > 0)
             {
                 string names = "";
-                for (int i = 0; i < Math.Min(6, depItems.Count); i++)
-                    names += "\r\n  · " + (string.IsNullOrEmpty(depItems[i].Title) ? depItems[i].Id : depItems[i].Title);
-                if (depItems.Count > 6) names += "\r\n  · …";
+                for (int i = 0; i < Math.Min(6, missingDeps.Count); i++)
+                    names += "\r\n  · " + (string.IsNullOrEmpty(missingDeps[i].Title) ? missingDeps[i].Id : missingDeps[i].Title);
+                if (missingDeps.Count > 6) names += "\r\n  · …";
+                int owned = depItems.Count - missingDeps.Count;
                 DialogResult dr = MessageBox.Show(this,
-                    Lang.F("这个 MOD 需要以下配套物品（{0} 个）：{1}\r\n\r\n「是」= 连配套一起下载\r\n「否」= 只下载这个 MOD\r\n「取消」= 先不下",
-                           depItems.Count, names),
+                    Lang.F("这个 MOD 需要以下配套物品（{0} 个还没装）：{1}{2}\r\n\r\n「是」= 连配套一起下载\r\n「否」= 只下载这个 MOD\r\n「取消」= 先不下",
+                           missingDeps.Count, names,
+                           owned > 0 ? Lang.F("\r\n\r\n另外 {0} 个配套本机已经有了，不会重复下。", owned) : ""),
                     Lang.S("有配套 MOD"), MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
                 if (dr == DialogResult.Cancel) return;
                 withDeps = dr == DialogResult.Yes;
             }
+            else if (depItems.Count > 0)
+            {
+                lblState.Text = Lang.S("配套 MOD 本机都已装，直接下这个。");
+            }
 
-            busy = true;
             btnGet.Enabled = false;
             lblState.Text = Lang.S("正在下载…");
             // 下载是有明确进度的，别用不确定的跑马灯：切成实进度条，百分比同时写在左边
@@ -1435,9 +1455,12 @@ namespace Installer
                         int pct = total > 0 ? (int)Math.Min(100, got * 100 / total) : 0;
                         Ui(delegate()
                         {
+                            WorkshopDownloads.Progress(it.Id, got, total);       // 记录永远按 id 记，谁下的记谁
+                            // 进度条和状态文字只属于「当前正在看的这一条」：
+                            // 后台还挂着别的下载时，它们的回调不许动这条的进度条（用户 2026-11-22 反馈：点了 b，进度显示的是 a 的）
+                            if (detailItem == null || !string.Equals(detailItem.Id, it.Id, StringComparison.Ordinal)) return;
                             lblState.Text = "正在下载 " + pct + "%  ·  " + Core.Human(got) + " / " + Core.Human(total);
                             try { if (pct >= 0 && pct <= 100) barLoad.Value = pct; } catch { }
-                            WorkshopDownloads.Progress(it.Id, got, total);
                         });
                     });
                     // 容器不是 vpk 时 Download 会改扩展名，以实际落盘路径为准
@@ -1452,15 +1475,16 @@ namespace Installer
                     Workshop.RememberDownload(it.Id, name, it.Updated, savedSize);   // 记 id→文件名/更新时间/大小：检查更新要用
                     Ui(delegate()
                     {
-                        busy = false;
-                        EndDownBar();
+                        bool mine = detailItem != null && string.Equals(detailItem.Id, it.Id, StringComparison.Ordinal);
+                        if (mine) EndDownBar();
                         btnGet.Enabled = true;
                         grid.DownloadedIds.Add(it.Id);
                         grid.Invalidate();
                         long sz = 0;
                         try { sz = new FileInfo(dest).Length; } catch { }
                         WorkshopDownloads.Finish(it.Id, true, dest, sz, "");
-                        lblState.Text = "已下载到库里：" + name + (note.Length > 0 ? "（" + note + "）" : "（已自动刷新方案树）");
+                        if (mine)
+                            lblState.Text = "已下载到库里：" + name + (note.Length > 0 ? "（" + note + "）" : "（已自动刷新方案树）");
                         // 下完立刻刷主界面，不用等关窗（用户 2026-11-21 反馈）
                         try { if (owner != null) owner.RefreshAfterImport(name); } catch { }
                         // 用户在提示里选了「连配套一起下」：主件落库后接着下配套
@@ -1472,11 +1496,11 @@ namespace Installer
                 {
                     Ui(delegate()
                     {
-                        busy = false;
-                        EndDownBar();
+                        bool mine = detailItem != null && string.Equals(detailItem.Id, it.Id, StringComparison.Ordinal);
+                        if (mine) EndDownBar();
                         btnGet.Enabled = true;
                         WorkshopDownloads.Finish(it.Id, false, "", 0, ex.Message);
-                        lblState.Text = "下载失败：" + ex.Message;
+                        if (mine) lblState.Text = "下载失败：" + ex.Message;
                     });
                     Core.Log("FAIL", "画廊下载失败 " + it.Id + ": " + ex.Message);
                 }
@@ -1496,7 +1520,6 @@ namespace Installer
         /// <summary>GameBanana：下载 → 解包 → 导入 addons → 重扫。整个过程在后台线程，界面只报进度。</summary>
         private void DownloadGb(WsItem it)
         {
-            busy = true;
             busySince = DateTime.Now;
             btnGet.Enabled = false;
             lblState.Text = Lang.S("正在从 GameBanana 下载并安装…");
@@ -1526,7 +1549,6 @@ namespace Installer
                 }
                 Ui(delegate()
                 {
-                    busy = false;
                     btnGet.Enabled = true;
                     barLoad.Visible = false;
                     lblState.Text = msg;
@@ -1616,10 +1638,24 @@ namespace Installer
                 {
                     int pct = rec.Size > 0 ? (int)Math.Min(100, rec.Got * 100 / rec.Size) : 0;
                     lblState.Text = Lang.S("后台下载中 ") + pct + "%  ·  " + rec.SizeText;
+                    // 进度条也要亮出来：以前这里只改一行文字，用户切到详情页以为「根本没在下」（2026-11-22 反馈）
+                    if (rec.Size > 0)
+                    {
+                        barLoad.Style = ProgressBarStyle.Continuous;
+                        barLoad.Minimum = 0;
+                        barLoad.Maximum = 100;
+                        try { barLoad.Value = pct; } catch { }
+                    }
+                    else
+                    {
+                        barLoad.Style = ProgressBarStyle.Marquee;
+                        barLoad.MarqueeAnimationSpeed = 30;
+                    }
+                    barLoad.Visible = true;
                     btnGet.Enabled = false;
                 }
-                else if (rec.Status == "ok") { lblState.Text = Lang.S("已下载完成"); btnGet.Enabled = true; }
-                else if (rec.Status == "fail") { lblState.Text = Lang.S("下载失败：") + rec.Error; btnGet.Enabled = true; }
+                else if (rec.Status == "ok") { EndDownBar(); lblState.Text = Lang.S("已下载完成"); btnGet.Enabled = true; }
+                else if (rec.Status == "fail") { EndDownBar(); lblState.Text = Lang.S("下载失败：") + rec.Error; btnGet.Enabled = true; }
             }
             catch { }
         }

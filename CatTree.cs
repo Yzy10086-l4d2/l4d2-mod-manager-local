@@ -4117,10 +4117,12 @@ namespace Installer
                     steamTh = new System.Threading.Thread(delegate() { try { steamGot = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { } });
                     steamTh.IsBackground = true;
                     steamTh.Start();
-                    // 体检确认主站这条线是活的：多等一会儿（it 通常会响），别刚发出去就判定失败。
-                    // 没体检结果时保守等 1.2s；刚失败过仍只等 200ms，不在死路上耗。
-                    int waitMs = WsNet.SteamJustFailed ? 200
-                        : (WsNet.SteamProbed && WsNet.SteamRouteAlive ? 2200 : 1200);
+                    // 填了 API key 且 API 活、或网页主站活：给足 3.5 秒（首次 TLS + 拉 30 条约 1~2 秒）；
+                    // 只有既没 key 且网页刚失败过时才缩短到 200ms。
+                    bool apiAlive = Workshop.HasApiKey && !WsNet.ApiOffline && WsNet.ApiRouteAlive;
+                    bool webAlive = WsNet.SteamProbed && WsNet.SteamRouteAlive;
+                    int waitMs = (apiAlive || webAlive) ? 3500
+                        : (WsNet.SteamJustFailed ? 200 : 1500);
                     steamTh.Join(waitMs);
                 }
                 if (steamGot != null && steamGot.Count > 0) got = steamGot;
@@ -4288,7 +4290,7 @@ namespace Installer
             foreach (WsItem oi in okItems) { if (oi.Id.StartsWith("gb", StringComparison.Ordinal)) { fromGb = true; break; } }
             bool noKey = !Workshop.HasApiKey;
             recTitle.Text = (fromGb ? Lang.S("GameBanana 推荐 · ") : Lang.S("工坊推荐 · ")) + q
-                + (fromGb && noKey ? Lang.S("　（填 key 可搜 Steam 全站）") : "");
+                + (noKey ? Lang.S("　（未填 Steam API key：搜不了全站，去「设置 → 怎么拿 key」）") : "");
             if (mf != null && !fromGb) mf.NoteWorkshopOffline(false);   // 走 GameBanana 时 Steam 其实还挂着
         }
 

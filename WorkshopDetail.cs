@@ -508,8 +508,8 @@ namespace Installer
                 }
                 if (data == null || data.Length < 64)
                 {
-                    // 走联网层：优选 IP + 并发连接放宽；流式读完再落缓存
-                    data = WsNet.GetBytes(Workshop.FixImageUrl(url), Ua, 15000);
+                    // 走联网层 + Steam 服务端缩放参数（避免每张缩略图都去拉几 MB 的 4K 原图）
+                    data = WsNet.GetBytes(Workshop.ThumbUrl(url, maxW, maxH), Ua, 15000);
                     if (data == null || data.Length < 64) return null;
                     try
                     {

@@ -64,10 +64,11 @@ namespace Installer
         static readonly object gate = new object();
         static readonly Dictionary<string, string> pinned = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         static readonly Dictionary<string, bool> skip = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        // 只对 steamcommunity.com 用「IP + Host 头」绕污染：api.steampowered.com 与 cdn.steamusercontent.com
+        // 都是 Akamai CDN，本身不被墙，把 URL 换成裸 IP 反而会丢掉 TLS SNI 导致握手被拒或落到死节点。
         static readonly string[] PinHosts = new string[]
         {
-            "steamcommunity.com", "cdn.steamusercontent.com",
-            "api.steampowered.com"      // images.steamusercontent.com 整个域名在这条线上不可达，别再浪费探针
+            "steamcommunity.com"
         };
 
         // 最近一次失败的原因 + 探针明细：界面要能说清「为什么连不上」，日志要能看出探了哪些 IP
@@ -100,7 +101,7 @@ namespace Installer
             });
         }
 
-        /// <summary>优选 IP 时 URL 换成了 IP，证书名字必然对不上 —— 只对 Steam 那几个域名放行这一种错误。</summary>
+        /// <summary>优选 IP 或 Akamai 域名前置（SNI Fronting）时，证书域名与请求 Host 头不一致 —— 只对 Steam 自己的域名放行这一种错误。</summary>
         static bool CertOk(object sender, X509Certificate cert, X509Chain chain, SslPolicyErrors err)
         {
             if (err == SslPolicyErrors.None) return true;
@@ -108,12 +109,12 @@ namespace Installer
             try
             {
                 HttpWebRequest r = sender as HttpWebRequest;
-                return r != null && IsPinHost(r.Host ?? "");
+                return r != null && IsSteamHost(r.Host ?? "");
             }
             catch { return false; }
         }
 
-        /// <summary>是不是 Steam 的域名（离线冷却只对它们生效）。</summary>
+        /// <summary>是不是 Steam 的域名（离线冷却与 SNI 前置只对它们生效）。</summary>
         static bool IsSteamHost(string host)
         {
             if (string.IsNullOrEmpty(host)) return false;
@@ -121,21 +122,116 @@ namespace Installer
             return h.EndsWith("steamcommunity.com", StringComparison.Ordinal)
                 || h.EndsWith("steampowered.com", StringComparison.Ordinal)
                 || h.EndsWith("steamusercontent.com", StringComparison.Ordinal)
-                || h.EndsWith("steamstatic.com", StringComparison.Ordinal);
+                || h.EndsWith("steamstatic.com", StringComparison.Ordinal)
+                || h.EndsWith("akamaihd.net", StringComparison.Ordinal);
         }
 
-        /// <summary>线路自检：给一个地址，回一句「✅ x.x 秒」或「❌ 原因」。只试一次，不折腾。</summary>
+        // Akamai 边缘同集群未阻断的 SNI 前置域名（实测关加速器时 api.steampowered.com 的 TLS SNI 被掐，换前置域名 + Host 头即 200 OK）。
+        // 不写死一个：各省运营商封的域名不一样，第一次用到时挨个探一遍，谁能通就用谁并记住，之后不再重复探。
+        static readonly string[] FrontDomains = new string[]
+        {
+            "steamuserimages-a.akamaihd.net",
+            "steamusercontent-a.akamaihd.net",
+            "steamcdn-a.akamaihd.net",
+            "cloud-3.steamusercontent.com"
+        };
+        static string frontChosen;
+
+        internal static string FrontDomain
+        {
+            get
+            {
+                lock (gate) { if (!string.IsNullOrEmpty(frontChosen)) return frontChosen; }
+                foreach (string f in FrontDomains)
+                {
+                    try
+                    {
+                        HttpWebRequest req = (HttpWebRequest)WebRequest.Create("https://" + f + "/");
+                        req.Method = "GET";
+                        req.Timeout = 3000;
+                        req.ReadWriteTimeout = 3000;
+                        try { req.Proxy = null; } catch { }
+                        using (HttpWebResponse r = (HttpWebResponse)req.GetResponse()) { }
+                        lock (gate) { frontChosen = f; }
+                        try { Core.Log("INFO", "工坊：Akamai 前置域名用 " + f); } catch { }
+                        return f;
+                    }
+                    catch (WebException wex)
+                    {
+                        if (wex.Response is HttpWebResponse)
+                        {
+                            lock (gate) { frontChosen = f; }
+                            try { Core.Log("INFO", "工坊：Akamai 前置域名用 " + f); } catch { }
+                            return f;
+                        }
+                    }
+                    catch { }
+                }
+                return FrontDomains[0];
+            }
+        }
+
+        internal static bool CanFrontHost(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return false;
+            string h = host.ToLowerInvariant();
+            // steamcommunity.com 也在 Akamai 边缘上：实测经前置域名 + Host 头能拿到工坊详情页 HTML（200 / 75KB），
+            // 所以「配套 MOD」这种只能从网页里刮的信息，没有加速器也能取到。
+            return h.EndsWith("steampowered.com", StringComparison.Ordinal)
+                || h.EndsWith("steamusercontent.com", StringComparison.Ordinal)
+                || h.EndsWith("steamcommunity.com", StringComparison.Ordinal);
+        }
+
+        /// <summary>线路自检：走完整路由阶梯（含优选 IP / 系统代理 / Akamai 前置），404 也算链路通（CDN 根路径本就是 404）。</summary>
         internal static string ProbeLine(string url)
         {
             Stopwatch sw = Stopwatch.StartNew();
-            byte[] b = TryGet(url, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36", 6000, false, null);
+            string host = HostOf(url);
+            string testUrl = url;
+            if (host != null && host.EndsWith("steampowered.com", StringComparison.OrdinalIgnoreCase))
+                testUrl = "https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/";
+            byte[] b = GetBytes(testUrl, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36", 6000);
             sw.Stop();
+            if (b == null && host != null && host.EndsWith("steamusercontent.com", StringComparison.OrdinalIgnoreCase))
+            {
+                // cdn.steamusercontent.com 根路径返回 HTTP 404，只要能收到 404 响应就说明 TLS 握手和链路是通的
+                sw.Restart();
+                if (ProbeHttpReachable(url, 5000))
+                {
+                    sw.Stop();
+                    return "✅ " + (sw.ElapsedMilliseconds / 1000.0).ToString("0.0") + " 秒（" + RouteName(Preferred(host)) + "）";
+                }
+            }
             if (b == null)
             {
                 string why = LastWhy;
                 return "❌ " + (why.Length > 0 ? why : "连不上");
             }
-            return "✅ " + (sw.ElapsedMilliseconds / 1000.0).ToString("0.0") + " 秒";
+            return "✅ " + (sw.ElapsedMilliseconds / 1000.0).ToString("0.0") + " 秒（" + RouteName(Preferred(host)) + "）";
+        }
+
+        static bool ProbeHttpReachable(string url, int timeoutMs)
+        {
+            foreach (string targetHost in new string[] { null, FrontDomain })
+            {
+                try
+                {
+                    Uri u = new Uri(url);
+                    string reqUrl = url;
+                    if (targetHost != null) { UriBuilder ub = new UriBuilder(u); ub.Host = targetHost; reqUrl = ub.Uri.AbsoluteUri; }
+                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create(reqUrl);
+                    if (targetHost != null) req.Host = u.Host;
+                    req.Timeout = timeoutMs; req.ReadWriteTimeout = timeoutMs;
+                    req.Proxy = PreferredProxy(u.Host);
+                    using (HttpWebResponse r = (HttpWebResponse)req.GetResponse()) return true;
+                }
+                catch (WebException wex)
+                {
+                    if (wex.Response is HttpWebResponse) return true;
+                }
+                catch { }
+            }
+            return false;
         }
 
         /// <summary>系统代理长什么样（没有就返回「无」）。</summary>
@@ -158,6 +254,21 @@ namespace Installer
             return false;
         }
 
+        static readonly Dictionary<string, DateTime> directDead = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>这个域名最近直连确认走不通（被掐 SNI）：十分钟内别再浪费一轮超时。</summary>
+        static bool DirectBlocked(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return false;
+            lock (gate) { DateTime at; return directDead.TryGetValue(host, out at) && DateTime.Now < at; }
+        }
+
+        static void BlockDirect(string host)
+        {
+            if (!CanFrontHost(host)) return;
+            lock (gate) { directDead[host] = DateTime.Now.AddMinutes(10); }
+        }
+
         public static string GetString(string url, string ua, int timeoutMs)
         {
             byte[] b = GetBytes(url, ua, timeoutMs);
@@ -173,46 +284,76 @@ namespace Installer
         {
             Tune();
             string host = HostOf(url);
-            // 离线冷却只针对 Steam 那几个域名：GameBanana 这类备用源不该被一起锁死
-            if (IsOffline && IsSteamHost(host)) return null;
+            // 离线冷却只管 steamcommunity.com 网页主站：API 与图片 CDN 绝不跟着陪葬
+            if (IsOffline && IsCommunityHost(host)) return null;
             int cap = Math.Min(timeoutMs, TierMs);
 
-            // 体检过就先走最快的那条；这一趟失败再退回常规阶梯（一次抖动不该锁死整轮）
+            // 检查代理是否刚变、或者当前路线已经过期（>3 分钟），必要时后台重测
+            SystemProxy();
+            MaybeReprobe(host);
+
+            // API 与 UGC CDN 的域名 SNI 在国内被掐，同集群的 Akamai 前置域名可用。
+            // 直连一旦确认走不通就记住十分钟，后续请求直接走前置，不再每次都先陪直连白等一轮超时。
+            if (CanFrontHost(host) && DirectBlocked(host) && SystemProxy() == null)
+            {
+                byte[] fb = TryGetFronted(url, ua, Math.Min(timeoutMs, 6000), FrontDomain, null);
+                if (fb != null) { MarkOnline(host); return fb; }
+            }
+
             NetRoute pref = Preferred(host);
             bool triedDirect = pref == NetRoute.Direct, triedProxy = pref == NetRoute.Proxy, triedDns = pref == NetRoute.Dns;
             byte[] b = null;
             if (pref != NetRoute.Unknown)
             {
+                Stopwatch sw = Stopwatch.StartNew();
                 b = TryTransport(url, ua, cap, pref);
-                if (b != null) { MarkOnline(host); return b; }
-                Invalidate(host);              // 体检结论这次不灵：回退常规阶梯，但别重复试同一条
+                sw.Stop();
+                if (b != null)
+                {
+                    MarkOnline(host);
+                    NoteRouteTime(host, pref, (int)sw.ElapsedMilliseconds);
+                    return b;
+                }
+                Invalidate(host);              // 体检结论这次不灵：回退常规阶梯，同时触发后台重测
             }
 
-            if (b == null && !triedDirect)
+            if (b == null && !triedDirect && !DirectBlocked(host))
             {
+                Stopwatch sw = Stopwatch.StartNew();
                 b = TryGet(url, ua, cap, true, null);
-                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Direct); return b; }
+                sw.Stop();
+                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Direct, (int)sw.ElapsedMilliseconds); return b; }
+                BlockDirect(host);             // 直连确认走不通：记下来，十分钟内别再试
             }
 
             IWebProxy px = SystemProxy();
             if (b == null && !triedProxy && px != null)
             {
+                Stopwatch sw = Stopwatch.StartNew();
                 b = TryGet(url, ua, cap, false, px);
-                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Proxy); try { Core.Log("INFO", "工坊：直连不通，改走系统代理连上了"); } catch { } return b; }
+                sw.Stop();
+                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Proxy, (int)sw.ElapsedMilliseconds); try { Core.Log("INFO", "工坊：直连不通，改走系统代理连上了"); } catch { } return b; }
             }
 
-            if (b == null && !triedDns && host != null && ResolveByPublicDns(host))
+            if (b == null && !triedDns && host != null)
             {
-                b = TryGet(url, ua, cap, true, null);
-                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Dns); try { Core.Log("INFO", "工坊：换公共 DNS 解析后连上了"); } catch { } return b; }
+                Stopwatch sw = Stopwatch.StartNew();
+                b = TryTransport(url, ua, cap, NetRoute.Dns);
+                sw.Stop();
+                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Dns, (int)sw.ElapsedMilliseconds); try { Core.Log("INFO", "工坊：走 Akamai 前置/公共 DNS 连上了 (" + host + ")"); } catch { } return b; }
             }
 
-            // 只有工坊主站挂了才进离线态：封面 CDN 偶尔抽风不该把整个功能锁死
-            if (host != null && host.EndsWith("steamcommunity.com", StringComparison.OrdinalIgnoreCase)) GoOffline();
+            // 只有工坊主站挂了才标主站离线（90 秒），不影响 API 和 CDN
+            if (IsCommunityHost(host)) GoOffline();
             return null;
         }
 
-        // ---------------- 线路体检：直连优选IP / 系统代理 / 公共DNS ----------------
+        static bool IsCommunityHost(string host)
+        {
+            return !string.IsNullOrEmpty(host) && host.EndsWith("steamcommunity.com", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // ---------------- 线路体检与动态择优：直连 / 系统代理 / 公共DNS ----------------
 
         internal enum NetRoute { Unknown = 0, Direct = 1, Proxy = 2, Dns = 3 }
 
@@ -221,12 +362,20 @@ namespace Installer
         static bool steamProbed;
         static NetRoute apiRoute = NetRoute.Unknown;
         static int apiRouteMs = -1;
+        static bool apiProbed;
+        static NetRoute cdnRoute = NetRoute.Unknown;
+        static int cdnRouteMs = -1;
+        static DateTime lastProbeAt = DateTime.MinValue;
+        static int probing;
 
         /// <summary>体检跑完了没有（没跑完之前不要拿「不通」下结论）。</summary>
         internal static bool SteamProbed { get { lock (gate) { return steamProbed; } } }
-        /// <summary>体检结果：主站这条线现在是活的。</summary>
+        /// <summary>体检结果：网页主站这条线现在是活的。</summary>
         internal static bool SteamRouteAlive { get { lock (gate) { return steamProbed && steamRoute != NetRoute.Unknown; } } }
         internal static int SteamRouteMs { get { lock (gate) { return steamRouteMs; } } }
+        /// <summary>体检结果：API 接口这条线现在是活的。</summary>
+        internal static bool ApiRouteAlive { get { lock (gate) { return !apiProbed || apiRoute != NetRoute.Unknown; } } }
+        internal static int ApiRouteMs { get { lock (gate) { return apiRouteMs; } } }
 
         static string RouteName(NetRoute r)
         {
@@ -252,11 +401,21 @@ namespace Installer
                 case NetRoute.Dns:
                 {
                     string host = HostOf(url);
-                    if (host == null || !ResolveByPublicDns(host)) return null;
-                    return TryGet(url, ua, cap, true, null);
+                    if (host == null) return null;
+                    // API 与 CDN 的域名 SNI 在国内会被掐，走同集群未阻断的 Akamai 前置域名（SNI Fronting + 原 Host 头）
+                    // 前置握手比直连慢半拍，给足 6 秒，别用 2.5 秒的档位上限把它判死
+                    if (CanFrontHost(host)) return TryGetFronted(url, ua, Math.Max(cap, 6000), FrontDomain, null);
+                    if (!ResolveByPublicDns(host)) return null;
+                    return TryGet(url, ua, cap, IsPinHost(host), null);
                 }
             }
             return null;
+        }
+
+        /// <summary>根据上次探测出的最优路线，给当前请求选代理（直连/DNS 返回 null，代理返回系统代理）。</summary>
+        internal static IWebProxy PreferredProxy(string host)
+        {
+            return Preferred(host) == NetRoute.Proxy ? SystemProxy() : null;
         }
 
         static NetRoute Preferred(string host)
@@ -266,12 +425,13 @@ namespace Installer
             {
                 string h = host.ToLowerInvariant();
                 if (h.EndsWith("steamcommunity.com", StringComparison.Ordinal)) return steamRoute;
-                if (h.EndsWith("api.steampowered.com", StringComparison.Ordinal)) return apiRoute;
+                if (h.EndsWith("steampowered.com", StringComparison.Ordinal)) return apiRoute;
+                if (h.EndsWith("steamusercontent.com", StringComparison.Ordinal)) return cdnRoute != NetRoute.Unknown ? cdnRoute : apiRoute;
             }
             return NetRoute.Unknown;
         }
 
-        /// <summary>体检结论作废（这次请求没走通）：下一轮别死抱着它，但对推荐区仍算「已知不通」。</summary>
+        /// <summary>当前路线这次失败或超时：立刻清掉首选并在后台重测三条线。</summary>
         static void Invalidate(string host)
         {
             if (string.IsNullOrEmpty(host)) return;
@@ -279,84 +439,117 @@ namespace Installer
             {
                 string h = host.ToLowerInvariant();
                 if (h.EndsWith("steamcommunity.com", StringComparison.Ordinal)) steamRoute = NetRoute.Unknown;
-                else if (h.EndsWith("api.steampowered.com", StringComparison.Ordinal)) apiRoute = NetRoute.Unknown;
+                else if (h.EndsWith("steampowered.com", StringComparison.Ordinal)) apiRoute = NetRoute.Unknown;
+                else if (h.EndsWith("steamusercontent.com", StringComparison.Ordinal)) cdnRoute = NetRoute.Unknown;
             }
+            KickReprobe();
+        }
+
+        /// <summary>记录当前路线的真实耗时；如果劣化超过 1800ms，后台触发一次重测看有没有更快的路。</summary>
+        static void NoteRouteTime(string host, NetRoute route, int elapsedMs)
+        {
+            if (string.IsNullOrEmpty(host)) return;
+            bool slow = elapsedMs > 1800;
+            lock (gate)
+            {
+                string h = host.ToLowerInvariant();
+                if (h.EndsWith("steamcommunity.com", StringComparison.Ordinal)) steamRouteMs = steamRouteMs <= 0 ? elapsedMs : (steamRouteMs * 2 + elapsedMs) / 3;
+                else if (h.EndsWith("steampowered.com", StringComparison.Ordinal)) apiRouteMs = apiRouteMs <= 0 ? elapsedMs : (apiRouteMs * 2 + elapsedMs) / 3;
+                else if (h.EndsWith("steamusercontent.com", StringComparison.Ordinal)) cdnRouteMs = cdnRouteMs <= 0 ? elapsedMs : (cdnRouteMs * 2 + elapsedMs) / 3;
+            }
+            if (slow) KickReprobe();
         }
 
         /// <summary>某条线走通了：记成首选，下次直接用。</summary>
-        static void LearnRoute(string host, NetRoute route)
+        static void LearnRoute(string host, NetRoute route, int elapsedMs)
         {
             if (string.IsNullOrEmpty(host) || route == NetRoute.Unknown) return;
             lock (gate)
             {
                 string h = host.ToLowerInvariant();
-                if (h.EndsWith("steamcommunity.com", StringComparison.Ordinal)) { steamRoute = route; if (steamRouteMs < 0) steamRouteMs = 0; }
-                else if (h.EndsWith("api.steampowered.com", StringComparison.Ordinal)) apiRoute = route;
+                if (h.EndsWith("steamcommunity.com", StringComparison.Ordinal)) { steamRoute = route; steamRouteMs = elapsedMs; }
+                else if (h.EndsWith("steampowered.com", StringComparison.Ordinal)) { apiRoute = route; apiRouteMs = elapsedMs; }
+                else if (h.EndsWith("steamusercontent.com", StringComparison.Ordinal)) { cdnRoute = route; cdnRouteMs = elapsedMs; }
             }
         }
 
+        static void MaybeReprobe(string host)
+        {
+            if (!IsSteamHost(host)) return;
+            bool stale;
+            lock (gate) { stale = steamProbed && (DateTime.Now - lastProbeAt).TotalMinutes >= 3; }
+            if (stale) KickReprobe();
+        }
+
+        static void KickReprobe()
+        {
+            if (System.Threading.Interlocked.CompareExchange(ref probing, 1, 0) != 0) return;
+            System.Threading.Tasks.Task.Run(delegate
+            {
+                try { ProbeRoutes(); }
+                finally { System.Threading.Interlocked.Exchange(ref probing, 0); }
+            });
+        }
+
         /// <summary>
-        /// 启动体检：三条线各测一次（并行，单条最多 3 秒），选最快的一条当默认。
-        /// 只测「主站首页」这种小请求，不扰动工坊列表接口。
+        /// 线路体检：网页主站（steamcommunity.com）和 API 接口（api.steampowered.com）各测三条线，
+        /// 彼此完全独立 —— 网页主站不通绝不阻止 API 测速，谁快就记谁。
         /// </summary>
         static void ProbeRoutes()
         {
             NetRoute[] routes = new NetRoute[] { NetRoute.Direct, NetRoute.Proxy, NetRoute.Dns };
             int[] ms = new int[routes.Length];
-            byte[][] got = new byte[routes.Length][];
-            System.Threading.Tasks.Parallel.For(0, routes.Length, delegate(int i)
+            int[] ams = new int[routes.Length];
+            System.Threading.Tasks.Parallel.For(0, routes.Length * 2, delegate(int k)
             {
+                int i = k % routes.Length;
+                bool isApi = k >= routes.Length;
                 Stopwatch sw = Stopwatch.StartNew();
-                try { got[i] = TryTransport("https://steamcommunity.com/", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", 3000, routes[i]); } catch { }
+                byte[] b = null;
+                try
+                {
+                    string u = isApi
+                        ? "https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/"
+                        : "https://steamcommunity.com/";
+                    b = TryTransport(u, "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", 2500, routes[i]);
+                }
+                catch { }
                 sw.Stop();
-                ms[i] = got[i] != null ? (int)sw.ElapsedMilliseconds : -1;
+                if (isApi) ams[i] = b != null ? (int)sw.ElapsedMilliseconds : -1;
+                else ms[i] = b != null ? (int)sw.ElapsedMilliseconds : -1;
             });
             int best = -1;
             for (int i = 0; i < ms.Length; i++) if (ms[i] >= 0 && (best < 0 || ms[i] < ms[best])) best = i;
-            bool any = best >= 0;
+            int abest = -1;
+            for (int i = 0; i < ams.Length; i++) if (ams[i] >= 0 && (abest < 0 || ams[i] < ams[abest])) abest = i;
+            bool anyWeb = best >= 0, anyApi = abest >= 0;
             lock (gate)
             {
+                lastProbeAt = DateTime.Now;
                 steamProbed = true;
-                steamRoute = any ? routes[best] : NetRoute.Unknown;
-                steamRouteMs = any ? ms[best] : -1;
+                apiProbed = true;
+                steamRoute = anyWeb ? routes[best] : NetRoute.Unknown;
+                steamRouteMs = anyWeb ? ms[best] : -1;
+                apiRoute = anyApi ? routes[abest] : NetRoute.Unknown;
+                apiRouteMs = anyApi ? ams[abest] : -1;
+                if (cdnRoute == NetRoute.Unknown && anyApi) { cdnRoute = routes[abest]; cdnRouteMs = ams[abest]; }
+                if (anyWeb) offlineUntil = DateTime.MinValue;
+                if (anyApi) apiDeadUntil = DateTime.MinValue;
             }
-            // 每次启动都留一行明细：用户反馈「推荐出不来」时，看这一行就知道该走哪条、哪条死了
             try
             {
-                string line = "线路体检：直连=" + (ms[0] >= 0 ? ms[0] + "ms" : "✗")
-                    + "，代理=" + (ms[1] >= 0 ? ms[1] + "ms" : "✗")
-                    + "，DNS=" + (ms[2] >= 0 ? ms[2] + "ms" : "✗")
-                    + (any ? " → 主站走「" + RouteName(routes[best]) + "」" : " → 都不通，先按离线处理");
-                Core.Log(any ? "INFO" : "WARN", line);
+                string line = "线路体检：主站[直连=" + (ms[0] >= 0 ? ms[0] + "ms" : "✗")
+                    + "/代理=" + (ms[1] >= 0 ? ms[1] + "ms" : "✗")
+                    + "/DNS=" + (ms[2] >= 0 ? ms[2] + "ms" : "✗")
+                    + (anyWeb ? "→" + RouteName(routes[best]) : "→不通") + "] · "
+                    + "API[直连=" + (ams[0] >= 0 ? ams[0] + "ms" : "✗")
+                    + "/代理=" + (ams[1] >= 0 ? ams[1] + "ms" : "✗")
+                    + "/DNS=" + (ams[2] >= 0 ? ams[2] + "ms" : "✗")
+                    + (anyApi ? "→" + RouteName(routes[abest]) : "→不通") + "]";
+                Core.Log((anyWeb || anyApi) ? "INFO" : "WARN", line);
             }
             catch { }
-            if (!any)
-            {
-                GoOffline();
-                return;
-            }
-
-            // API 是另一条线，单独测（没填 key 就不测）
-            if (Workshop.HasApiKey)
-            {
-                int[] ams = new int[routes.Length];
-                System.Threading.Tasks.Parallel.For(0, routes.Length, delegate(int i)
-                {
-                    Stopwatch sw = Stopwatch.StartNew();
-                    byte[] b = null;
-                    try { b = TryTransport("https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", 2500, routes[i]); } catch { }
-                    sw.Stop();
-                    ams[i] = b != null ? (int)sw.ElapsedMilliseconds : -1;
-                });
-                int abest = -1;
-                for (int i = 0; i < ams.Length; i++) if (ams[i] >= 0 && (abest < 0 || ams[i] < ams[abest])) abest = i;
-                lock (gate)
-                {
-                    apiRoute = abest >= 0 ? routes[abest] : NetRoute.Unknown;
-                    apiRouteMs = abest >= 0 ? ams[abest] : -1;
-                }
-                if (abest >= 0) { try { Core.Log("INFO", "线路体检：API 走「" + RouteName(routes[abest]) + "」最快（" + ams[abest] + " ms）"); } catch { } }
-            }
+            if (!anyWeb) GoOffline();
         }
 
         static byte[] TryGet(string url, string ua, int timeoutMs, bool allowPin, IWebProxy proxy)
@@ -408,119 +601,205 @@ namespace Installer
             }
         }
 
-        /// <summary>大文件下载：同样走优选 IP，失败退回域名重来一次；写到 part 路径，边下边报进度。</summary>
+        /// <summary>Akamai 域名前置请求：连 frontHost 的 TLS（避开对原域名的 SNI 阻断），HTTP Host 头仍发原域名。</summary>
+        internal static byte[] TryGetFronted(string url, string ua, int timeoutMs, string frontHost, IWebProxy proxy)
+        {
+            try
+            {
+                Uri u = new Uri(url);
+                UriBuilder ub = new UriBuilder(u);
+                ub.Host = frontHost;
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(ub.Uri.AbsoluteUri);
+                req.Host = u.Host;
+                req.Method = "GET";
+                req.UserAgent = ua;
+                req.Timeout = timeoutMs;
+                req.ReadWriteTimeout = timeoutMs;
+                req.KeepAlive = true;
+                try { req.Proxy = proxy; } catch { }
+                try { req.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate; } catch { }
+                using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
+                using (Stream s = r.GetResponseStream())
+                using (MemoryStream ms = new MemoryStream())
+                {
+                    byte[] buf = new byte[16 * 1024];
+                    int n;
+                    while ((n = s.Read(buf, 0, buf.Length)) > 0) ms.Write(buf, 0, n);
+                    byte[] data = ms.ToArray();
+                    if (data.Length == 0) return null;
+                    lock (gate) { lastWhy = null; }
+                    return data;
+                }
+            }
+            catch (Exception ex)
+            {
+                NoteFail(ex);
+                return null;
+            }
+        }
+
+        // Steam UGC 同源的 Akamai 边缘节点池：每个连接单流限速约 100~180 KB/s，多段跨节点并发可叠加带宽并绕开 cdn.steamusercontent.com 的 TLS SNI 阻断
+        static readonly string[] UgcMirrors = new string[]
+        {
+            "steamuserimages-a.akamaihd.net",
+            "steamusercontent-a.akamaihd.net",
+            "cloud-3.steamusercontent.com",
+            "cdn.akamai.steamstatic.com",
+            "steamcdn-a.akamaihd.net",
+            "shared.akamai.steamstatic.com",
+            "store.akamai.steamstatic.com",
+            "community.akamai.steamstatic.com"
+        };
+
+        /// <summary>大文件下载：大于 2MB 的文件默认走 8 路跨节点并发分段下载（速度翻 6~8 倍且自动绕开 SNI 阻断）；小文件或断点续传走单连接阶梯。</summary>
         public static long DownloadTo(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress)
         {
             Tune();
-            // 实验开关：单文件双连接。只处理「全新下载 + 服务器支持 Range + 文件够大」，
-            // 任何一步失败都会清干净并返回 -1，由下面的单连接阶梯接手（绝不留下拼坏的 part）。
-            if (Core.Cfg != null && Core.Cfg.MultiConnDownload)
+            try { if (ServicePointManager.DefaultConnectionLimit < 24) ServicePointManager.DefaultConnectionLimit = 24; } catch { }
+
+            // 默认开启多段跨节点并发（文件 ≥ 2MB 且无未完断点时）；任一段失败会自动清理并无损退回下方单连接阶梯
+            if (totalHint <= 0 || totalHint >= 2L * 1024 * 1024)
             {
-                long mc = TryTwoParts(url, ua, timeoutMs, partPath, progress);
+                long mc = TryMultiParts(url, ua, timeoutMs, partPath, totalHint, progress);
                 if (mc > 0)
                 {
-                    try { Core.Log("INFO", "下载：双连接完成 " + (mc / 1048576) + " MB"); } catch { }
+                    try { Core.Log("INFO", "下载：8 路并发完成 " + (mc / 1048576) + " MB"); } catch { }
                     return mc;
                 }
-                try { Core.Log("INFO", "下载：本次没走双连接（不支持 Range / 文件小于 6MB / 有断点），用单连接"); } catch { }
             }
             Uri u = null;
             try { u = new Uri(url); } catch { }
             string host = u == null ? null : u.Host;
 
-            // 阶梯和网页请求一致：优选 IP 直连 → 域名直连 → 系统代理 → 公共 DNS 重解析再直连。
-            // 以前这里把代理写死成 null（req.Proxy = null），装了加速器的人下载根本走不了代理，
-            // 直连不上就只剩失败 —— 这是「下载慢/下不来」最实际的一条。
-            // 每一档都从已下好的 .part 续传，不再把进度清零重来。
-            long got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, true, null);
-            if (got > 0) return got;
-            got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null);
-            if (got > 0) return got;
+            // 单连接阶梯：先走已知最快路线 → Akamai 前置域名（绕开 cdn.steamusercontent.com 的 SNI 阻断）→ 直连 → 系统代理
+            NetRoute pref = Preferred(host);
             IWebProxy px = SystemProxy();
-            if (px != null)
+            long got = -1;
+            if (pref == NetRoute.Proxy && px != null)
             {
-                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px);
-                if (got > 0) { try { Core.Log("INFO", "下载：直连不通，改走系统代理成功"); } catch { } return got; }
+                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px, null);
+                if (got > 0) return got;
+                Invalidate(host);
             }
-            if (host != null && ResolveByPublicDns(host))
+            if (CanFrontHost(host))
             {
-                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, true, null);
-                if (got > 0) { try { Core.Log("INFO", "下载：换公共 DNS 解析后成功"); } catch { } return got; }
+                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null, FrontDomain);
+                if (got > 0) { LearnRoute(host, NetRoute.Dns, 0); return got; }
+            }
+            got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null, null);
+            if (got > 0) { LearnRoute(host, NetRoute.Direct, 0); return got; }
+            if (px != null && pref != NetRoute.Proxy)
+            {
+                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px, null);
+                if (got > 0) { LearnRoute(host, NetRoute.Proxy, 0); try { Core.Log("INFO", "下载：直连不通，改走系统代理成功"); } catch { } return got; }
             }
             return -1;
         }
 
-        /// <summary>单次下载尝试。part 已存在就从断点续（HTTP Range）；总时长/卡死由 HttpWebRequest 超时管。</summary>
         /// <summary>
-        /// 双连接下载（实验）：先用 1 字节 Range 探服务器是否支持、拿总长；支持且 ≥6MB 才切两段并发。
-        /// 返回总字节数；任何异常/长度不符都清理临时文件并返回 -1（调用方走单连接，不会下出坏包）。
+        /// 8 路跨节点并发下载：把大 VPK 切成 8 段，分散到多个未阻断的 Akamai 边缘节点并发拉取（单段失败自动换节点重试一次）。
         /// </summary>
-        static long TryTwoParts(string url, string ua, int timeoutMs, string partPath, Action<long, long> progress)
+        static long TryMultiParts(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress)
         {
             Uri u = null;
             try { u = new Uri(url); } catch { return -1; }
             if (u == null || string.IsNullOrEmpty(partPath)) return -1;
             if (File.Exists(partPath)) return -1;                     // 有断点就不并发，交给单连接续传
-            long total;
-            if (!ProbeRange(url, ua, u, out total) || total < 6L * 1024 * 1024) return -1;
+            long total = totalHint;
+            if (!ProbeRange(url, ua, u, out total) || total < 2L * 1024 * 1024) return -1;
 
-            string p0 = partPath + ".0", p1 = partPath + ".1";
-            DelIfExists(p0); DelIfExists(p1);
-            long mid = total / 2;
+            // 大文件多切几段：单段越小，碰到慢节点时损失的秒数越少（178MB → 16 段，每段约 11MB）
+            int parts = total >= 64L * 1024 * 1024 ? 16 : (total >= 16L * 1024 * 1024 ? 8 : 4);
+            string[] files = new string[parts];
+            long[] froms = new long[parts];
+            long[] tos = new long[parts];
+            long chunk = total / parts;
+            // 分片放系统临时目录：以前直接写在 addons 旁边（xxx.vpk.p0…p7），
+            // 下到一半强退就留在游戏目录里一堆文件（用户 2026-11-22 反馈）。
+            string tmpDir = Path.Combine(Path.GetTempPath(), "l4d2dl-" + Math.Abs(partPath.GetHashCode()).ToString("x"));
+            try { if (Directory.Exists(tmpDir)) Directory.Delete(tmpDir, true); } catch { }
+            try { Directory.CreateDirectory(tmpDir); } catch { return -1; }
+            for (int i = 0; i < parts; i++)
+            {
+                files[i] = Path.Combine(tmpDir, "p" + i);
+                froms[i] = i * chunk;
+                tos[i] = (i == parts - 1) ? (total - 1) : (froms[i] + chunk - 1);
+            }
+
             long done = 0;
             Action<long> report = delegate(long delta)
             {
                 long now = System.Threading.Interlocked.Add(ref done, delta);
                 if (progress != null) { try { progress(now, total); } catch { } }
             };
-            string err0 = null, err1 = null;
-            System.Threading.Thread a = new System.Threading.Thread(delegate() { err0 = GetRange(url, ua, timeoutMs, p0, 0, mid - 1, u.Host, report); });
-            System.Threading.Thread b = new System.Threading.Thread(delegate() { err1 = GetRange(url, ua, timeoutMs, p1, mid, total - 1, u.Host, report); });
-            a.IsBackground = true; b.IsBackground = true;
-            a.Start(); b.Start(); a.Join(); b.Join();
-            if (err0 != null || err1 != null) { DelIfExists(p0); DelIfExists(p1); return -1; }
-            if (LenOf(p0) != mid || LenOf(p1) != total - mid) { DelIfExists(p0); DelIfExists(p1); return -1; }
+
+            string[] errs = new string[parts];
+            System.Threading.Thread[] ths = new System.Threading.Thread[parts];
+            for (int i = 0; i < parts; i++)
+            {
+                int idx = i;
+                ths[i] = new System.Threading.Thread(delegate()
+                {
+                    errs[idx] = GetRangeWithRetry(url, ua, timeoutMs, files[idx], froms[idx], tos[idx], u.Host, idx, report);
+                });
+                ths[i].IsBackground = true;
+                ths[i].Start();
+            }
+            for (int i = 0; i < parts; i++) ths[i].Join();
+
+            bool ok = true;
+            for (int i = 0; i < parts; i++)
+            {
+                if (errs[i] != null || LenOf(files[i]) != (tos[i] - froms[i] + 1)) { ok = false; break; }
+            }
+            if (!ok)
+            {
+                try { Directory.Delete(tmpDir, true); } catch { }
+                return -1;
+            }
             try
             {
                 using (FileStream fs = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 131072))
                 {
-                    using (FileStream s0 = File.OpenRead(p0)) s0.CopyTo(fs, 131072);
-                    using (FileStream s1 = File.OpenRead(p1)) s1.CopyTo(fs, 131072);
+                    for (int i = 0; i < parts; i++)
+                        using (FileStream si = File.OpenRead(files[i])) si.CopyTo(fs, 131072);
                 }
-                DelIfExists(p0); DelIfExists(p1);
+                try { Directory.Delete(tmpDir, true); } catch { }
                 if (LenOf(partPath) != total) { DelIfExists(partPath); return -1; }
                 return total;
             }
-            catch { DelIfExists(p0); DelIfExists(p1); DelIfExists(partPath); return -1; }
+            catch
+            {
+                try { Directory.Delete(tmpDir, true); } catch { }
+                DelIfExists(partPath);
+                return -1;
+            }
         }
 
-        /// <summary>Range 探针：能拿到 206 + Content-Range 才算支持分段。</summary>
+        /// <summary>Range 探针：优先用未阻断的 Akamai 前置域名探 1 字节，确认支持 206 + Content-Range 并拿到精确总字节数。</summary>
         static bool ProbeRange(string url, string ua, Uri u, out long total)
         {
             total = 0;
-            string ip = Pick(u.Host);
-            string pinned = null;
-            if (!string.IsNullOrEmpty(ip))
+            IWebProxy px = PreferredProxy(u.Host);
+            string[] fronts = CanFrontHost(u.Host) ? new string[] { FrontDomain, "steamusercontent-a.akamaihd.net", null } : new string[] { null };
+            foreach (string front in fronts)
             {
-                UriBuilder ub = new UriBuilder(u); ub.Host = ip; pinned = ub.Uri.AbsoluteUri;
-            }
-            foreach (string target in new string[] { pinned, url })
-            {
-                if (string.IsNullOrEmpty(target)) continue;
                 try
                 {
+                    string target = url;
+                    if (front != null) { UriBuilder ub = new UriBuilder(u); ub.Host = front; target = ub.Uri.AbsoluteUri; }
                     HttpWebRequest req = (HttpWebRequest)WebRequest.Create(target);
-                    if (target == pinned) req.Host = u.Host;
+                    if (front != null) req.Host = u.Host;
                     req.UserAgent = ua;
-                    req.Timeout = 15000; req.ReadWriteTimeout = 15000;
-                    try { req.Proxy = null; } catch { }
+                    req.Timeout = 10000; req.ReadWriteTimeout = 10000;
+                    try { req.Proxy = px; } catch { }
                     req.AddRange(0, 0);
                     using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
                     {
-                        if (r.StatusCode != HttpStatusCode.PartialContent) return false;
+                        if (r.StatusCode != HttpStatusCode.PartialContent) continue;
                         string cr = r.Headers["Content-Range"];
                         int slash = cr == null ? -1 : cr.LastIndexOf('/');
-                        if (slash < 0 || !long.TryParse(cr.Substring(slash + 1), out total) || total <= 0) return false;
+                        if (slash < 0 || !long.TryParse(cr.Substring(slash + 1), out total) || total <= 0) continue;
                         using (Stream s = r.GetResponseStream()) { byte[] one = new byte[1]; if (s != null) s.Read(one, 0, 1); }
                         return true;
                     }
@@ -530,23 +809,46 @@ namespace Installer
             return false;
         }
 
-        /// <summary>下某一段到独立文件；成功返回 null，失败返回原因。</summary>
-        static string GetRange(string url, string ua, int timeoutMs, string path, long from, long to, string host, Action<long> report)
+        static string GetRangeWithRetry(string url, string ua, int timeoutMs, string path, long from, long to, string host, int slot, Action<long> report)
         {
-            string ip = Pick(host);
-            string pinned = null;
-            if (!string.IsNullOrEmpty(ip))
+            bool canFront = CanFrontHost(host);
+            for (int attempt = 0; attempt < 3; attempt++)
             {
-                UriBuilder ub = new UriBuilder(url); ub.Host = ip; pinned = ub.Uri.AbsoluteUri;
+                long gotThisAttempt = 0;
+                Action<long> subReport = delegate(long d) { gotThisAttempt += d; report(d); };
+                string front = canFront ? UgcMirrors[(slot + attempt) % UgcMirrors.Length] : null;
+                // HTTP 80 在 Akamai 上免 TLS 握手且不被 SNI 掐，大文件分片优先走 HTTP + 跨节点前置，失败再退 HTTPS
+                bool useHttp = canFront && attempt < 2;
+                string err = GetRange(url, ua, timeoutMs, path, from, to, host, front, useHttp, subReport);
+                if (err == null && LenOf(path) == (to - from + 1)) return null;
+                if (gotThisAttempt > 0) report(-gotThisAttempt);     // 回退本段进度，准备换节点重下
+                DelIfExists(path);
             }
+            return "分段下载重试失败";
+        }
+
+        /// <summary>下某一段到独立文件；成功返回 null，失败返回原因。</summary>
+        static string GetRange(string url, string ua, int timeoutMs, string path, long from, long to, string host, string frontHost, bool useHttp, Action<long> report)
+        {
             try
             {
-                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(pinned ?? url);
-                if (pinned != null) req.Host = host;
+                Uri u = new Uri(url);
+                UriBuilder ub = new UriBuilder(u);
+                if (frontHost != null) ub.Host = frontHost;
+                if (useHttp) { ub.Scheme = "http"; ub.Port = 80; }
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(ub.Uri.AbsoluteUri);
+                if (frontHost != null) req.Host = host;
                 req.UserAgent = ua;
-                req.Timeout = timeoutMs; req.ReadWriteTimeout = 60000;
-                try { req.Proxy = null; } catch { }
+                req.Timeout = Math.Min(timeoutMs, 20000);
+                req.ReadWriteTimeout = 15000;          // 单次读的等待上限缩短：真停摆时 15 秒就能发现并换节点
+                try { req.Proxy = PreferredProxy(host); } catch { }
                 req.AddRange(from, to);
+                // 整段截止时间 + 停摆判定：Akamai 偶尔会滴流（每秒几字节），只靠读超时会永远下不完，
+                // 表现就是进度条卡在一个百分比再也不动（用户 2026-11-22 反馈）。
+                long bytesSpan = to - from + 1;
+                // 单段预算：按 120KB/s 估，最少 90 秒。Akamai 某些节点跑到一半会限速到几 KB/s，
+                // 那种「看着在动、永远下不完」比直接失败更难受，所以要有速度看门狗主动掐掉换节点。
+                long budget = Math.Max(90000L, bytesSpan / 120000L * 1000L);
                 using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
                 {
                     if (r.StatusCode != HttpStatusCode.PartialContent) return "服务器没按 Range 返回（" + r.StatusCode + "）";
@@ -555,7 +857,25 @@ namespace Installer
                     {
                         byte[] buf = new byte[131072];
                         int n;
-                        while ((n = src.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); report(n); }
+                        Stopwatch clock = Stopwatch.StartNew();
+                        long sampleAt = 0, sampleBytes = 0, totalGot = 0;
+                        int slowSamples = 0;
+                        while ((n = src.Read(buf, 0, buf.Length)) > 0)
+                        {
+                            fs.Write(buf, 0, n);
+                            report(n);
+                            totalGot += n;
+                            long now = clock.ElapsedMilliseconds;
+                            if (now - sampleAt >= 3000)
+                            {
+                                long spd = (totalGot - sampleBytes) * 1000L / Math.Max(1L, now - sampleAt);
+                                if (spd < 12000) slowSamples++; else slowSamples = 0;
+                                sampleAt = now;
+                                sampleBytes = totalGot;
+                                if (slowSamples >= 4) throw new IOException("分段太慢（连续 12 秒低于 12KB/s），换节点重下");
+                            }
+                            if (now > budget) throw new IOException("分段超时（超过 " + (budget / 1000) + " 秒），换节点重下");
+                        }
                     }
                 }
                 return null;
@@ -573,14 +893,20 @@ namespace Installer
             try { return new FileInfo(p).Length; } catch { return -1; }
         }
 
-        static long TryDownload(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, bool allowPin, IWebProxy proxy)
+        static long TryDownload(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, bool allowPin, IWebProxy proxy, string frontHost)
         {
             Uri u = null;
             try { u = new Uri(url); } catch { }
             try
             {
                 string pinnedUrl = null;
-                if (allowPin && u != null)
+                if (!string.IsNullOrEmpty(frontHost) && u != null)
+                {
+                    UriBuilder ub = new UriBuilder(u);
+                    ub.Host = frontHost;
+                    pinnedUrl = ub.Uri.AbsoluteUri;
+                }
+                else if (allowPin && u != null)
                 {
                     string ip = Pick(u.Host);
                     if (!string.IsNullOrEmpty(ip))
@@ -617,12 +943,18 @@ namespace Installer
                         byte[] buf = new byte[131072];
                         long got = baseLen;
                         int n;
+                        Stopwatch dlClock = Stopwatch.StartNew();
+                        long lastByteAt = 0, capMs = Math.Max(180000L, (total > 0 ? total : 0) / 30000L * 1000L);
                         while ((n = src.Read(buf, 0, buf.Length)) > 0)
                         {
                             fs.Write(buf, 0, n);
                             got += n;
+                            lastByteAt = dlClock.ElapsedMilliseconds;
                             if (progress != null) progress(got, total);
+                            if (dlClock.ElapsedMilliseconds > capMs) throw new IOException("下载超时（超过 " + (capMs / 1000) + " 秒）");
                         }
+                        if (dlClock.ElapsedMilliseconds - lastByteAt > 25000)
+                            throw new IOException("下载停摆（25 秒没有新数据）");
                         fs.Flush();
                         return got;
                     }
@@ -860,10 +1192,10 @@ namespace Installer
             lock (gate)
             {
                 if (DateTime.Now < offlineUntil) return;
-                offlineUntil = DateTime.Now.AddMinutes(20);
+                offlineUntil = DateTime.Now.AddSeconds(90);
             }
             lock (gate) { steamFailAt = DateTime.Now; }
-            LogOnce("工坊进入离线态：20 分钟内不再自动联网（点「重试」可立刻再试）");
+            LogOnce("工坊网页主站暂不可达（90 秒后自动重探，有 API key 时不影响 API 搜索）");
         }
 
         static string HostOf(string url)
@@ -872,20 +1204,22 @@ namespace Installer
         }
 
         static IWebProxy systemProxy;
+        static string systemProxyAddr = "";
         static bool systemProxyRead;
         static DateTime systemProxyAt;
 
         /// <summary>
         /// 本机系统代理（Clash / v2rayN / 加速器设的那种）。只读注册表，不触发 IE 自动探测那几秒卡顿。
-        /// 缓存 60 秒：用户中途把加速器开起来，下一轮就能用上。
+        /// 缓存 15 秒：用户中途开/关加速器，15 秒内就能感知并自动重测最快路线。
         /// </summary>
         static IWebProxy SystemProxy()
         {
             lock (gate)
             {
-                if (systemProxyRead && (DateTime.Now - systemProxyAt).TotalSeconds < 60) return systemProxy;
+                if (systemProxyRead && (DateTime.Now - systemProxyAt).TotalSeconds < 15) return systemProxy;
             }
             IWebProxy px = null;
+            string addr = "";
             try
             {
                 using (Microsoft.Win32.RegistryKey k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
@@ -894,7 +1228,7 @@ namespace Installer
                     if (k != null && Convert.ToInt32(k.GetValue("ProxyEnable") ?? 0) != 0)
                     {
                         string srv = ((k.GetValue("ProxyServer") as string) ?? "").Trim();
-                        string addr = PickProxyAddress(srv);
+                        addr = PickProxyAddress(srv);
                         if (addr.Length > 0)
                         {
                             if (addr.IndexOf("://", StringComparison.Ordinal) < 0) addr = "http://" + addr;
@@ -904,7 +1238,17 @@ namespace Installer
                 }
             }
             catch { }
-            lock (gate) { systemProxy = px; systemProxyRead = true; systemProxyAt = DateTime.Now; }
+            bool changed = false;
+            lock (gate)
+            {
+                if (systemProxyRead && !string.Equals(systemProxyAddr, addr, StringComparison.OrdinalIgnoreCase))
+                    changed = true;
+                systemProxy = px;
+                systemProxyAddr = addr;
+                systemProxyRead = true;
+                systemProxyAt = DateTime.Now;
+            }
+            if (changed) KickReprobe();
             return px;
         }
 
@@ -1186,26 +1530,132 @@ namespace Installer
         /// 以前只抽 ID 再去详情接口批量换元数据，白白多一趟网络（每页 1~2 秒）。
         /// 解析失败时回退老路径（Search + Fetch），保证功能不退化。
         /// </summary>
+        // 搜索秒表：记录 API 与网页最近一次成功耗时（毫秒），谁快走谁；
+        // 首次或超过 3 分钟没比过、或者上次领先方劣化（>1500ms）时，两条路并发赛马，谁先回来用谁。
+        static int searchApiMs = -1;
+        static int searchWebMs = -1;
+        static DateTime searchRaceAt = DateTime.MinValue;
+
         internal static List<WsItem> SearchItems(string query, string sort, int page, string tag = null)
         {
             if (!Core.Cfg.SteamEnabled) throw new InvalidOperationException("Steam 来源已在「来源」里关闭");
-            // 填了 key 就先走 API：steamcommunity 被墙时这是唯一能出列表的路，失败再退回网页
-            if (HasApiKey && !WsNet.ApiOffline)
+            if (!HasApiKey) return SearchByWeb(query, sort, page, tag);
+
+            bool webAlive = !WsNet.IsOffline && (!WsNet.SteamProbed || WsNet.SteamRouteAlive);
+            bool apiAlive = !WsNet.ApiOffline;
+            int aMs = searchApiMs, wMs = searchWebMs;
+            bool needRace = webAlive && apiAlive
+                && (aMs < 0 || wMs < 0
+                    || (DateTime.Now - searchRaceAt).TotalMinutes >= 3
+                    || Math.Min(aMs, wMs) > 1500);
+
+            if (needRace)
+            {
+                List<WsItem> raced = RaceSearch(query, sort, page, tag);
+                if (raced != null && raced.Count > 0) return raced;
+            }
+
+            // 已经有秒表结论：谁快先走谁，慢了（>1500ms）或失败立刻用另一条补救
+            bool preferWeb = webAlive && (!apiAlive || (wMs >= 0 && (aMs < 0 || wMs + 150 < aMs)));
+            if (preferWeb)
             {
                 try
                 {
-                    List<WsItem> viaApi = SearchByApi(query, sort, page, tag);
-                    if (viaApi != null && viaApi.Count > 0) { WsNet.MarkApiAlive(); return viaApi; }
-                    try { Core.Log("WARN", "工坊 API 这一页没结果，退回网页路由"); } catch { }
+                    Stopwatch sw = Stopwatch.StartNew();
+                    List<WsItem> viaWeb = SearchByWeb(query, sort, page, tag);
+                    sw.Stop();
+                    if (viaWeb != null && viaWeb.Count > 0)
+                    {
+                        searchWebMs = (int)sw.ElapsedMilliseconds;
+                        return viaWeb;
+                    }
                 }
-                catch (Exception ex)
-                {
-                    // 失败一次就歇 10 分钟：不然每点一个位置都要先陪 API 等 30 秒
-                    WsNet.MarkApiDead();
-                    try { Core.Log("WARN", "工坊 API 失败，10 分钟内不再尝试，退回网页/备用源: " + ex.Message); } catch { }
-                }
+                catch { searchWebMs = 9999; }
             }
 
+            try
+            {
+                Stopwatch sw = Stopwatch.StartNew();
+                List<WsItem> viaApi = SearchByApi(query, sort, page, tag);
+                sw.Stop();
+                if (viaApi != null && viaApi.Count > 0)
+                {
+                    searchApiMs = (int)sw.ElapsedMilliseconds;
+                    WsNet.MarkApiAlive();
+                    return viaApi;
+                }
+            }
+            catch (Exception ex)
+            {
+                searchApiMs = 9999;
+                WsNet.MarkApiDead();
+                try { Core.Log("WARN", "工坊 API 失败，切回网页/备用源: " + ex.Message); } catch { }
+            }
+
+            if (!preferWeb && !WsNet.IsOffline)
+            {
+                Stopwatch sw = Stopwatch.StartNew();
+                List<WsItem> viaWeb = SearchByWeb(query, sort, page, tag);
+                sw.Stop();
+                if (viaWeb != null && viaWeb.Count > 0) searchWebMs = (int)sw.ElapsedMilliseconds;
+                return viaWeb;
+            }
+            throw new WebException("工坊请求失败：" + WsNet.LastFailHint());
+        }
+
+        /// <summary>API 与网页并发赛马：谁先拿到非空结果就立刻返回，后回来的顺手更新秒表。</summary>
+        static List<WsItem> RaceSearch(string query, string sort, int page, string tag)
+        {
+            searchRaceAt = DateTime.Now;
+            object box = new object();
+            List<WsItem> winner = null;
+            int done = 0;
+
+            System.Threading.Tasks.Task.Run(delegate
+            {
+                Stopwatch sw = Stopwatch.StartNew();
+                List<WsItem> r = null;
+                try { r = SearchByApi(query, sort, page, tag); } catch { }
+                sw.Stop();
+                bool ok = r != null && r.Count > 0;
+                if (ok) { searchApiMs = (int)sw.ElapsedMilliseconds; WsNet.MarkApiAlive(); }
+                else searchApiMs = 9999;
+                lock (box)
+                {
+                    if (ok && winner == null) winner = r;
+                    done++;
+                    System.Threading.Monitor.PulseAll(box);
+                }
+            });
+
+            System.Threading.Tasks.Task.Run(delegate
+            {
+                Stopwatch sw = Stopwatch.StartNew();
+                List<WsItem> r = null;
+                try { r = SearchByWeb(query, sort, page, tag); } catch { }
+                sw.Stop();
+                bool ok = r != null && r.Count > 0;
+                if (ok) searchWebMs = (int)sw.ElapsedMilliseconds;
+                else searchWebMs = 9999;
+                lock (box)
+                {
+                    if (ok && winner == null) winner = r;
+                    done++;
+                    System.Threading.Monitor.PulseAll(box);
+                }
+            });
+
+            lock (box)
+            {
+                Stopwatch wait = Stopwatch.StartNew();
+                while (winner == null && done < 2 && wait.ElapsedMilliseconds < 8000)
+                    System.Threading.Monitor.Wait(box, 200);
+                return winner;
+            }
+        }
+
+        static List<WsItem> SearchByWeb(string query, string sort, int page, string tag)
+        {
             StringBuilder u = new StringBuilder();
             u.Append("https://steamcommunity.com/workshop/browse/?appid=").Append(AppId);
             u.Append("&section=readytouseitems");
@@ -1214,11 +1664,12 @@ namespace Installer
             // 标签过滤比文本准：地图只有 Campaigns 标签、特感只有 Special Infected 标签，光靠文本词搜不准
             if (!string.IsNullOrEmpty(tag)) u.Append("&requiredtags%5B%5D=").Append(Uri.EscapeDataString(tag));
             if (page > 1) u.Append("&p=").Append(page);
-            List<WsItem> outp = ParseBrowseItems(Get(u.ToString()));
+            string html = Get(u.ToString());
+            List<WsItem> outp = ParseBrowseItems(html);
             if (outp.Count > 0) return outp;
 
             // 回退：老路径（抽 ID → 详情接口）
-            List<string> ids = ParseBrowse(Get(u.ToString()));
+            List<string> ids = ParseBrowse(html);
             return ids.Count > 0 ? Fetch(ids) : outp;
         }
 
@@ -1398,20 +1849,54 @@ namespace Installer
 
         static string PostUrl(string url, string body, int timeoutMs)
         {
-            WsNet.Tune();                                   // 全局连接/代理设置先调好（POST 不走优选 IP）
+            WsNet.Tune();
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
-            req.Method = "POST";
-            req.ContentType = "application/x-www-form-urlencoded";
-            req.UserAgent = Ua;
-            req.Timeout = timeoutMs;
-            req.ReadWriteTimeout = timeoutMs;
-            byte[] data = Encoding.UTF8.GetBytes(body);
-            req.ContentLength = data.Length;
-            using (Stream s = req.GetRequestStream()) s.Write(data, 0, data.Length);
-            using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
-            using (StreamReader sr = new StreamReader(r.GetResponseStream(), Encoding.UTF8))
-                return sr.ReadToEnd();
+            Uri u = null;
+            try { u = new Uri(url); } catch { }
+            string host = u == null ? null : u.Host;
+            IWebProxy px = WsNet.PreferredProxy(host);
+            bool frontFirst = WsNet.CanFrontHost(host) && px == null;
+            // 依次尝试：HTTPS 前置 → 直连 → HTTP(80) 前置。
+            // 实测这条线对 Akamai 的 TLS 握手时常被掐，但 80 端口的 POST 走前置域名能通（1.5 秒回 200）；
+            // 这些 POST 的正文里只有 ID，不带 API key，所以走明文没有泄密风险。
+            string[] targets = frontFirst
+                ? new string[] { "steamuserimages-a.akamaihd.net", null, "http:steamusercontent-a.akamaihd.net" }
+                : new string[] { null, "steamuserimages-a.akamaihd.net", "http:steamusercontent-a.akamaihd.net" };
+            Exception last = null;
+            foreach (string front in targets)
+            {
+                try
+                {
+                    string reqUrl = url;
+                    bool plain = front != null && front.StartsWith("http:", StringComparison.Ordinal);
+                    string realFront = plain ? front.Substring(5) : front;
+                    if (realFront != null && u != null)
+                    {
+                        UriBuilder ub = new UriBuilder(u);
+                        ub.Host = realFront;
+                        if (plain) { ub.Scheme = "http"; ub.Port = 80; }
+                        reqUrl = ub.Uri.AbsoluteUri;
+                    }
+                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create(reqUrl);
+                    if (realFront != null && host != null) req.Host = host;
+                    req.Method = "POST";
+                    req.ContentType = "application/x-www-form-urlencoded";
+                    req.UserAgent = Ua;
+                    int cap = Math.Min(timeoutMs, 8000);
+                    req.Timeout = cap;
+                    req.ReadWriteTimeout = cap;
+                    try { req.Proxy = realFront == null ? px : null; } catch { }
+                    byte[] data = Encoding.UTF8.GetBytes(body);
+                    req.ContentLength = data.Length;
+                    using (Stream s = req.GetRequestStream()) s.Write(data, 0, data.Length);
+                    using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
+                    using (StreamReader sr = new StreamReader(r.GetResponseStream(), Encoding.UTF8))
+                        return sr.ReadToEnd();
+                }
+                catch (Exception ex) { last = ex; }
+            }
+            if (last != null) throw last;
+            return null;
         }
 
         // ---------------- 工坊 API 路线（填了 key 才走，绕开被墙的网页） ----------------
@@ -1498,6 +1983,33 @@ namespace Installer
             if (outp.Count > 0)
                 lock (apiGate) { apiCache[cacheKey] = outp; apiCacheAt[cacheKey] = DateTime.Now; }
             return outp;
+        }
+
+        /// <summary>
+        /// 给「怎么拿 key」向导做的实测：返回空串 = key 可用，否则是一句能看懂的原因。
+        ///
+        /// 分两次打接口：先打一个**不需要 key** 的端点确认线路通，再带 key 查一页。
+        /// 只打一次的话，「key 不对」和「网不通」在调用方看来都是“没返回”，
+        /// 会把用户往错的方向推（明明 key 是对的，却让人回去重新申请）。
+        /// </summary>
+        internal static string TestApiKey(string key)
+        {
+            key = (key ?? "").Trim();
+            if (key.Length == 0) return "还没填 key";
+            if (key.Length < 20) return "key 太短了：应该是 32 位，这次只有 " + key.Length + " 位";
+
+            string probe = WsNet.GetString("https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/?format=json", Ua, 6000);
+            if (string.IsNullOrEmpty(probe)) return "连不上 Steam 接口（线路不通或被挡）；key 本身还没能验证";
+
+            StringBuilder u = new StringBuilder(PubRoot + "QueryFiles/v1/?format=json");
+            u.Append("&key=").Append(Uri.EscapeDataString(key));
+            u.Append("&appid=").Append(AppId);
+            u.Append("&page=1&numperpage=1&query_type=3");
+            string json = WsNet.GetString(u.ToString(), Ua, 8000);
+            if (string.IsNullOrEmpty(json)) return "Steam 没收这个 key：可能没复制全，或这个 key 已被停用";
+            if (json.IndexOf("publishedfiledetails", StringComparison.Ordinal) < 0)
+                return "Steam 回了意料之外的内容：" + (json.Length > 100 ? json.Substring(0, 100) : json);
+            return "";
         }
 
         // ---------------- GameBanana：Steam 整条不通时的备用内容源 ----------------
@@ -2193,6 +2705,8 @@ namespace Installer
             List<WsItem> list = new List<WsItem>();
             if (string.IsNullOrEmpty(id)) return list;
             lock (reqCache) { List<WsItem> c; if (reqCache.TryGetValue(id, out c)) return c; }
+            // 网页主站已知不通时，别为了抓侧栏依赖去硬等 20 秒超时
+            if (WsNet.IsOffline || (WsNet.SteamProbed && !WsNet.SteamRouteAlive)) return list;
             string html = null;
             for (int attempt = 0; attempt < 2 && string.IsNullOrEmpty(html); attempt++)
             {
@@ -2498,6 +3012,45 @@ namespace Installer
             catch { }
         }
 
+        /// <summary>
+        /// 这个工坊物品本机是不是已经有了：我们下过（idmap 里记着）、库里/游戏 addons 认到同一个工坊 ID、
+        /// 或已有一个同名 MOD。配套 MOD 判断用它 —— 已经装了的不该再问「要不要一起下」（用户 2026-11-22 要求）。
+        /// </summary>
+        internal static bool IsInstalledLocally(string id, string title)
+        {
+            if (!string.IsNullOrEmpty(id))
+            {
+                try { if (LoadDownloadedIds().Contains(id)) return true; } catch { }
+                try
+                {
+                    List<ModItem> mods = Core.ModList;
+                    if (mods != null)
+                        foreach (ModItem m in mods)
+                        {
+                            if (m == null) continue;
+                            if (string.Equals(m.WorkshopId, id, StringComparison.Ordinal)) return true;
+                        }
+                }
+                catch { }
+            }
+            string t = (title ?? "").Trim();
+            if (t.Length > 3)
+            {
+                try
+                {
+                    List<ModItem> mods = Core.ModList;
+                    if (mods != null)
+                        foreach (ModItem m in mods)
+                        {
+                            if (m == null || string.IsNullOrEmpty(m.Name)) continue;
+                            if (string.Equals(m.Name.Trim(), t, StringComparison.OrdinalIgnoreCase)) return true;
+                        }
+                }
+                catch { }
+            }
+            return false;
+        }
+
         internal static HashSet<string> LoadDownloadedIds()
         {
             HashSet<string> set = new HashSet<string>(StringComparer.Ordinal);
@@ -2643,8 +3196,21 @@ namespace Installer
         {
             if (string.IsNullOrEmpty(url)) return url;
             if (url.IndexOf("images.steamusercontent.com", StringComparison.OrdinalIgnoreCase) >= 0)
-                return url.Replace("images.steamusercontent.com", "cdn.steamusercontent.com");
+                url = url.Replace("images.steamusercontent.com", "steamuserimages-a.akamaihd.net");
+            else if (url.IndexOf("cdn.steamusercontent.com", StringComparison.OrdinalIgnoreCase) >= 0)
+                url = url.Replace("cdn.steamusercontent.com", "steamuserimages-a.akamaihd.net");
             return url;
+        }
+
+        /// <summary>给工坊预览图加上服务端缩放参数：3.4MB 的 4K 原图在服务端缩成 11KB 再下，卡片缩略图秒出。</summary>
+        internal static string ThumbUrl(string url, int maxW, int maxH)
+        {
+            string u = FixImageUrl(url);
+            if (string.IsNullOrEmpty(u)) return u;
+            if (u.IndexOf("/ugc/", StringComparison.OrdinalIgnoreCase) < 0 || u.IndexOf('?') >= 0) return u;
+            int w = Math.Max(256, Math.Min(1024, maxW * 2));
+            int h = Math.Max(144, Math.Min(576, maxH * 2));
+            return u + "?imw=" + w + "&imh=" + h + "&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false";
         }
 
         /// <summary>这条东西从哪来的：详情页/预览面板统一用它，别写死 Steam。</summary>
