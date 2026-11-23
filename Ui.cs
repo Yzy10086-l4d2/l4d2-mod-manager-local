@@ -3828,7 +3828,7 @@ namespace Installer
                     int nowH = Math.Max(0, infoTop - Theme.S - logTop);
                     // 自定义 Visible 判断，别用 gNow.Visible 取反判断：窗体还没显示时
                     // 控件的 Visible 读出来恒为 false（父级不可见），下面的子控件排版就会被整段跳过。
-                    bool showNow = drawerOpen && !logOpen && nowH >= 96;
+                    bool showNow = false;      // 左栏已撤（2026-11-24）：现状卡不再进主界面，数据仍照常读
                     gNow.Top = Dpi.S(logTop);
                     gNow.Height = Dpi.S(showNow ? nowH : 0);
                     gNow.Width = Dpi.S(leftW);
@@ -4061,7 +4061,7 @@ namespace Installer
         internal void SetDrawer(bool open)
         {
             drawerOpen = open;
-            if (gLog != null) gLog.Visible = open && logOpen;
+            if (gLog != null) gLog.Visible = false;   // 日志不给人看，只落文件
             if (btnLogToggle != null) btnLogToggle.Visible = open;
             if (btnPanel != null) btnPanel.Text = open ? Lang.S("收起") : Lang.S("统计");
             lastRespW = -1;                    // 强制重排一次（尺寸没变也要排）
@@ -4259,13 +4259,12 @@ namespace Installer
             }
             catch (Exception exl) { bad++; Core.Log("FAIL", "DESK 摆位还原核对出错：" + exl.Message); }
 
-            // 5) 抽屉：收起时右栏顶到左边距，展开时让出 396 给左栏
+            // 5) 左栏已撤（2026-11-24）：右栏永远顶到左边距，抽屉开关不再改变任何位置
             SetDrawer(true);
-            if (gNow == null || !gNow.Visible) { bad++; Core.Log("FAIL", "DESK 抽屉展开后左栏没出来"); }
-            if (gMod.Left != Theme.M + 396 + Theme.G) { bad++; Core.Log("FAIL", "DESK 抽屉展开后右栏位置不对: " + gMod.Left); }
+            if (gNow != null && gNow.Visible) { bad++; Core.Log("FAIL", "DESK 左栏已撤，却还被展开出来"); }
+            if (gMod.Left != Theme.M) { bad++; Core.Log("FAIL", "DESK 右栏没顶到左边: " + gMod.Left); }
             SetDrawer(false);
-            if (gNow != null && gNow.Visible) { bad++; Core.Log("FAIL", "DESK 抽屉收起后左栏还在"); }
-            if (gMod.Left != Theme.M) { bad++; Core.Log("FAIL", "DESK 抽屉收起后右栏没顶到左边: " + gMod.Left); }
+            if (gMod.Left != Theme.M) { bad++; Core.Log("FAIL", "DESK 收起后右栏位置变了: " + gMod.Left); }
 
             Snap("desk-tree");
             return bad;
