@@ -4305,7 +4305,9 @@ namespace Installer
             bool fromGb = false;
             foreach (WsItem oi in okItems) { if (oi.Id.StartsWith("gb", StringComparison.Ordinal)) { fromGb = true; break; } }
             bool noKey = !Workshop.HasApiKey;
-            recTitle.Text = (fromGb ? Lang.S("GameBanana 推荐 · ") : Lang.S("工坊推荐 · ")) + q
+            // 标题显示**位置名**（用户认得的那个词），不显示查询词 —— 查询词是内部东西，改了也不该露到界面上
+            string shownName = (Current != null && !string.IsNullOrEmpty(Current.Name)) ? Lang.S(Current.Name) : q;
+            recTitle.Text = (fromGb ? Lang.S("GameBanana 推荐 · ") : Lang.S("工坊推荐 · ")) + shownName
                 + (noKey ? Lang.S("　（未填 Steam API key：搜不了全站，去「设置 → 怎么拿 key」）") : "");
             if (mf != null && !fromGb) mf.NoteWorkshopOffline(false);   // 走 GameBanana 时 Steam 其实还挂着
         }

@@ -2103,12 +2103,51 @@ namespace Installer
         }
 
         /// <summary>
-        /// 槽位 → 默认搜索词。槽位名本身带拉丁字母（AK-47 / UZI / AWP）就直接用；
-        /// 中文名（木喷 / 佐伊）退回模型键的尾段（pump / zoey），不准用户自己改。
+        /// 位置名 → 工坊搜索词。**查询层**，不是显示层：
+        /// 这里只决定「发什么词给 Steam」，位置名本身（用户看到的、偏好和缓存用的键）一个字都不改。
+        /// 返回 null = 这张表没管这个位置（继续走下面的兜底）；返回 "" = 这个位置只用标签浏览、不发文本。
+        ///
+        /// 为什么要有这张表：以前搜索词是从槽位键里推的，同一个位置「装了 MOD」搜 pump、「空着」搜 木喷 ——
+        /// 搜索词跟着“当前装了什么”变。位置身份是固定的，查询词就该固定。
+        /// </summary>
+        internal static string SlotWord(string slotName)
+        {
+            switch ((slotName ?? "").Trim())
+            {
+                // 抽象位置：没有对应的工坊词，发文本只会搜出一堆无关替换（实测）
+                case "平台": return "";
+                case "通用": return "";
+                // 场景
+                case "天空盒": return "skybox";
+                case "地面细节": return "texture";
+                case "场景贴图": return "texture";
+                // 弹药
+                case "弹药": return "ammo";
+                // 霰弹枪（中文名，实测中文结果偏；英文准得多）
+                case "木喷": return "pump shotgun";
+                case "铁喷": return "chrome shotgun";
+                case "一代连喷": return "auto shotgun";
+                case "二代连喷": return "combat shotgun";
+                // 狙击 / 手枪 / 特殊武器
+                case "鸟狙": return "hunting rifle";
+                case "手枪": return "pistol";
+                case "马格南": return "magnum";
+                case "榴弹发射器": return "grenade launcher";
+                // 近战总称
+                case "近战武器": return "melee";
+                default: return null;
+            }
+        }
+
+        /// <summary>
+        /// 槽位 → 搜索词。先查 SlotWord 表（按位置身份定死）；表里没有的再看名字里有没有拉丁字母
+        /// （AK-47 / UZI / Boomer），最后才退回槽位键的尾段。
         /// </summary>
         internal static string SearchWord(string slotName, string slotKey)
         {
             string n = (slotName ?? "").Trim();
+            string mapped = SlotWord(n);
+            if (mapped != null) return mapped;
             bool latin = false;
             foreach (char c in n)
                 if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) { latin = true; break; }
@@ -3966,10 +4005,14 @@ namespace Installer
             { bad++; Core.Log("FAIL", "WS 老版浏览页解析得到 " + string.Join(",", ob.ToArray())); }
             else Core.Log("INFO", "WS 老版浏览页（workshopItem 链接）解析 = 333,444");
 
-            // 槽位 → 搜索词：拉丁名直接用，中文名退回模型键尾段
-            if (SearchWord("AK-47", "c:AK-47") != "AK-47" || SearchWord("木喷", "枪械\u0001w_shotgun_pump") != "pump")
-            { bad++; Core.Log("FAIL", "WS 槽位搜索词推错: " + SearchWord("AK-47", "c:AK-47") + " / " + SearchWord("木喷", "枪械\u0001w_shotgun_pump")); }
-            else Core.Log("INFO", "WS 槽位搜索词：AK-47 → AK-47，木喷 → pump");
+            // 槽位 → 搜索词：定死的查表，和“当前装没装”无关
+            string w1 = SearchWord("AK-47", "c:AK-47");
+            string w2 = SearchWord("木喷", "枪械\u0001#empty:木喷");        // 空位
+            string w3 = SearchWord("木喷", "枪械\u0001w_shotgun_pump");     // 有 MOD
+            string w4 = SearchWord("平台", "平台\u0001#empty:平台");         // 只浏览不搜词
+            if (w1 != "AK-47" || w2 != "pump shotgun" || w3 != w2 || w4 != "")
+            { bad++; Core.Log("FAIL", "WS 槽位搜索词推错: " + w1 + " / 空位=" + w2 + " / 有件=" + w3 + " / 平台=[" + w4 + "]"); }
+            else Core.Log("INFO", "WS 槽位搜索词：AK-47 → AK-47，木喷 → pump shotgun（空位与有件一致），平台 → 只按标签浏览");
 
             // 下载完自动改名：addoninfo 的游戏内名 > 工坊标题。读不出保留原名，撞名加序号不覆盖。
             string rnDir = Path.Combine(Path.GetTempPath(), "ws-rename-" + Guid.NewGuid().ToString("N").Substring(0, 6));
