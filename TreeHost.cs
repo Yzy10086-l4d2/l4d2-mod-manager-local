@@ -314,6 +314,11 @@ namespace Installer
             treeView.SetBounds(0, 0, Math.Max(200, viewHost.ClientSize.Width), Math.Max(120, viewHost.ClientSize.Height));
             treeView.BringToFront();
             treeView.Rebuild();
+            // 树是自绘控件，会盖住底部那条状态行：每次换回树都把状态行重新顶到最前
+            if (map != null) map.Visible = false;
+            if (lblStatus != null) lblStatus.BringToFront();
+            if (lblNotice != null) lblNotice.BringToFront();
+            if (lblLibInfo != null) lblLibInfo.BringToFront();
             UpdateModCaption();
             RefreshGameNow();          // 树的「未归类」数只有建完树才知道，卡片跟着补一次
             // 树是后加进来的，会盖在加载占位上：还在扫就把占位顶回去

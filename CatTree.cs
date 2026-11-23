@@ -3775,6 +3775,8 @@ namespace Installer
                 }
                 else
                 {
+                    // 从「已收起」(curDetailW = 0) 往左拖：splitStartVal 是 0，dx 为负 → 立刻收到正宽度，
+                    // 一拖就重新出现；下限仍是 260，不会又拖成看不见
                     v = Math.Max(Dpi.S(260), splitStartVal - dx);
                     v = Math.Min(v, Math.Max(Dpi.S(300), ClientSize.Width - curTreeW - Dpi.S(360)));
                     v = (v / 8) * 8;
@@ -3918,7 +3920,20 @@ namespace Installer
                 else
                 {
                     if (lblDetail != null) lblDetail.Visible = false;
-                    if (splitB != null) splitB.Visible = false;
+                    // 详情栏收起后，分栏条贴到最右边并保持可见 —— 以前这里是 Visible=false，
+                    // 用户把详情拖没之后就再也找不到「拉回来」的把手了（2026-11-24 用户反馈）。
+                    if (splitB != null)
+                    {
+                        splitB.Visible = true;
+                        splitB.SetBounds(Math.Max(0, W - Dpi.S(6)), 0, Dpi.S(6), H);
+                    }
+                    // 存过的小于下限的宽度别一直留着，否则重启后又是一个收起的界面
+                    if (detailWpx > 0 && detailWpx < Dpi.S(260))
+                    {
+                        detailWpx = 0;
+                        Core.Cfg.DetailW = 0;
+                        try { Core.SaveConfig(); } catch { }
+                    }
                     peek.SetBounds(mainX + pad, peekTop, Math.Max(Dpi.S(160), mainW - 2 * pad), peekH);
                 }
                 peek.Visible = lv != null && lv.Visible;
