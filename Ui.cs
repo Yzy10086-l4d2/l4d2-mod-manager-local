@@ -175,6 +175,8 @@ namespace Installer
         // 后台扫库进行中：ModList / Catalog.Groups 正被那个线程重建，
         // 这个时候 UI 线程再去枚举（冲突检查、重扫）必撞「集合已修改」。
         private volatile bool scanning;
+        // 扫描期间又来的「扫完再做」的活：连下两个 MOD 时，第二个的自动启用不能被吞掉
+        private Action afterScanQueue;
         private string pendingRoot;                 // 扫库期间用户选的新目录，扫完接着切
         // 扫库心跳：扫库期间每 5 秒往日志报一声、状态栏刷新一次秒数。
         // 「一直在加载」的时候，用户至少看得到程序还活着、进行到第几秒；
@@ -268,6 +270,7 @@ namespace Installer
                         // 扫库期间用户选过目录：现在安全了，接着切
                         if (pendingRoot != null) { string pr = pendingRoot; pendingRoot = null; SwitchGameRoot(pr, "补切（扫库完成）"); }
                         ShowTree();                        // 启动第一屏是方案树；桌面要点按钮才开
+                        FlushAfterScan();                  // 启动扫库期间排队的活（连下两个 MOD 的第二个）
                         ProbeWritable(txtGame.Text.Trim());  // 后台探一次可写性，校验条才有话说
                         QueuePrecheck();
                     });
@@ -1829,24 +1832,32 @@ namespace Installer
         /// <summary>「刷新」：游戏外面被动过（工坊订阅、手拷 vpk、游戏里调过开关）时重读一遍。</summary>
         private void DoRefreshGame()
         {
-            if (scanning) { SetStatus("正在扫库，稍等一下"); return; }
+            if (scanning || Core.ScanInProgress) { SetStatus("正在扫库，稍等一下"); return; }
             if (btnRefreshLib != null) btnRefreshLib.Enabled = false;
             btnNowRefresh.Enabled = false;
-            try
+            Core.Log("INFO", "刷新游戏现状：重读 addons 和 addonlist.txt");
+            // 重扫在后台跑，后续几件跟着它的回调走；没起得来（已有扫描在跑）就把按钮亮回去
+            bool started = RescanMods(delegate
             {
-                Core.Log("INFO", "刷新游戏现状：重读 addons 和 addonlist.txt");
-                RescanMods();                        // 整库重扫（新订阅的 vpk 这时候才进得来）
-                RefreshConflicts(true);
-                RereadAddonList();
-                SeedChecksFromGame(true);             // 勾选直接对齐游戏现状（合并后的「刷新」就该这样）
-                Core.Log("OK", "刷新：重扫完成，勾选已按游戏现状对齐");
-            }
-            finally
+                try
+                {
+                    RefreshConflicts(true);
+                    RereadAddonList();
+                    SeedChecksFromGame(true);        // 勾选直接对齐游戏现状（合并后的「刷新」就该这样）
+                    RefreshGameNow();
+                    Core.Log("OK", "刷新：重扫完成，勾选已按游戏现状对齐");
+                }
+                finally
+                {
+                    if (btnRefreshLib != null) btnRefreshLib.Enabled = true;
+                    btnNowRefresh.Enabled = true;
+                }
+            });
+            if (!started)
             {
                 if (btnRefreshLib != null) btnRefreshLib.Enabled = true;
                 btnNowRefresh.Enabled = true;
             }
-            RefreshGameNow();
         }
 
         /// <summary>诊断截图：把「读取中」的骨架占位截一张（--loadshot），确认扫光位置/排版在真机上成立。</summary>
@@ -2301,18 +2312,20 @@ namespace Installer
         /// </summary>
         internal void RefreshAfterImport(params string[] downloaded)
         {
-            try
+            Core.Log("INFO", "工坊下载完成：后台重扫库，扫完重建方案树");
+            RescanMods(delegate
             {
-                Core.Log("INFO", "工坊下载完成：自动刷新库与方案树");
-                RescanMods();
-                RefreshConflicts(true);
-                if (treeView != null) { RebuildViews(); treeView.Sync(); }
-                RefreshMods();
-                if (downloaded != null && downloaded.Length > 0) EnableDownloaded(downloaded);
-                RefreshGameNow();
-                Core.Log("OK", "自动刷新完成");
-            }
-            catch (Exception ex) { Core.Log("WARN", "下载后自动刷新失败: " + ex.Message); }
+                try
+                {
+                    RefreshConflicts(true);
+                    if (treeView != null) { RebuildViews(); treeView.Sync(); }
+                    RefreshMods();
+                    if (downloaded != null && downloaded.Length > 0) EnableDownloaded(downloaded);
+                    RefreshGameNow();
+                    Core.Log("OK", "自动刷新完成");
+                }
+                catch (Exception ex) { Core.Log("WARN", "下载后自动刷新失败: " + ex.Message); }
+            });
         }
 
         /// <summary>刚下载落库的 MOD 直接启用：勾上默认部件 + addonlist 写 1，进游戏马上生效。</summary>
@@ -2377,19 +2390,61 @@ namespace Installer
             galleryWindow.Show();
         }
 
-        /// <summary>手动重扫：库或游戏目录在别处被改过（别人手动丢过 vpk、装了一半），点一下重读。</summary>
-        internal void RescanMods()
+        /// <summary>
+        /// 手动重扫：库或游戏目录在别处被改过（别人手动丢过 vpk、装了一半），点一下重读。
+        /// 扫描放后台线程（以前同步跑在 UI 线程上，工坊下载完那几秒整个窗口冻住），
+        /// 扫完回 UI 线程刷新；then 在刷新之后执行。
+        /// 同一时刻只允许一次：已经在扫就直接返回 false，不排队 —— 排队会让用户以为点了没反应。
+        /// </summary>
+        internal bool RescanMods(Action then = null)
         {
-            try
+            if (scanning || Core.ScanInProgress)
             {
-                SetBusy(true);
-                SetStatus("正在重扫…");
-                Core.ScanMods();
-                RefreshMods();
-                Core.Log("OK", "已重扫：共 " + Core.ModList.Count + " 个 vpk");
+                if (then != null) afterScanQueue += then;   // 排到这次扫描结束后补跑，别把这次刷新吞掉
+                SetStatus("正在扫库，稍等一下");
+                Core.Log("INFO", "重扫跳过：已有扫描在跑，要补做的活已排队");
+                return false;
             }
-            catch (Exception ex) { Core.Log("FAIL", "重扫失败: " + ex.Message); }
-            finally { SetBusy(false); SetStatus("就绪"); }
+
+            SetBusy(true);
+            SetStatus("正在重扫…");
+            scanning = true;                    // 期间所有读库入口都靠这个闸门挡（见 QuietSyncAddonList / DoRefreshGame）
+            StartScanWatch();
+            ShowLoading("正在重扫库…", "新下的 MOD 正在入库，几秒就好", false);
+            System.Threading.Thread th = new System.Threading.Thread(delegate()
+            {
+                string err = null;
+                try { Core.ScanMods(); }
+                catch (Exception ex) { err = ex.Message; Core.Log("FAIL", "重扫失败: " + ex.Message); }
+                SafeBeginInvoke(delegate()
+                {
+                    scanning = false;
+                    HideLoading();
+                    SetBusy(false);
+                    SetStatus("就绪");
+                    try
+                    {
+                        RefreshMods();
+                        if (err == null) Core.Log("OK", "已重扫：共 " + Core.ModList.Count + " 个 vpk");
+                        if (then != null) then();
+                        FlushAfterScan();
+                    }
+                    catch (Exception ex) { Core.Log("FAIL", "重扫后刷新失败: " + ex.Message); }
+                });
+            });
+            th.IsBackground = true;
+            th.Start();
+            return true;
+        }
+
+        /// <summary>把扫描期间排队的活一次跑完（只在 UI 线程上调）。</summary>
+        private void FlushAfterScan()
+        {
+            Action q = afterScanQueue;
+            afterScanQueue = null;
+            if (q == null) return;
+            try { q(); }
+            catch (Exception ex) { Core.Log("FAIL", "扫库后的补做失败: " + ex.Message); }
         }
 
         // 一行说清这套方案在各类里放了几个
