@@ -440,9 +440,9 @@ namespace Installer
 
             int W = ClientSize.Width;
             int CH = ClientSize.Height;                        // 布局按实际客户区算，别再写死 700 时代的坐标
-            int leftW = 396;
-            int rightX = Theme.M + leftW + Theme.G;
-            int rightW = W - Theme.M - rightX;
+            int leftW = 396;                    // 旧引用还在用；右栏已改成满宽
+            int rightX = Theme.M;               // 左栏撤掉：右栏直接顶到左边距
+            int rightW = W - 2 * Theme.M;
 
             // ---- 顶部：游戏目录 ----
             Label l1 = new Label(); l1.Text = Lang.S("游戏目录"); l1.SetBounds(Theme.M, 20, 60, 20); Theme.Dress(l1); l1.Font = Theme.UISmall; l1.ForeColor = Theme.Ink3; Controls.Add(l1);
@@ -460,8 +460,8 @@ namespace Installer
             int installX = W - Theme.M - installW;
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
-            int panelX = settingsX - groupGap - panelW;
-            int viewX = panelX - topGap - viewW;
+            int panelX = settingsX - groupGap - panelW;   // 仅给隐藏的「统计」按钮留位
+            int viewX = settingsX - groupGap - viewW;      // 左栏撤掉：「方案管理」直接贴到设置左边
             int wsX = viewX - groupGap - wsW;
             int findX = wsX - topGap - findW;
             int browseX = findX - topGap - browseW;
@@ -517,7 +517,8 @@ namespace Installer
             tips.SetToolTip(btnView, Lang.S("方案总览：这套里每个位置装的是哪个 MOD，一眼看完。\r\n左边点大类，右边列这个类的位置和已装的 MOD；没装的灰着，库里没有的空心点。\r\n点开关直接开/关，点名字就地换 MOD，拖大类改顺序；点一行回方案树改那个位置。再点一下回到方案树。"));
             Controls.Add(btnView);
 
-            btnPanel = new FlatButton(); btnPanel.Soft = true; btnPanel.Text = Lang.S("统计");
+            btnPanel = new FlatButton(); btnPanel.Text = Lang.S("统计");
+            btnPanel.Visible = false;           // 左栏撤掉后这个开关没意义了（对象留着，免得别处引用崩）
             btnPanel.SetBounds(panelX, 16, panelW, Theme.H);
             btnPanel.Click += delegate
             {
@@ -526,7 +527,7 @@ namespace Installer
                 if (Core.Cfg.DrawerOpen != drawerOpen) { Core.Cfg.DrawerOpen = drawerOpen; Core.SaveConfig(); }
             };
             tips.SetToolTip(btnPanel, Lang.S("展开 / 收起左边那栏（装什么、安装选项、日志）。\r\n收起来以后整个窗口就是一张台面。"));
-            Controls.Add(btnPanel);
+            // 左栏撤掉后不再加入顶层：隐藏也占位，会让「顶部按钮叠在一起」的排版自检失败
 
             // ---- 左栏下：日志（默认收起）----
             // 日志是排错才看的东西：常驻的话左栏一半高度都被它占着，把「装什么 / 安装选项」
@@ -3590,7 +3591,7 @@ namespace Installer
             SuspendLayout();
             int leftW = 396;                                   // 左栏定宽：够放最长的复选框文案
             // 抽屉收起时右栏直接顶到左边距：整个窗口就剩一条顶栏 + 一张台面
-            int rightX = drawerOpen ? Theme.M + leftW + Theme.G : Theme.M;
+            int rightX = Theme.M;                              // 左栏已撤，右栏永远满宽
             int rightW = W - Theme.M - rightX;
 
             gLog.Width = Dpi.S(leftW);
@@ -3681,8 +3682,10 @@ namespace Installer
                 lblStatus.Top = Dpi.S(H - StatusRowH);
                 if (lblLibInfo != null)
                 {
-                    lblLibInfo.SetBounds(Dpi.S(Theme.M + 8), Dpi.S(infoTop), Dpi.S(leftW - 16), Dpi.S(18));
-                    lblLibInfo.Visible = drawerOpen;
+                    // 左栏撤掉后，库信息并到底部状态行（常驻提示的左边）
+                    lblLibInfo.SetBounds(Dpi.S(W - Theme.M - 540), Dpi.S(H - 28), Dpi.S(292), Dpi.S(18));
+                    lblLibInfo.TextAlign = ContentAlignment.MiddleRight;
+                    lblLibInfo.Visible = true;
                 }
             }
 
@@ -3703,8 +3706,8 @@ namespace Installer
             int installX = W - Theme.M - installW;
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
-            int panelX = settingsX - groupGap - panelW;
-            int viewX = panelX - topGap - viewW;
+            int panelX = settingsX - groupGap - panelW;   // 仅给隐藏的「统计」按钮留位
+            int viewX = settingsX - groupGap - viewW;      // 左栏撤掉：「方案管理」直接贴到设置左边
             int wsX = viewX - groupGap - wsW;
             int findX = wsX - topGap - findW;
             txtGame.Width = Dpi.S(findX - topGap - 8 - 80);
@@ -3778,7 +3781,7 @@ namespace Installer
                 { bad++; Core.Log("FAIL", tag + "「停止剩余」跑出右边距"); }
 
                 // 顶部：设置 ← 工坊 ← 抽屉 ← 台面 ← 启动项 ← 浏览（从左到右依次右移）
-                FlatButton[] top = new FlatButton[] { btnLaunch, btnWorkshop, btnView, btnPanel, btnSettings, btnRefreshLib, btnInstall };
+                FlatButton[] top = new FlatButton[] { btnLaunch, btnWorkshop, btnView, btnSettings, btnRefreshLib, btnInstall };
                 if (btnSettings.Left + Dpi.S(60) > W - m + 1) { bad++; Core.Log("FAIL", tag + "「设置」出窗"); }
                 for (int i = 1; i < top.Length; i++)
                     if (top[i].Left <= top[i - 1].Left + Dpi.S(56)) { bad++; Core.Log("FAIL", tag + "顶部按钮叠在一起：" + top[i].Text); }
