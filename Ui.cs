@@ -183,6 +183,7 @@ namespace Installer
         private Label lblSchemeDiff;                // 方案行右侧：这套方案和当前勾选差几处（套用前先看得到）
         private FlatButton btnScheme;               // 方案按钮（替代系统下拉）
         private Panel pnlScheme;                    // 方案弹层：每套一行，带覆盖数 / 正在用 / 有改动
+        private System.Windows.Forms.Timer schemeWatch;   // 点空白处自动收起弹层（Panel 拿不到全局鼠标，轮询一次按下状态最省事）
         private string titleBase = "";             // 窗口标题原文（有新版时在后面挂一句）
         private string pendingRoot;                 // 扫库期间用户选的新目录，扫完接着切
         // 扫库心跳：扫库期间每 5 秒往日志报一声、状态栏刷新一次秒数。
@@ -3539,11 +3540,28 @@ namespace Installer
             BuildSchemeMenu();
             pnlScheme.Visible = true;
             pnlScheme.BringToFront();
+            if (schemeWatch == null)
+            {
+                schemeWatch = new System.Windows.Forms.Timer();
+                schemeWatch.Interval = 120;
+                schemeWatch.Tick += delegate
+                {
+                    if (pnlScheme == null || !pnlScheme.Visible) { schemeWatch.Stop(); return; }
+                    if ((Control.MouseButtons & MouseButtons.Left) == 0) return;
+                    Point pt = Cursor.Position;
+                    if (pnlScheme.RectangleToScreen(pnlScheme.ClientRectangle).Contains(pt)) return;
+                    if (btnScheme != null && btnScheme.RectangleToScreen(btnScheme.ClientRectangle).Contains(pt)) return;
+                    HideSchemeMenu();
+                    schemeWatch.Stop();
+                };
+            }
+            schemeWatch.Start();
         }
 
         private void HideSchemeMenu()
         {
             if (pnlScheme != null) pnlScheme.Visible = false;
+            if (schemeWatch != null) schemeWatch.Stop();
         }
 
         private void BuildSchemeMenu()
