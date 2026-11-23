@@ -3996,7 +3996,7 @@ namespace Installer
                     int whole = lv.Height;
                     // 2026-11-24（用户）：推荐改成两行卡。卡格是 58 图 + 18 标题 + 8 间距 = 84，
                     // 两行要 2*84 + 一点余量；候选列不够高时自动退回一行，不硬撑。
-                    int recH = whole >= Dpi.S(380) ? Dpi.S(196) : Dpi.S(152);
+                    int recH = whole >= Dpi.S(320) ? Dpi.S(196) : Dpi.S(152);
                     if (whole - recH < Dpi.S(150)) recH = Math.Min(Dpi.S(152), Math.Max(Dpi.S(120), whole / 3));
                     if (whole - recH < Dpi.S(90)) { recPanel.Visible = false; }
                     else

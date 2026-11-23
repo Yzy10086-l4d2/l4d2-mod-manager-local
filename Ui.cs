@@ -16,7 +16,6 @@ namespace Installer
         private FlatButton btnWorkshop;           // 顶部：从创意工坊导入
         private bool drawerOpen;                  // 左栏（装什么 / 安装选项 / 日志）是否展开
         private FlatButton btnLogToggle;          // 左栏「显示日志 / 收起日志」
-        private Label lblLibInfo;                 // 左栏底部一行库信息，别让下半屏空着
         // 左栏「游戏现状」卡片：日志收起时它就占着左栏下半屏（以前那块是纯留白），
         // 同时承担「按游戏现状回填勾选」和「刷新」两个入口 —— 换机器第一件事就是看这里。
         private Section gNow;
@@ -674,17 +673,6 @@ namespace Installer
             lblNowCats.TextAlign = ContentAlignment.TopLeft;
             gNow.Controls.Add(lblNowCats);
 
-            // 左栏底部这行信息：以前下面大半屏是空的，看着像漏画了东西；
-            // 放一行「库 · 多少个 · 上次装机」既填了空白，又是有用的上下文。
-            lblLibInfo = new Label();
-            lblLibInfo.Font = Theme.UISmall;
-            lblLibInfo.ForeColor = Theme.Ink3;
-            lblLibInfo.AutoSize = false;
-            lblLibInfo.AutoEllipsis = true;
-            lblLibInfo.TextAlign = ContentAlignment.MiddleLeft;
-            lblLibInfo.BackColor = Color.Transparent;
-            Controls.Add(lblLibInfo);
-
             // ---- 右栏：MOD 库 ----
             // 只有一屏：方案树。左边是「能替换的东西」的位置，右边是它的候选。
             // 不另开窗口，勾选、搜索、方案下拉始终在视线里，关窗口把进程留在后台这种事也不会再发生。
@@ -787,15 +775,21 @@ namespace Installer
             lblLoading.ShowLoad("正在读取 U 盘上的 MOD 库…",
                 "第一次启动或刚更新完可能要等几秒，别急着关", true);
 
+            // 重复嫌疑提示：2026-11-24 从卡片底部搬到顶栏（原来那条黄字被状态行压掉半截，
+            // 而且把树区底边挤出一条空带）。现在挂在「当前游戏目录」那行的右端，
+            // 宽度固定、超长省略，鼠标停着看完整句子，点一下开明细。
             lblConflict = new Label();
-            lblConflict.SetBounds(12, modH - 24, rightW - 24, 20);
+            lblConflict.SetBounds(Theme.M, 31, 282, 18);
             lblConflict.Text = "";
             lblConflict.Font = Theme.UISmall;
             lblConflict.BackColor = Color.Transparent;
             lblConflict.ForeColor = Theme.Warn;
+            lblConflict.TextAlign = ContentAlignment.MiddleRight;
+            lblConflict.AutoEllipsis = true;
             lblConflict.Cursor = Cursors.Hand;
+            lblConflict.Visible = false;
             lblConflict.Click += delegate { ShowConflictDetail(); };
-            gm.Controls.Add(lblConflict);
+            Controls.Add(lblConflict);
 
             // ---- 底部动作区 ----
             // 右侧只留「次要 + 主操作」两个；破坏性的「一键还原」挪到最左下角，
@@ -863,8 +857,11 @@ namespace Installer
             lblNotice.TextAlign = ContentAlignment.MiddleRight;
             lblNotice.AutoEllipsis = true;
             lblNotice.Text = "";
+            // 这两个标签现在贴在卡片上（卡片铺到窗口底边），底色必须跟卡片一致，
+            // 用 Transparent 的话底透出来的是窗口背景，会显出一块更暗的补丁。
+            lblNotice.BackColor = Theme.Surface;
             Controls.Add(lblNotice);
-            lblStatus.ForeColor = Theme.Ink2; lblStatus.BackColor = Color.Transparent; Controls.Add(lblStatus);
+            lblStatus.ForeColor = Theme.Ink2; lblStatus.BackColor = Theme.Surface; Controls.Add(lblStatus);
 
             // 随窗口缩放：左右拉伸的跟着走，底部按钮贴右下
             gMod = gm; gLog = gl;
@@ -875,7 +872,7 @@ namespace Installer
             btnLaunch.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             gl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
             gm.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            lblConflict.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            lblConflict.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             txtLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             btnInstall.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             btnRestore.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;    // 左下角：和右边的主操作分开
@@ -2830,7 +2827,7 @@ namespace Installer
         private void RefreshConflicts(bool checkExisting)
         {
             string root = txtGame.Text.Trim();
-            if (!Core.TestGame(root)) { lblConflict.Text = ""; conflictMsgs.Clear(); lblConflict.Visible = false; return; }
+            if (!Core.TestGame(root)) { lblConflict.Text = ""; conflictMsgs.Clear(); lblConflict.Visible = false; PlaceBrandRow(); return; }
             List<string> msgs;
             try { msgs = ConflictCheck.Run(Core.ModList, root, checkExisting); }
             catch (Exception ex)
@@ -2840,9 +2837,10 @@ namespace Installer
                 return;
             }
             conflictMsgs = msgs;
-            if (msgs.Count == 0) { lblConflict.Text = ""; lblConflict.Visible = false; return; }
+            if (msgs.Count == 0) { lblConflict.Text = ""; lblConflict.Visible = false; PlaceBrandRow(); return; }
             lblConflict.ForeColor = Theme.Warn;
             lblConflict.Visible = true;
+            PlaceBrandRow();      // 提示出现 / 消失时，标题区要重新分宽度
             // 数量 + 最多白占多少 + 一个样本 + 下一步；明细点开看，不硬塞进一行
             List<DupGroup> dups = ConflictCheck.DupGroups(Core.ModList);
             if (dups.Count > 0)
@@ -2853,11 +2851,13 @@ namespace Installer
                 if (one.Length > 26) one = one.Substring(0, 26) + "…";
                 // 一行说完，点开看明细：以前这里带换行、高 34px，被下面的方案树压掉上半截，
                 // 屏幕上只剩半行黄字挂在「就绪」上面（用户 2026-11-24 反馈）。
-                lblConflict.Text = Lang.F("⚠ {0} 组体积重复 · 最多白占 {1} · {2} —— 点这里处理", dups.Count, Core.Human(waste), one);
+                lblConflict.Text = Lang.F("⚠ {0} 组重复 · 白占 {1} —— 点这里处理", dups.Count, Core.Human(waste));
+                if (tips != null) tips.SetToolTip(lblConflict, Lang.F("{0} 组体积完全相同，最多白占 {1}。\r\n样本：{2}\r\n点一下看清单：可以先核对内容，再决定这次不装 / 直接删掉。", dups.Count, Core.Human(waste), one));
             }
             else
             {
-                lblConflict.Text = Lang.F("⚠ {0} 条提示（同名 / 已装）—— 点这里看清单", msgs.Count);
+                lblConflict.Text = Lang.F("⚠ {0} 条提示 —— 点这里看", msgs.Count);
+                if (tips != null) tips.SetToolTip(lblConflict, "同名 / 已装等提示 " + msgs.Count + " 条，点一下看清单。");
             }
             foreach (string m in msgs) Core.Log("WARN", m);
         }
@@ -3783,21 +3783,46 @@ namespace Installer
         private void PinBottomRow(int physH)
         {
             int top = physH - Dpi.S(BottomBarH);
-            // 内容区底边也按物理高度收口：设计值→物理值来回换算会差几十像素，
-            // 差出来的就是窗口底下那条空白（2026-11-19 实测）。
-            if (gMod != null && gMod.Parent == this)
-                gMod.Height = Math.Max(Dpi.S(160), top - gMod.Top);
+            // 卡片高度统一由 ApplyResponsive 按 modH 定（要留 8px 底边）。
+            // 这里以前也写一次 gMod.Height，结果「尺寸没变」的调用会把它撑到窗口最下沿，
+            // 和 modH 打架，卡片高度忽高忽低。
             if (btnRestore != null) btnRestore.Top = top;
             // 进度条 / 停止：装在跑的时候临时占用页脚那一行
             if (bar != null) bar.Top = top - Dpi.S(StatusRowH) + Dpi.S(7);
             if (btnCancel != null) btnCancel.Top = top - Dpi.S(StatusRowH) + Dpi.S(1);
-            // 状态行：右栏页脚贴着窗口底边的一行（刷新按钮已经挪到顶栏，这里整行给文字）
+            // 状态行：卡片里最后一行（卡片铺到窗口底边内 8px，不再单独占一条底栏）
             if (lblStatus != null)
             {
                 int left = gMod != null ? gMod.Left + Dpi.S(12) : Dpi.S(Theme.M);
-                int wide = gMod != null ? gMod.Width - Dpi.S(24) : ClientSize.Width - Dpi.S(2 * Theme.M);
-                lblStatus.SetBounds(left, top - Dpi.S(StatusRowH), wide, Dpi.S(StatusRowH - 4));
+                int wide = gMod != null ? gMod.Width - Dpi.S(24) - Dpi.S(252)
+                                        : ClientSize.Width - Dpi.S(2 * Theme.M) - Dpi.S(252);
+                lblStatus.SetBounds(left, top - Dpi.S(34), Math.Max(Dpi.S(160), wide), Dpi.S(18));
             }
+            if (lblNotice != null && lblStatus != null)
+            {
+                lblNotice.Top = lblStatus.Top;
+                lblNotice.Width = Dpi.S(240);
+                lblNotice.Left = (gMod != null ? gMod.Left + gMod.Width : ClientSize.Width) - Dpi.S(12) - lblNotice.Width;
+            }
+        }
+
+        private int lastFindX = -1;      // 顶栏按钮组左边界（设计值），标题区排版要用
+
+        /// <summary>
+        /// 顶栏标题区一行：标题 / 当前游戏目录 / 重复提示，三者抢同一条横带。
+        /// 重复提示不出现时，标题和路径吃满整条；出现时按固定 232px 让位。
+        /// </summary>
+        private void PlaceBrandRow()
+        {
+            if (lblBrand == null || lblBrandSub == null || lastFindX <= 0) return;
+            int right = Dpi.S(lastFindX) - Dpi.S(16);
+            bool showC = lblConflict != null && lblConflict.Visible;
+            int cw = Dpi.S(282);
+            if (lblConflict != null) lblConflict.SetBounds(right - cw, Dpi.S(31), cw, Dpi.S(18));
+            int subRight = showC ? right - cw - Dpi.S(8) : right;
+            int w = Math.Max(Dpi.S(120), subRight - Dpi.S(Theme.M));
+            lblBrand.Width = w;
+            lblBrandSub.Width = w;
         }
 
         private void ApplyResponsive()
@@ -3830,8 +3855,6 @@ namespace Installer
             gMod.Width = Dpi.S(rightW);
             viewHost.Left = Dpi.S(12);
             viewHost.Width = Dpi.S(rightW - 24);
-            lblConflict.Left = Dpi.S(12);
-            lblConflict.Width = Dpi.S(rightW - 24);
 
             // 纵向也得每次重算。BuildUi 那次是按「当时的客户区」写死的绝对值，之后全靠 Anchor
             // 记住「距底多远」来跟；可只要那次的基数就已经不对（高 DPI 下 BuildUi 把物理像素
@@ -3840,16 +3863,19 @@ namespace Installer
             // 用户看到的就是「下面的按钮全没了」。所以这里按设计坐标把每条高度重新算死。
             int H = Dpi.Un(physH);
             {
-                int modH = Dpi.Un(physH - Dpi.S(BottomBarH)) - 56 - StatusRowH - 8;   // 扣掉底部那行状态，卡片别压住它
+                // 卡片一路铺到窗口底边（只留 8px 边距）：以前底下还要腾出 28px 给状态行，
+                // 那一条空带就是用户说的「难看的下巴」。现在状态那行搬进卡片里当最后一行。
+                int modH = H - 56 - 8;
                 gMod.Top = Dpi.S(56);
                 gMod.Height = Dpi.S(modH);
                 viewHost.Top = Dpi.S(70);
-                // 页脚只剩一行状态：候选列表一路贴到页脚上沿（原来留 74px，第二次收到 40，现在 22）
-                viewHost.Height = Dpi.S(Math.Max(80, modH - 70 - 30));
-                lblConflict.Top = Dpi.S(modH - 26);
+                // 卡片内部：标题 22 + 方案/搜索行 + 树 + 最后一行状态
+                viewHost.Height = Dpi.S(Math.Max(80, modH - 70 - 26));
                 // 左栏纵向：安装选项搬进设置后，顶上那张卡没了 —— 切换按钮和「游戏现状」直接贴顶，
                 // 把原来空出来的半屏交给现状卡（它自己会按高度铺分类分布）。
-                int infoTop = H - BottomBarH - 24;
+                // 状态行现在贴在卡片底部（top=H-34），左栏日志必须停在它上面：原来按 -24 算，
+                // 日志底边正好压到状态行 2px（--layoutself 直接报「日志展开后压到底栏」）。
+                int infoTop = H - BottomBarH - 38;
                 const int btnLogTop = 56;                   // 贴顶：顶栏下面就是「显示日志」
                 int logTop = btnLogTop + Theme.H + Theme.S;
                 int logH = Math.Max(0, infoTop - Theme.S - logTop);
@@ -3906,16 +3932,9 @@ namespace Installer
                 btnInstall.Top = Dpi.S(16);
                 btnInstall.Left = Dpi.S(W - Theme.M - 124);
                 btnRestore.Top = Dpi.S(H - BottomBarH);
-                bar.Top = Dpi.S(H - StatusRowH + 7);
-                btnCancel.Top = Dpi.S(H - StatusRowH + 1);
-                lblStatus.Top = Dpi.S(H - StatusRowH);
-                if (lblLibInfo != null)
-                {
-                    // 左栏撤掉后，库信息并到底部状态行（常驻提示的左边）
-                    lblLibInfo.SetBounds(Dpi.S(W - Theme.M - 540), Dpi.S(H - 28), Dpi.S(292), Dpi.S(18));
-                    lblLibInfo.TextAlign = ContentAlignment.MiddleRight;
-                    lblLibInfo.Visible = true;
-                }
+                bar.Top = Dpi.S(H - 26);
+                btnCancel.Top = Dpi.S(H - 34);
+                // 状态行位置由 PinBottomRow 统一给（它按物理像素算，换算不会漂）
             }
 
             // 方案行 / 搜索行并成一行后，这几处左边界必须跟着响应式一起算，
@@ -3941,9 +3960,9 @@ namespace Installer
             int viewX = settingsX - groupGap - viewW;
             int wsX = viewX - groupGap - wsW;
             int findX = wsX - topGap - findW;
-            // 标题区吃掉按钮组左边剩下的全部宽度；游戏目录那一行小字跟着一起伸缩
-            if (lblBrand != null) lblBrand.Width = Dpi.S(Math.Max(120, findX - Theme.M - 12));
-            if (lblBrandSub != null) lblBrandSub.Width = Dpi.S(Math.Max(120, findX - Theme.M - 12));
+            // 标题区吃掉按钮组左边剩下的全部宽度；有重复提示时再让出它那 232px
+            lastFindX = findX;
+            PlaceBrandRow();
             btnLaunch.Left = Dpi.S(findX);
             btnSettings.Left = Dpi.S(settingsX);
             if (btnRefreshLib != null) btnRefreshLib.Left = Dpi.S(refreshX);

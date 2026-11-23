@@ -319,7 +319,6 @@ namespace Installer
             if (map != null) map.Visible = false;
             if (lblStatus != null) lblStatus.BringToFront();
             if (lblNotice != null) lblNotice.BringToFront();
-            if (lblLibInfo != null) lblLibInfo.BringToFront();
             UpdateModCaption();
             RefreshGameNow();          // 树的「未归类」数只有建完树才知道，卡片跟着补一次
             // 树是后加进来的，会盖在加载占位上：还在扫就把占位顶回去
@@ -486,29 +485,6 @@ namespace Installer
             // 没认出来的 MOD 为 0 时，这个按钮点了也没内容可看；常驻只增加噪音。
             if (btnUnmatched != null)
                 btnUnmatched.Visible = treeView != null && treeView.Unmatched > 0;
-
-            if (lblLibInfo != null)
-            {
-                int n = Core.ModList == null ? 0 : Core.ModList.Count;
-                string last = Lang.S("还没装过");
-                string run = (Core.Cfg.LastRun ?? "").Trim();
-                if (run.Length > 0)
-                {
-                    // 完整日期时间贴在这儿太长（会盖过真正有用的库/数量），压成「今天 07:36 装过」
-                    int sp = run.IndexOf(' ');
-                    if (sp > 0 && run.Length >= sp + 6)
-                    {
-                        string day = run.Substring(0, sp), hm = run.Substring(sp + 1, 5);
-                        last = (day == DateTime.Now.ToString("yyyy-MM-dd") ? Lang.F("今天 {0}", hm) : day.Substring(Math.Max(0, day.Length - 5)) + " " + hm)
-                             + Lang.S(" 装过");
-                    }
-                    else last = run;
-                }
-                // 本地模式下根本没有「U 盘库」，那行写错名字会让人以为读的是别处
-                lblLibInfo.Text = Core.IsLocal
-                    ? Lang.F("游戏目录 · {0} 个 MOD · {1}", n, last)
-                    : Lang.F("U 盘库 · {0} 个 MOD · {1}", n, last);
-            }
         }
     }
 }
