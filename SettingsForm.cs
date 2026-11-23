@@ -21,6 +21,10 @@ namespace Installer
         private Toggle tglMotion;
         private ComboBox cboGame;
         private Label lblKeyState;
+        private Label lblUpd;                 // 程序更新：当前版本 / 检查结果
+        private FlatButton btnUpdCheck, btnUpdNow;
+        private CheckBox chkUpd;
+        private UpdateInfo foundUpdate;       // 已经查到的新版本（null = 没有）
         private CheckBox chkSteam, chkGb;
         private TextBox txtApiKey;
         private FlatButton btnGameBrowse, btnGameFind, btnSave;
@@ -56,7 +60,7 @@ namespace Installer
 
             Text = Lang.S("设置 · L4D2 MOD 管理工具");
             Theme.UseDpi(this);
-            ClientSize = Dpi.Sz(620, 934);
+            ClientSize = Dpi.Sz(620, 1012);
             Font = Theme.UI;
             BackColor = Theme.Bg;
             ForeColor = Theme.Ink;
@@ -79,6 +83,7 @@ namespace Installer
             BuildGameDir();
             BuildWorkshop();
             BuildDiagnostics();
+            BuildUpdate();
             BuildFooter();
 
             syncing = false;
@@ -629,7 +634,134 @@ namespace Installer
             sb.AppendLine("附加库目录: " + (Core.Cfg.ModDirs == null ? 0 : Core.Cfg.ModDirs.Count) + " 个");
             sb.AppendLine("配置路径: " + Core.CfgPath);
             sb.AppendLine("日志路径: " + Core.LogDir);
+            sb.AppendLine("程序版本: " + AppUpdate.Current);
             return sb.ToString();
+        }
+
+        // ---------------------------------------------------------- 程序更新
+
+        /// <summary>
+        /// 「程序更新」一栏：查 GitHub 的 latest，查到就在这一栏里直接升级。
+        /// 只换 exe，不碰配置和 MOD 库 —— 所以更新对用户就是「换一个文件」。
+        /// </summary>
+        private void BuildUpdate()
+        {
+            Card s = AddGroup(Lang.S("程序更新"), 822, 118);
+
+            lblUpd = new Label();
+            lblUpd.SetBounds(16, 8, 548, 16);
+            lblUpd.Font = Theme.UISmall;
+            lblUpd.ForeColor = Theme.Ink2;
+            lblUpd.AutoEllipsis = true;
+            lblUpd.Text = Lang.F("当前版本 {0} · 还没检查", AppUpdate.Current);
+            s.Controls.Add(lblUpd);
+
+            btnUpdCheck = SoftButton(s, Lang.S("检查更新"), 16, 30, 96, 28);
+            btnUpdCheck.Click += delegate { CheckUpdateClicked(); };
+
+            btnUpdNow = SoftButton(s, Lang.S("立即更新"), 120, 30, 96, 28);
+            btnUpdNow.Visible = false;
+            btnUpdNow.Click += delegate { ApplyUpdateClicked(); };
+
+            chkUpd = new CheckBox();
+            chkUpd.Text = Lang.S("启动时检查更新（只查，不自动装）");
+            chkUpd.SetBounds(228, 33, 330, 22);
+            chkUpd.Font = Theme.UISmall;
+            chkUpd.Checked = Core.Cfg.UpdateCheck;
+            chkUpd.CheckedChanged += delegate { Core.Cfg.UpdateCheck = chkUpd.Checked; Core.SaveConfig(); };
+            s.Controls.Add(chkUpd);
+
+            foundUpdate = owner == null ? null : owner.PendingUpdate;
+            if (foundUpdate != null) ShowFound(foundUpdate);
+        }
+
+        private void ShowFound(UpdateInfo u)
+        {
+            if (lblUpd == null) return;
+            lblUpd.Text = Lang.F("发现新版本 {0}（当前 {1}）", u.Version, AppUpdate.Current);
+            lblUpd.ForeColor = Theme.Ok;
+            if (btnUpdNow != null) btnUpdNow.Visible = true;
+        }
+
+        private void CheckUpdateClicked()
+        {
+            if (btnUpdCheck == null) return;
+            btnUpdCheck.Enabled = false;
+            btnUpdNow.Visible = false;
+            lblUpd.ForeColor = Theme.Ink2;
+            lblUpd.Text = Lang.S("正在检查更新…");
+            System.Threading.Thread t = new System.Threading.Thread(delegate()
+            {
+                UpdateInfo u = AppUpdate.Check(8000);
+                BeginInvoke((MethodInvoker)delegate()
+                {
+                    btnUpdCheck.Enabled = true;
+                    if (u == null)
+                    {
+                        lblUpd.Text = Lang.S("查不到新版本（没网 / 还没发过 Release），稍后再试");
+                        return;
+                    }
+                    if (!AppUpdate.Newer(AppUpdate.Current, u.Version))
+                    {
+                        lblUpd.Text = Lang.F("已是最新版本 {0}", AppUpdate.Current);
+                        lblUpd.ForeColor = Theme.Ok;
+                        return;
+                    }
+                    foundUpdate = u;
+                    ShowFound(u);
+                    Core.Log("INFO", "发现新版本 " + u.Version + "（当前 " + AppUpdate.Current + "）");
+                });
+            });
+            t.IsBackground = true;
+            t.Start();
+        }
+
+        private void ApplyUpdateClicked()
+        {
+            UpdateInfo u = foundUpdate;
+            if (u == null || btnUpdNow == null) return;
+            if (MessageBox.Show(this,
+                Lang.F("下载并安装 v{0}？\r\n\r\n装好会自动重启，配置和 MOD 库都不受影响。", u.Version),
+                Lang.S("程序更新"), MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+
+            btnUpdNow.Enabled = false;
+            btnUpdCheck.Enabled = false;
+            lblUpd.ForeColor = Theme.Ink2;
+            lblUpd.Text = Lang.S("正在下载…");
+            System.Threading.Thread t = new System.Threading.Thread(delegate()
+            {
+                string err = AppUpdate.Apply(u, delegate(int p)
+                {
+                    BeginInvoke((MethodInvoker)delegate()
+                    {
+                        if (lblUpd != null) lblUpd.Text = Lang.F("正在下载… {0}%", p);
+                    });
+                });
+                BeginInvoke((MethodInvoker)delegate()
+                {
+                    if (lblUpd == null) return;
+                    if (err != null)
+                    {
+                        lblUpd.Text = Lang.S("更新失败：") + err;
+                        lblUpd.ForeColor = Theme.Warn;
+                        btnUpdNow.Enabled = true;
+                        btnUpdCheck.Enabled = true;
+                        Core.Log("FAIL", "更新失败: " + err);
+                        MessageBox.Show(this, err, Lang.S("更新失败"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    lblUpd.Text = Lang.F("已装好 {0}，正在重启…", u.Version);
+                    Core.Log("OK", "已更新到 " + u.Version + "，重启");
+                    if (!AppUpdate.RestartSelf())
+                    {
+                        lblUpd.Text = Lang.S("已装好，请手动重启程序");
+                        return;
+                    }
+                    Application.Exit();
+                });
+            });
+            t.IsBackground = true;
+            t.Start();
         }
     }
 

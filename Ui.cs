@@ -176,6 +176,8 @@ namespace Installer
         private volatile bool scanning;
         // 扫描期间又来的「扫完再做」的活：连下两个 MOD 时，第二个的自动启用不能被吞掉
         private Action afterScanQueue;
+        // 启动时查到的新版本（设置页直接读它，不用再查一次）
+        private UpdateInfo pendingUpdate;
         private string pendingRoot;                 // 扫库期间用户选的新目录，扫完接着切
         // 扫库心跳：扫库期间每 5 秒往日志报一声、状态栏刷新一次秒数。
         // 「一直在加载」的时候，用户至少看得到程序还活着、进行到第几秒；
@@ -270,6 +272,7 @@ namespace Installer
                         if (pendingRoot != null) { string pr = pendingRoot; pendingRoot = null; SwitchGameRoot(pr, "补切（扫库完成）"); }
                         ShowTree();                        // 启动第一屏是方案树；桌面要点按钮才开
                         FlushAfterScan();                  // 启动扫库期间排队的活（连下两个 MOD 的第二个）
+                        StartUpdateCheck();                // 后台查一次新版本，只改状态行，不打扰
                         ProbeWritable(txtGame.Text.Trim());  // 后台探一次可写性，校验条才有话说
                         QueuePrecheck();
                     });
@@ -2430,6 +2433,31 @@ namespace Installer
             th.IsBackground = true;
             th.Start();
             return true;
+        }
+
+        /// <summary>设置页读它：启动时已经查到的那个新版本（null = 没有）。</summary>
+        internal UpdateInfo PendingUpdate { get { return pendingUpdate; } }
+
+        /// <summary>
+        /// 启动后查一次新版本。只查不装：查到就写状态行，让用户自己去「设置 → 程序更新」。
+        /// 4 秒超时、失败静默 —— 检查更新绝不该变成一个会打扰人的提示框。
+        /// </summary>
+        internal void StartUpdateCheck()
+        {
+            if (!Core.Cfg.UpdateCheck) return;
+            System.Threading.Thread t = new System.Threading.Thread(delegate()
+            {
+                UpdateInfo u = AppUpdate.Check(4000);
+                if (u == null || !AppUpdate.Newer(AppUpdate.Current, u.Version)) return;
+                SafeInvoke(delegate()
+                {
+                    pendingUpdate = u;
+                    SetStatus(Lang.F("发现新版本 {0} —— 打开「设置 → 程序更新」升级", u.Version));
+                    Core.Log("INFO", "发现新版本 " + u.Version + "（当前 " + AppUpdate.Current + "）");
+                });
+            });
+            t.IsBackground = true;
+            t.Start();
         }
 
         /// <summary>把扫描期间排队的活一次跑完（只在 UI 线程上调）。</summary>

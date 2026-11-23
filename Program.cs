@@ -206,6 +206,36 @@ namespace Installer
             // 跑一次自检用户的工作模式就变了（库从 223 个 MOD 变成 49 个）。
             // 必须在下面这些分支 return **之前** 置位 —— 它们一样会跑扫描、开界面，一样会改到配置；
             // 以前这行写在所有自检分支后面，等于对它们全部无效。
+
+            // ---------------- 更新模块的测试入口（不启界面、不碰配置） ----------------
+            foreach (string au in args)
+            {
+                if (au.StartsWith("--updparse=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string pu = au.Substring(11).Trim('"');
+                    UpdateInfo uu = AppUpdate.Parse(System.IO.File.ReadAllText(pu, System.Text.Encoding.UTF8));
+                    System.IO.File.WriteAllText(@"C:\temp\upd-parse.txt",
+                        uu == null ? "null" : ("tag=" + uu.Tag + " ver=" + uu.Version + " size=" + uu.Size + " sha=" + uu.Sha + " url=" + uu.Url),
+                        new System.Text.UTF8Encoding(false));
+                    return 0;
+                }
+                if (au.StartsWith("--updateapply=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string pu = au.Substring(14).Trim('"');
+                    UpdateInfo uu = AppUpdate.FromFile(pu, "9.9.9");
+                    string eu = AppUpdate.Apply(uu, null);
+                    System.IO.File.WriteAllText(@"C:\temp\upd-apply.txt", eu == null ? "OK" : ("ERR " + eu), new System.Text.UTF8Encoding(false));
+                    return eu == null ? 0 : 2;
+                }
+                if (string.Equals(au, "--updatecheck", StringComparison.OrdinalIgnoreCase))
+                {
+                    UpdateInfo uu = AppUpdate.Check(8000);
+                    System.IO.File.WriteAllText(@"C:\temp\upd-check.txt",
+                        uu == null ? "null" : ("tag=" + uu.Tag + " ver=" + uu.Version + " newer=" + AppUpdate.Newer(AppUpdate.Current, uu.Version) + " size=" + uu.Size),
+                        new System.Text.UTF8Encoding(false));
+                    return uu == null ? 3 : 0;
+                }
+            }
             Core.SelfTesting = selfTest || uiTest || copyTest || launchSelf || dupSelf
                             || addonSelf || safeSelf || dumpId || dumpTree || ovDump || recogSelf || plugSelf || plugTry != null || vpkCheck != null || updCheck || reqCheck != null || wsProbe != null
                             || dumpIdTo != null || idCheckTo != null
@@ -230,6 +260,7 @@ namespace Installer
             // 钩子以前装在 Init 之后，这类失败一条记录都不留，看起来就是「双击没反应」。
             InstallCrashHandlers();
             Core.Init();
+            AppUpdate.CleanupOld();        // 上一个版本留下的 exe.old，能删就删
             Theme.Init();
             // 高 DPI：必须在任何窗口创建之前声明，否则系统已经按老规矩把窗口当位图拉伸了。
             // --nodpi 或配置里 DpiAware=0 时完全跳过，界面行为和以前一模一样。

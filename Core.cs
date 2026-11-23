@@ -80,6 +80,7 @@ namespace Installer
         // 启动时如果一条勾选都没有（换机器、U 盘配置是空的），就按游戏 addons + addonlist.txt
         // 里「真的在用」的那批回填，而不是让人对着 63 个空行自己猜上次装了哪些。
         public bool AutoSync = true;
+        public bool UpdateCheck = true;     // 启动时检查程序新版本（只查，不装）
         public string WorkshopDir = "";     // 工坊下载位置；空 = 跟随主库（U 盘库/_创意工坊 或 游戏 addons/_创意工坊）
         public string Lang = "zh";          // 界面语言：zh / en（只影响显示，日志与自检保持中文）
         public List<string> ModDirs = new List<string>();   // 额外的 MOD 库文件夹（任意电脑上的任意目录）
@@ -563,6 +564,7 @@ namespace Installer
                     else if (k == "TreeW") { int n; if (int.TryParse(v, out n)) Cfg.TreeW = n; }
                     else if (k == "DetailW") { int n; if (int.TryParse(v, out n)) Cfg.DetailW = n; }
                     else if (k == "AutoSync") Cfg.AutoSync = (v != "0");
+                    else if (k == "UpdateCheck") Cfg.UpdateCheck = (v != "0");
                     else if (k == "WorkshopDir") Cfg.WorkshopDir = v;
                     else if (k == "Lang") Cfg.Lang = (string.Equals(v, "en", StringComparison.OrdinalIgnoreCase) ? "en" : "zh");
                     else if (k == "ModDir") Cfg.ModDirs.Add(v);
@@ -599,6 +601,7 @@ namespace Installer
                 sb.AppendLine("TreeW=" + Cfg.TreeW);
                 sb.AppendLine("DetailW=" + Cfg.DetailW);
                 sb.AppendLine("AutoSync=" + (Cfg.AutoSync ? "1" : "0"));
+        sb.AppendLine("UpdateCheck=" + (Cfg.UpdateCheck ? "1" : "0"));
                 sb.AppendLine("Lang=" + Cfg.Lang);
                 sb.AppendLine("WorkshopDir=" + Cfg.WorkshopDir);
                 foreach (string d in Cfg.ModDirs) sb.AppendLine("ModDir=" + d);
