@@ -96,6 +96,7 @@ namespace Installer
             Version ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
             string verText = ver.Major + "." + ver.Minor + (ver.Build > 0 ? "." + ver.Build : "");
             Text = "L4D2 MOD 管理工具  v" + verText;
+            titleBase = Text;
             // 一开始就开够大：右栏要放下方案树（左边位置 + 右边候选），窄了列会挤成一团
             // 尺寸全部按设计值 × DPI 比例算：WorkingArea 是物理像素，设计值是 96dpi 下的数
             Theme.UseDpi(this);
@@ -179,6 +180,7 @@ namespace Installer
         // 启动时查到的新版本（设置页直接读它，不用再查一次）
         private UpdateInfo pendingUpdate;
         private FlatButton btnUpdate;              // 顶栏「检查更新 / 有新版本」
+        private string titleBase = "";             // 窗口标题原文（有新版时在后面挂一句）
         private string pendingRoot;                 // 扫库期间用户选的新目录，扫完接着切
         // 扫库心跳：扫库期间每 5 秒往日志报一声、状态栏刷新一次秒数。
         // 「一直在加载」的时候，用户至少看得到程序还活着、进行到第几秒；
@@ -2478,7 +2480,8 @@ namespace Installer
             pendingUpdate = u;
             RefreshUpdateBadge();
             if (u == null) return;
-            SetStatus(Lang.F("发现新版本 {0} —— 点顶栏「有新版本」升级", u.Version));
+            // 不用状态栏报这件事：那一行是「临时消息」通道，装个 MOD、扫个库就被盖掉了（用户实测）。
+            // 挂在窗口标题上，一直在，且和顶栏那个实心按钮是两个不同的落点。
             Core.Log("INFO", "发现新版本 " + u.Version + "（当前 " + AppUpdate.Current + "）");
         }
 
@@ -2497,6 +2500,13 @@ namespace Installer
                 btnUpdate.Text = Lang.F("有新版本 {0}", pendingUpdate.Version);
             }
             btnUpdate.Invalidate();
+            // 标题栏跟着写一份：状态栏会被覆盖，标题栏不会
+            try
+            {
+                Text = pendingUpdate == null ? titleBase
+                     : titleBase + Lang.F("　·　有新版本 {0}", pendingUpdate.Version);
+            }
+            catch { }
         }
 
         /// <summary>把扫描期间排队的活一次跑完（只在 UI 线程上调）。</summary>
