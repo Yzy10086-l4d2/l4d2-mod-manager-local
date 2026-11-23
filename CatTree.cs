@@ -4120,11 +4120,8 @@ namespace Installer
             string keyTag = tag;
             // 中文标题的 MOD 不少：英文词搜回来的是一半。位置名是中文、且和查询词不同时，
             // 再拿中文名搜一遍合并 —— 两次结果按 id 去重，英文那批排在前面。
-            string altWord = "";
             string slotName = Current == null ? "" : (Current.Name ?? "");
-            if (key.Length > 0 && slotName.Length > 0 && Lang.HasCjk(slotName)
-                && !string.Equals(slotName, key, StringComparison.OrdinalIgnoreCase))
-                altWord = slotName;
+            string[] recAliases = slotName.Length == 0 ? new string[0] : Workshop.SlotAliases(slotName);
             System.Threading.Tasks.Task.Run(delegate
             {
                 List<WsItem> got = null;
@@ -4139,24 +4136,8 @@ namespace Installer
                 {
                     steamTh = new System.Threading.Thread(delegate()
                     {
-                        try { steamGot = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { }
-                        if (altWord.Length == 0) return;
-                        try
-                        {
-                            List<WsItem> more = Workshop.SearchItems(altWord, "trend", pg, keyTag);
-                            if (more == null || more.Count == 0) return;
-                            if (steamGot == null) { steamGot = more; return; }
-                            HashSet<string> have = new HashSet<string>(StringComparer.Ordinal);
-                            foreach (WsItem x in steamGot) if (x != null) have.Add(x.Id ?? "");
-                            foreach (WsItem x in more)
-                            {
-                                if (x == null) continue;
-                                string id = x.Id ?? "";
-                                if (have.Contains(id)) continue;
-                                have.Add(id);
-                                steamGot.Add(x);
-                            }
-                        }
+                        int pc;
+                        try { steamGot = Workshop.SearchWithAliases(key, recAliases, "trend", pg, keyTag, 2, out pc); }
                         catch { }
                     });
                     steamTh.IsBackground = true;

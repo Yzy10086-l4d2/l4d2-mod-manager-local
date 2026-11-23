@@ -2197,6 +2197,142 @@ namespace Installer
             }
         }
 
+
+        /// <summary>备选词表写成 "a|b|c" 省行数；空串 = 没有备选。</summary>
+        private static string[] A(string s)
+        {
+            return string.IsNullOrEmpty(s) ? new string[0] : s.Split('|');
+        }
+
+        /// <summary>
+        /// 位置的备选查询词：中文社区叫法 + 英文同义。**不重复放主词**（主词在 SlotWord 里），
+        /// 同一次搜索内调用方还会再按名字去重一次。顺序 = 优先级，用得上的只有前两条。
+        /// </summary>
+        internal static string[] SlotAliases(string slotName)
+        {
+            switch ((slotName ?? "").Trim())
+            {
+                case "AK-47": return A("阿卡|ak47");
+                case "M16": return A("m4|m16a2");
+                case "sg552": return A("西格|sig552");
+                case "SCAR-L": return A("斯卡|scar");
+                case "UZI": return A("乌兹|uzi");
+                case "MAC-10": return A("麦克10|mac10");
+                case "MP5": return A("mp5");
+                case "木喷": return A("木喷|木质霰弹枪");
+                case "铁喷": return A("铁喷|铬制霰弹枪");
+                case "一代连喷": return A("一代连喷|自动霰弹枪");
+                case "二代连喷": return A("二代连喷|战斗霰弹枪");
+                case "AWP": return A("大狙|sniper rifle");
+                case "鸟狙": return A("鸟狙|单发狙");
+                case "15发木狙": return A("木狙|15发猎枪");
+                case "30发军用狙": return A("军用狙|30发狙");
+                case "手枪": return A("pistols");
+                case "马格南": return A("马格南|沙鹰");
+                case "M60": return A("机枪|machine gun");
+                case "榴弹发射器": return A("榴弹");
+                case "近战武器": return A("近战|melee weapon");
+                case "消防斧": return A("斧头|axe");
+                case "武士刀": return A("太刀|sword");
+                case "砍刀": return A("开山刀");
+                case "撬棍": return A("撬杠");
+                case "电锯": return A("链锯");
+                case "平底锅": return A("煎锅|pan");
+                case "棒球棍": return A("球棒|bat");
+                case "板球拍": return A("板球");
+                case "高尔夫球杆": return A("球杆");
+                case "电吉他": return A("吉他|guitar");
+                case "警棍": return A("电棍|baton");
+                case "干草叉": return A("草叉");
+                case "铁锹": return A("铲子|shovel");
+                case "小刀": return A("匕首");
+                case "燃烧瓶": return A("莫洛托夫|汽油弹");
+                case "土制炸弹": return A("管状炸弹|土炸弹");
+                case "胆汁": return A("呕吐瓶|胆汁瓶");
+                case "燃烧弹药包": return A("燃烧弹|incendiary");
+                case "爆破弹药包": return A("高爆弹|explosive");
+                case "激光瞄准": return A("激光|laser");
+                case "弹药": return A("弹药堆|ammo pile");
+                case "比尔": return A("namvet");
+                case "佐伊": return A("左伊|teenangst");
+                case "路易斯": return A("manager");
+                case "弗朗西斯": return A("biker");
+                case "教练": return A("coach");
+                case "埃利斯": return A("mechanic");
+                case "尼克": return A("gambler");
+                case "罗谢尔": return A("罗雪儿|producer");
+                case "幸存者": return A("八人包|全幸存者");
+                case "天空盒": return A("sky box");
+                case "地面细节": return A("地面贴图|ground detail");
+                case "场景贴图": return A("材质|texture");
+                case "特感通用": return A("特感|special infected");
+                case "普通感染者": return A("小僵尸|普通僵尸");
+                case "防暴警察": return A("防暴|镇暴");
+                case "CEDA": return A("防化|hazmat");
+                case "小丑": return A("clown");
+                case "泥人": return A("泥怪|mud");
+                case "道路工": return A("工人|road crew");
+                case "堕落幸存者": return A("堕落者|fallen");
+                case "吉米": return A("吉米|jimmy gibbs");
+                case "医疗包": return A("血包|first aid");
+                case "电击器": return A("除颤器|defib");
+                case "肾上腺素": return A("肾上腺");
+                case "止痛药": return A("药丸|pills");
+                case "弹道": return A("曳光|bullet tracer");
+                case "氧气瓶": return A("氧气罐|oxygen");
+                case "煤气罐": return A("丙烷罐|propane tank");
+                case "油桶": return A("汽油桶|oil barrel");
+                case "燃料桶": return A("fuel");
+                case "烟花盒": return A("烟花|firework");
+                case "地精": return A("侏儒|garden gnome");
+                case "可乐": return A("汽水|soda");
+                case "特效套装": return A("特效|particle");
+                case "音效套装": return A("音效|sound");
+                case "石头": return A("rock");
+                default: return new string[0];
+            }
+        }
+
+        /// <summary>
+        /// 主词 + 备选逐条查，按工坊 ID 合并（主词那批在前）。primaryCount 回传主词那页的条数 ——
+        /// 翻页「到底」的判断必须用它，不能用合并后的总数，否则永远翻不到底。
+        /// 备选里与主词（或彼此）重名的跳过；单条失败只丢这一条。
+        /// </summary>
+        internal static List<WsItem> SearchWithAliases(string query, string[] aliases, string sort, int page, string tag, int maxAlt, out int primaryCount)
+        {
+            List<WsItem> got = SearchItems(query, sort, page, tag);
+            primaryCount = got == null ? 0 : got.Count;
+            if (aliases == null || aliases.Length == 0) return got;
+            HashSet<string> tried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrEmpty(query)) tried.Add(query.Trim());
+            int used = 0;
+            foreach (string a0 in aliases)
+            {
+                if (used >= maxAlt) break;
+                string a = (a0 ?? "").Trim();
+                if (a.Length == 0 || !tried.Add(a)) continue;
+                used++;
+                try
+                {
+                    List<WsItem> more = SearchItems(a, sort, page, tag);
+                    if (more == null || more.Count == 0) continue;
+                    if (got == null) { got = more; continue; }
+                    HashSet<string> have = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (WsItem x in got) if (x != null) have.Add(x.Id ?? "");
+                    foreach (WsItem x in more)
+                    {
+                        if (x == null) continue;
+                        string id = x.Id ?? "";
+                        if (have.Contains(id)) continue;
+                        have.Add(id);
+                        got.Add(x);
+                    }
+                }
+                catch { }
+            }
+            return got;
+        }
+
         /// <summary>
         /// 槽位 → 搜索词。先查 SlotWord 表（按位置身份定死）；表里没有的再看名字里有没有拉丁字母
         /// （AK-47 / UZI / Boomer），最后才退回槽位键的尾段。
