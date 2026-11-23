@@ -3,6 +3,11 @@
 > 本文件从 v0.5.0 起维护。更早的版本（v0.3.0 ~ v0.4.8）请见
 > [Releases](https://github.com/Yzy10086-l4d2/l4d2-mod-manager-local/releases)。
 
+## v0.6.33
+
+- 方案弹层底部加「＋ 把当前勾选另存为…」：不用先关弹层再找按钮，一步存出新方案。
+- （上一版 0.6.32 修的是更新下载：直链被掐时改走 api.github.com 资产接口。）
+
 ## v0.6.32
 
 - **修更新下载**：直链 `github.com/.../releases/download/...` 在国内常被掐（实测 21 秒超时），

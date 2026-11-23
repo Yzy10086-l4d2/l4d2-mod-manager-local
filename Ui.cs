@@ -3623,7 +3623,19 @@ namespace Installer
                 pnlScheme.Controls.Add(row);
                 y += 38;
             }
-            pnlScheme.Height = Math.Min(340, y + 6);
+            // 弹层底部：把当前勾选另存为新方案（和方案按钮同一套入口，不另开窗口）
+            {
+                Label add = new Label();
+                add.Text = Lang.S("＋ 把当前勾选另存为…");
+                add.SetBounds(12, y + 4, pnlScheme.Width - 20, 20);
+                add.Font = Theme.UISmall;
+                add.ForeColor = Theme.Ink2;
+                add.Cursor = Cursors.Hand;
+                add.Click += delegate { HideSchemeMenu(); SaveProfile(); };
+                pnlScheme.Controls.Add(add);
+                y += 28;
+            }
+            pnlScheme.Height = Math.Min(360, y + 6);
             pnlScheme.ResumeLayout();
         }
 
