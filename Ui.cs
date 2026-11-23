@@ -181,6 +181,8 @@ namespace Installer
         private UpdateInfo pendingUpdate;
         private Label lblNotice;                    // 状态行右段：常驻提示（新版 / 离线 / 未识别数），不被临时消息覆盖
         private Label lblSchemeDiff;                // 方案行右侧：这套方案和当前勾选差几处（套用前先看得到）
+        private FlatButton btnScheme;               // 方案按钮（替代系统下拉）
+        private Panel pnlScheme;                    // 方案弹层：每套一行，带覆盖数 / 正在用 / 有改动
         private string titleBase = "";             // 窗口标题原文（有新版时在后面挂一句）
         private string pendingRoot;                 // 扫库期间用户选的新目录，扫完接着切
         // 扫库心跳：扫库期间每 5 秒往日志报一声、状态栏刷新一次秒数。
@@ -661,6 +663,21 @@ namespace Installer
 
             Label l8 = new Label(); l8.Text = Lang.S("方案"); l8.SetBounds(12, 34, 34, 20); Theme.Dress(l8); gm.Controls.Add(l8);
             cboProfile = new ComboBox(); cboProfile.SetBounds(50, 30, 204, 24); cboProfile.DropDownStyle = ComboBoxStyle.DropDownList; Theme.Dress(cboProfile); gm.Controls.Add(cboProfile);
+            cboProfile.Visible = false;        // 系统下拉收起来：界面上用下面的按钮 + 卡片弹层代替
+
+            btnScheme = new FlatButton(); btnScheme.Soft = true;
+            btnScheme.Text = Lang.S("当前选择") + " ▾";
+            btnScheme.SetBounds(50, 30, 204, Theme.H);
+            btnScheme.Click += delegate { ToggleSchemeMenu(); };
+            tips.SetToolTip(btnScheme, "切换方案：弹层里每套都写着覆盖了几个位置、几个 MOD，\r\n带 ● 的是正在用的，带 * 的是和当前勾选不一致的。");
+            gm.Controls.Add(btnScheme);
+
+            pnlScheme = new Panel();
+            pnlScheme.SetBounds(50, 58, 300, 200);
+            pnlScheme.BackColor = Theme.Surface;
+            pnlScheme.BorderStyle = BorderStyle.FixedSingle;
+            pnlScheme.Visible = false;
+            gm.Controls.Add(pnlScheme);
             cboProfile.SelectedIndexChanged += delegate { ProfileSelectionChanged(); };
             tips.SetToolTip(cboProfile, Lang.S("只选择方案，不会立刻改当前勾选；确认后点「套用」。"));
             btnSaveProfile = new FlatButton(); btnSaveProfile.Text = Lang.S("存为方案"); btnSaveProfile.SetBounds(262, 28, 84, Theme.H); btnSaveProfile.Click += delegate { SaveProfile(); }; gm.Controls.Add(btnSaveProfile);
@@ -961,6 +978,7 @@ namespace Installer
             // 启动仍然保留上次工作选择，必须点「套用」才覆盖。
             LoadSchemeKeys();
             RefreshMods();
+            SyncSchemeButton();
         }
 
         /// <summary>
@@ -3494,6 +3512,111 @@ namespace Installer
         }
 
 
+        // ---------------------------------------------------------- 方案弹层
+
+        /// <summary>这套方案覆盖了几个位置（只看库里真有的 MOD）。</summary>
+        private int ProfileSlotsCovered(Profile p)
+        {
+            if (p == null || treeView == null) return 0;
+            int n = 0;
+            foreach (Slot s in treeView.Slots)
+            {
+                if (s == null) continue;
+                foreach (ModGroup g in s.Items)
+                {
+                    bool hit = false;
+                    foreach (ModItem it in g.Parts) if (p.Mods.Contains(it.Key)) { hit = true; break; }
+                    if (hit) { n++; break; }
+                }
+            }
+            return n;
+        }
+
+        private void ToggleSchemeMenu()
+        {
+            if (pnlScheme == null) return;
+            if (pnlScheme.Visible) { pnlScheme.Visible = false; return; }
+            BuildSchemeMenu();
+            pnlScheme.Visible = true;
+            pnlScheme.BringToFront();
+        }
+
+        private void HideSchemeMenu()
+        {
+            if (pnlScheme != null) pnlScheme.Visible = false;
+        }
+
+        private void BuildSchemeMenu()
+        {
+            pnlScheme.SuspendLayout();
+            pnlScheme.Controls.Clear();
+            List<string> ps = ProfileStore.ListProfiles();
+            int total = treeView == null ? 0 : treeView.Slots.Count;
+            int y = 6;
+            if (ps.Count == 0)
+            {
+                Label none = new Label();
+                none.Text = Lang.S("还没有方案：先勾好，再点「另存」");
+                none.SetBounds(10, y, pnlScheme.Width - 20, 20);
+                none.Font = Theme.UISmall;
+                none.ForeColor = Theme.Ink3;
+                pnlScheme.Controls.Add(none);
+                y += 24;
+            }
+            foreach (string name in ps)
+            {
+                Profile p = ProfileStore.Load(name);
+                int mods = p == null ? 0 : p.Mods.Count;
+                int slots = ProfileSlotsCovered(p);
+                bool on = string.Equals(name, appliedProfile, StringComparison.Ordinal);
+                bool same = p != null && !CurrentSelectionDiffersFrom(p);
+
+                Panel row = new Panel();
+                row.SetBounds(4, y, pnlScheme.Width - 10, 36);
+                row.BackColor = on ? Theme.RowOn : Theme.Surface;
+                row.Cursor = Cursors.Hand;
+
+                Label nm = new Label();
+                nm.Text = (on ? "● " : "") + name + (same ? "" : " *");
+                nm.SetBounds(8, 2, row.Width - 16, 18);
+                nm.Font = Theme.UIBold;
+                nm.ForeColor = Theme.Ink;
+                nm.BackColor = Color.Transparent;
+
+                Label mt = new Label();
+                mt.Text = Lang.F("{0}/{1} 个位置 · {2} 个 MOD", slots, total, mods);
+                mt.SetBounds(8, 19, row.Width - 16, 15);
+                mt.Font = Theme.UISmall;
+                mt.ForeColor = Theme.Ink3;
+                mt.BackColor = Color.Transparent;
+
+                string captured = name;
+                EventHandler pick = delegate
+                {
+                    HideSchemeMenu();
+                    for (int i = 0; i < cboProfile.Items.Count; i++)
+                        if (string.Equals(cboProfile.Items[i].ToString(), captured, StringComparison.Ordinal))
+                        { cboProfile.SelectedIndex = i; return; }
+                };
+                row.Click += pick; nm.Click += pick; mt.Click += pick;
+
+                row.Controls.Add(nm);
+                row.Controls.Add(mt);
+                pnlScheme.Controls.Add(row);
+                y += 38;
+            }
+            pnlScheme.Height = Math.Min(340, y + 6);
+            pnlScheme.ResumeLayout();
+        }
+
+        /// <summary>按钮上的字跟着当前选中项走。</summary>
+        private void SyncSchemeButton()
+        {
+            if (btnScheme == null || cboProfile == null) return;
+            string t = cboProfile.SelectedItem == null ? Lang.S("当前选择") : cboProfile.SelectedItem.ToString();
+            btnScheme.Text = t + " ▾";
+        }
+
         private void ProfileSelectionChanged()
         {
             if (initializing || cboProfile.SelectedItem == null) return;
@@ -3502,6 +3625,7 @@ namespace Installer
             RefreshMods();
             UpdateSchemeLabel();
             UpdateSchemeDiff();
+            SyncSchemeButton();
             if (name.StartsWith("（")) return;
             Log("正在对照方案「" + name + "」，点「套用」才会替换当前勾选");
         }
