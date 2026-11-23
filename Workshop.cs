@@ -814,7 +814,8 @@ namespace Installer
         public static long DownloadTo(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, DlCtl ctl)
         {
             Tune();
-            try { if (ServicePointManager.DefaultConnectionLimit < 24) ServicePointManager.DefaultConnectionLimit = 24; } catch { }
+            // 系统默认每站点 2 条连接：调到 40，否则上面 24 条并发会被这里悄悄排队（实测 32 条反而更慢就是这个原因）
+            try { if (ServicePointManager.DefaultConnectionLimit < 40) ServicePointManager.DefaultConnectionLimit = 40; } catch { }
             if (ctl != null) ctl.Tick();
 
             // 默认开启多段跨节点并发（文件 ≥ 2MB 且无未完断点时）
@@ -919,7 +920,9 @@ namespace Installer
             // 固定切 N 大段有个天然毛病 —— 快下完时只剩最后一段在跑，总速度掉回单连接水平，
             // 那一段哪怕正常速度也显得"蜗牛爬"（用户 2026-11-23 反馈「最后一段很慢」）。
             // 小块排队时，谁先下完谁接下一块，连接一直排到队尾，最后阶段还是多条线在跑。
-            int parts = total >= 64L * 1024 * 1024 ? 16 : (total >= 16L * 1024 * 1024 ? 8 : 4);
+            // 2026-11-23 离线基准：单连接被限速时总速度近似按连接数叠加（4/8/16 条 → 10.7/5.3/2.6 秒），
+            // 正常网络下 8→24 条也快 3 倍；32 条受线程与系统连接上限影响反而变慢，甜点区 16~24。
+            int parts = total >= 64L * 1024 * 1024 ? 24 : (total >= 16L * 1024 * 1024 ? 16 : 4);
             int units = total >= 16L * 1024 * 1024 ? parts * 2 : parts;
             long chunk = total / units;
             if (chunk < 512L * 1024 && units > 4)            // 别切得太碎：每块至少 512KB
