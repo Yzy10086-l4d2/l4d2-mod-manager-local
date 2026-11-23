@@ -35,7 +35,6 @@ namespace Installer
         public string Where = "";           // 下载后识别出来的「替换 AK-47 · 模型」
 
         public string State = "待下载";
-        public bool Ok;                     // 已经落盘
         public bool DetailsLoaded;          // 详情接口是否已补全（浏览页只有短介绍）
     }
 

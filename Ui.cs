@@ -69,7 +69,6 @@ namespace Installer
         // 展开了哪些套装（按 ModGroup.Key）：展开后每个 vpk 单独一行，可以只勾其中一个
         private readonly HashSet<string> expanded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private List<string> conflictMsgs = new List<string>();
-        private bool bulk;                       // 批量勾选时先别逐项刷新
         private int logLines;                    // 日志行数，超了就截断，避免文本框越用越慢
         private readonly System.Windows.Forms.Timer searchTimer = new System.Windows.Forms.Timer();
         private volatile bool bgDone;            // RunBusy 的完成标志
@@ -421,12 +420,8 @@ namespace Installer
                 using (Pen p2 = new Pen(Color.FromArgb(a, 0, 0, 0))) g.DrawLine(p2, 0, top + i, W, top + i);
             }
 
-            // 底栏撤掉以后就不画那条横线了（BottomBarH=0 时它落在窗口最下沿，等于白画）
-            if (BottomBarH > 0)
-            {
-                int bottom = H - Dpi.S(BottomBarH);
-                using (Pen pen = new Pen(Theme.Line)) g.DrawLine(pen, 0, bottom, W, bottom);
-            }
+            // 底栏已撤（BottomBarH 恒为 0），这条横线不画了：以前留着 if (BottomBarH > 0) 的分支，
+            // 编译器一直报「无法访问的代码」。真要恢复底栏，连这段和 BottomBarH 一起改。
         }
 
         private void BuildUi()
