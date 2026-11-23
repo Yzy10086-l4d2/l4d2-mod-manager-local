@@ -97,6 +97,7 @@ namespace Installer
             public string Label = "";
             public string Query = "";
             public string Tag = "";          // 工坊标签过滤（地图=Campaigns / 特感=Special Infected …）
+            public string Alt = "";          // 附加查询词：中文标题的 MOD 不少，位置级会拿中文名再搜一遍（只展示用，不参与翻页判断）
             public string Sort = "";
             public override string ToString() { return Label; }
         }
@@ -477,6 +478,8 @@ namespace Installer
                 {
                     Label = (s.Cat.Length > 0 ? s.Cat + " · " : "") + s.Name,
                     Query = Workshop.SearchWord(s.Name, s.Key),
+                    // 显示名是中文、且和查询词不同 → 再拿中文名搜一遍，兜住中文标题的投稿
+                    Alt = (Lang.HasCjk(s.Name) && !string.Equals(s.Name, Workshop.SearchWord(s.Name, s.Key), StringComparison.OrdinalIgnoreCase)) ? s.Name : "",
                     Tag = Workshop.TagFor(s.Cat, s.Sub)
                 });
             }
@@ -535,6 +538,31 @@ namespace Installer
                 try { cboCat.SelectedIndex = 0; } finally { syncCat = false; }
             }
             DoSearch(1);
+        }
+
+        /// <summary>
+        /// 附加查询：把中文名那一批并进主查询的结果（按工坊 ID 去重，主查询的排在前面）。
+        /// 只为「别漏掉中文标题的 MOD」；翻页到底仍以主查询那页的条数为准，不受合并影响。
+        /// </summary>
+        private static void MergeAlt(List<WsItem> got, string alt, string sort, int page, string tag)
+        {
+            if (got == null || string.IsNullOrEmpty(alt)) return;
+            try
+            {
+                List<WsItem> more = Workshop.SearchItems(alt, sort, page, tag);
+                if (more == null || more.Count == 0) return;
+                HashSet<string> have = new HashSet<string>(StringComparer.Ordinal);
+                foreach (WsItem x in got) if (x != null) have.Add(x.Id ?? "");
+                foreach (WsItem x in more)
+                {
+                    if (x == null) continue;
+                    string id = x.Id ?? "";
+                    if (have.Contains(id)) continue;
+                    have.Add(id);
+                    got.Add(x);
+                }
+            }
+            catch { }
         }
 
         private void DoSearch(int p)
@@ -598,6 +626,7 @@ namespace Installer
             string q = txtQuery.Text.Trim();
             string tag = "";
             if (q.Length == 0 && c != null) { q = c.Query; tag = c.Tag; }   // 自己打字的搜索不带分类标签
+            string altW = (q.Length > 0 && c != null && txtQuery.Text.Trim().Length == 0) ? (c.Alt ?? "") : "";
             GalChoice s = cboSort.SelectedItem as GalChoice;
             string sort = s == null ? "mostsubscribed" : s.Sort;
 
@@ -624,7 +653,8 @@ namespace Installer
                 try
                 {
                     got = Workshop.SearchItems(q, sort, p, tag);   // 浏览页直解：省掉详情接口整趟往返
-                    idCount = got.Count;
+                    idCount = got.Count;                            // 翻页「到底」只看主查询，附加词合并进来的不算
+                    MergeAlt(got, altW, sort, p, tag);
                 }
                 catch (Exception ex) { err = ex.Message; }
                 if (got == null && err != null)
@@ -755,6 +785,7 @@ namespace Installer
             GalChoice c = cboCat.SelectedItem as GalChoice;
             string q = txtQuery.Text.Trim();
             if (q.Length == 0 && c != null) q = c.Query;
+            string altP = (q.Length > 0 && c != null && txtQuery.Text.Trim().Length == 0) ? (c.Alt ?? "") : "";
             GalChoice so = cboSort.SelectedItem as GalChoice;
             string sort = so == null ? "mostsubscribed" : so.Sort;
             int p = page + 1;
@@ -768,6 +799,7 @@ namespace Installer
                 {
                     // 预扫也走统一入口：有 key 走 API、没有就落来源，别再单独去啃被墙的网页
                     got = Workshop.SearchItems(q, sort, p, null);
+                    MergeAlt(got, altP, sort, p, null);
                 }
                 catch (Exception ex) { err = ex.Message; }
 
