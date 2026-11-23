@@ -2198,6 +2198,50 @@ namespace Installer
         }
 
 
+
+        /// <summary>
+        /// 组一次搜索要用的词序：**中文优先**（面向国内用户），但保留英文主词和备选，不全是中文。
+        /// 顺序 = 中文叫法 → 英文主词 → 其余备选；重名（忽略大小写）只留第一次出现的。
+        /// 返回数组：第 0 个当主查询，其余按备选上限截断。
+        /// </summary>
+        internal static string[] SlotQueryList(string slotName, string primary, string[] aliases)
+        {
+            List<string> q = new List<string>();
+            string n = (slotName ?? "").Trim();
+            if (n.Length > 0 && HasCjk(n)) q.Add(n);
+            string p = (primary ?? "").Trim();
+            if (p.Length > 0 && !Contains(q, p)) q.Add(p);
+            if (aliases != null)
+                foreach (string a0 in aliases)
+                {
+                    string a = (a0 ?? "").Trim();
+                    if (a.Length > 0 && !Contains(q, a)) q.Add(a);
+                }
+            return q.ToArray();
+        }
+
+        /// <summary>从 skip 开始取最多 count 条（越界自动收口）。</summary>
+        internal static string[] Take(string[] src, int skip, int count)
+        {
+            if (src == null || skip >= src.Length || count <= 0) return new string[0];
+            int n = Math.Min(count, src.Length - skip);
+            string[] r = new string[n];
+            Array.Copy(src, skip, r, 0, n);
+            return r;
+        }
+
+        private static bool Contains(List<string> list, string s)
+        {
+            foreach (string x in list) if (string.Equals(x, s, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        private static bool HasCjk(string s)
+        {
+            foreach (char c in s ?? "") if (c >= '\u4e00' && c <= '\u9fff') return true;
+            return false;
+        }
+
         /// <summary>备选词表写成 "a|b|c" 省行数；空串 = 没有备选。</summary>
         private static string[] A(string s)
         {
@@ -2300,9 +2344,24 @@ namespace Installer
         /// </summary>
         internal static List<WsItem> SearchWithAliases(string query, string[] aliases, string sort, int page, string tag, int maxAlt, out int primaryCount)
         {
+            return SearchWithAliases(query, aliases, sort, page, tag, maxAlt, 0, out primaryCount);
+        }
+
+        /// <summary>
+        /// 同上，但 pageStep > 0 时每条备选换一页（1..3 循环）。
+        /// 目的：三批结果来自不同页，不会一整屏都是同一批热门里的同风格作品。
+        /// </summary>
+        internal static List<WsItem> SearchWithAliases(string query, string[] aliases, string sort, int page, string tag, int maxAlt, int pageStep, out int primaryCount)
+        {
+            System.Diagnostics.Stopwatch sw = System.Diagnostics.Stopwatch.StartNew();
             List<WsItem> got = SearchItems(query, sort, page, tag);
             primaryCount = got == null ? 0 : got.Count;
             if (aliases == null || aliases.Length == 0) return got;
+
+            // 分桶取，最后交错合并：以前是把备选整批接在主词后面，展示只取前几张，
+            // 结果一屏全是英文那批（用户 2026-11-24 反馈「全是英文，中文搜到的没出现」）。
+            List<List<WsItem>> batches = new List<List<WsItem>>();
+            batches.Add(got);
             HashSet<string> tried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrEmpty(query)) tried.Add(query.Trim());
             int used = 0;
@@ -2314,23 +2373,38 @@ namespace Installer
                 used++;
                 try
                 {
-                    List<WsItem> more = SearchItems(a, sort, page, tag);
-                    if (more == null || more.Count == 0) continue;
-                    if (got == null) { got = more; continue; }
-                    HashSet<string> have = new HashSet<string>(StringComparer.Ordinal);
-                    foreach (WsItem x in got) if (x != null) have.Add(x.Id ?? "");
-                    foreach (WsItem x in more)
-                    {
-                        if (x == null) continue;
-                        string id = x.Id ?? "";
-                        if (have.Contains(id)) continue;
-                        have.Add(id);
-                        got.Add(x);
-                    }
+                    int ap = page;
+                    if (pageStep > 0) { ap = ((page - 1 + used * pageStep) % 3) + 1; if (ap < 1) ap = 1; }
+                    batches.Add(SearchItems(a, sort, ap, tag));
                 }
-                catch { }
+                catch { batches.Add(null); }
             }
-            return got;
+
+            List<WsItem> merged = new List<WsItem>();
+            HashSet<string> have = new HashSet<string>(StringComparer.Ordinal);
+            int maxLen = 0;
+            foreach (List<WsItem> b in batches) if (b != null && b.Count > maxLen) maxLen = b.Count;
+            for (int k = 0; k < maxLen; k++)
+            {
+                foreach (List<WsItem> b in batches)
+                {
+                    if (b == null || k >= b.Count) continue;
+                    WsItem x = b[k];
+                    if (x == null) continue;
+                    string id = x.Id ?? "";
+                    if (!have.Add(id)) continue;
+                    merged.Add(x);
+                }
+            }
+
+            // 把这次查询的规模写进日志：以后「刷不出来 / 全英文」能直接看数字，不用猜
+            StringBuilder sb = new StringBuilder();
+            sb.Append("REC[").Append(query).Append("] 主=").Append(primaryCount);
+            for (int i = 1; i < batches.Count; i++) sb.Append(" 备").Append(i).Append("=").Append(batches[i] == null ? -1 : batches[i].Count);
+            sb.Append(" 合并=").Append(merged.Count).Append(" 用时=").Append(sw.ElapsedMilliseconds).Append("ms");
+            Core.Log("INFO", sb.ToString());
+
+            return merged.Count > 0 ? merged : got;
         }
 
         /// <summary>

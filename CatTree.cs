@@ -943,6 +943,7 @@ namespace Installer
         private int recGen;                                    // 换位置后，在途的旧结果作废
         private string recKey = "";
         private int recPage;                                   // 上一批推荐用的页码（换一换要避开它）
+        private readonly HashSet<string> recShown = new HashSet<string>(StringComparer.Ordinal);   // 本会话已经露过脸的推荐 id
         private readonly FlatButton btnRecShuffle = new FlatButton();
         private int recDetailToken;                     // 悬停换条目后，在途的大图作废
         private Image recBigPic;                        // 详情栏当前那张大图（我们自己管释放）
@@ -4121,7 +4122,11 @@ namespace Installer
             // 中文标题的 MOD 不少：英文词搜回来的是一半。位置名是中文、且和查询词不同时，
             // 再拿中文名搜一遍合并 —— 两次结果按 id 去重，英文那批排在前面。
             string slotName = Current == null ? "" : (Current.Name ?? "");
-            string[] recAliases = slotName.Length == 0 ? new string[0] : Workshop.SlotAliases(slotName);
+            // 词序：中文优先（面向国内用户），但保留英文主词与备选，不全是中文。
+            // 没填 Steam API key 时只能走网页版搜索（实测 4~26 秒一条），这时只发第一条，别把首屏拖死。
+            string[] recList = Workshop.SlotQueryList(slotName, key, Workshop.SlotAliases(slotName));
+            string recPrimary = recList.Length > 0 ? recList[0] : key;
+            string[] recAliases = (!Workshop.HasApiKey || recList.Length < 2) ? new string[0] : Workshop.Take(recList, 1, 2);
             System.Threading.Tasks.Task.Run(delegate
             {
                 List<WsItem> got = null;
@@ -4134,10 +4139,16 @@ namespace Installer
                 System.Threading.Thread steamTh = null;
                 if (!steamDead)
                 {
+                    string recQ = recPrimary;
+                    // 没 key 只能发一条时，别永远只发中文：按页码奇偶轮换，一半批次用英文主词，
+                    // 这样「中文优先」不等于「全是中文」（用户 2026-11-24 的要求）。
+                    if (!Workshop.HasApiKey && (pg % 2 == 0) && key.Length > 0
+                        && !string.Equals(key, recQ, StringComparison.OrdinalIgnoreCase))
+                        recQ = key;
                     steamTh = new System.Threading.Thread(delegate()
                     {
                         int pc;
-                        try { steamGot = Workshop.SearchWithAliases(key, recAliases, "trend", pg, keyTag, 2, out pc); }
+                        try { steamGot = Workshop.SearchWithAliases(recQ, recAliases, "trend", pg, keyTag, 2, 1, out pc); }
                         catch { }
                     });
                     steamTh.IsBackground = true;
@@ -4146,7 +4157,12 @@ namespace Installer
                     // 只有既没 key 且网页刚失败过时才缩短到 200ms。
                     bool apiAlive = Workshop.HasApiKey && !WsNet.ApiOffline && WsNet.ApiRouteAlive;
                     bool webAlive = WsNet.SteamProbed && WsNet.SteamRouteAlive;
-                    int waitMs = (apiAlive || webAlive) ? 3500
+                    // 备选是串行查的：多一条就多一次往返，等待预算跟着放大，否则固定 3.5 秒会把三次查询判成「连不上」
+                    // 工坊窗口能出结果、推荐区却「连不上」的差别就在这里：画廊是「等到拿到为止」，
+                    // 推荐区以前固定等 3.5~9 秒就判死。网页版搜索实测 4~26 秒，所以两边体验不一样。
+                    // 没 key 时按最慢的那档给足 25 秒；有 key（API 1~2 秒一条）才按备选条数加。
+                    int waitMs = (apiAlive || webAlive)
+                        ? (Workshop.HasApiKey ? 3500 + 1200 * Math.Min(2, recAliases.Length) : 25000)
                         : (WsNet.SteamJustFailed ? 200 : 1500);
                     steamTh.Join(waitMs);
                 }
@@ -4157,6 +4173,20 @@ namespace Installer
                     try { string nm; List<WsItem> alt = Sources.Take(key, pg, 24, out nm); if (alt != null && alt.Count > 0) got = alt; } catch { }
                 }
                 if (got != null) { try { got = new List<WsItem>(got); } catch { } }
+                // 换一换别老给同一批：本会话已经露过脸的先让开，再打散顺序（三批结果原本是一段一段拼起来的）
+                if (got != null && got.Count > 1)
+                {
+                    List<WsItem> fresh = new List<WsItem>();
+                    foreach (WsItem it0 in got) if (it0 != null && !recShown.Contains(it0.Id ?? "")) fresh.Add(it0);
+                    if (fresh.Count >= 8) got = fresh;
+                    for (int i0 = got.Count - 1; i0 > 0; i0--)
+                    {
+                        int j0 = recRnd.Next(i0 + 1);
+                        WsItem t0 = got[i0]; got[i0] = got[j0]; got[j0] = t0;
+                    }
+                    foreach (WsItem it0 in got) if (it0 != null) recShown.Add(it0.Id ?? "");
+                    if (recShown.Count > 400) recShown.Clear();     // 记得太多就整批忘掉，别无限涨
+                }
                 // 缩略图并发取（6 路）：单线程下 8 张图就是 8 个往返
                 List<WsItem> cand = new List<WsItem>();
                 if (got != null)

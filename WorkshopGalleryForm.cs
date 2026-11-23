@@ -474,13 +474,17 @@ namespace Installer
             foreach (Slot s in slots)
             {
                 if (s == null || string.IsNullOrEmpty(s.Name)) continue;
-                cboCat.Items.Add(new GalChoice
                 {
-                    Label = (s.Cat.Length > 0 ? s.Cat + " · " : "") + s.Name,
-                    Query = Workshop.SearchWord(s.Name, s.Key),
-                    Aliases = Workshop.SlotAliases(s.Name),
-                    Tag = Workshop.TagFor(s.Cat, s.Sub)
-                });
+                    string prim0 = Workshop.SearchWord(s.Name, s.Key);
+                    string[] qs0 = Workshop.SlotQueryList(s.Name, prim0, Workshop.SlotAliases(s.Name));
+                    cboCat.Items.Add(new GalChoice
+                    {
+                        Label = (s.Cat.Length > 0 ? s.Cat + " · " : "") + s.Name,
+                        Query = qs0.Length > 0 ? qs0[0] : prim0,          // 中文优先
+                        Aliases = qs0.Length > 1 ? Workshop.Take(qs0, 1, 2) : new string[0],
+                        Tag = Workshop.TagFor(s.Cat, s.Sub)
+                    });
+                }
             }
         }
 
