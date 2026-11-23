@@ -179,7 +179,7 @@ namespace Installer
         private Action afterScanQueue;
         // 启动时查到的新版本（设置页直接读它，不用再查一次）
         private UpdateInfo pendingUpdate;
-        private FlatButton btnUpdate;              // 顶栏「检查更新 / 有新版本」
+        private Label lblNotice;                    // 状态行右段：常驻提示（新版 / 离线 / 未识别数），不被临时消息覆盖
         private string titleBase = "";             // 窗口标题原文（有新版时在后面挂一句）
         private string pendingRoot;                 // 扫库期间用户选的新目录，扫完接着切
         // 扫库心跳：扫库期间每 5 秒往日志报一声、状态栏刷新一次秒数。
@@ -449,7 +449,6 @@ namespace Installer
             const int findW = 76;
             const int browseW = 76;
             const int settingsW = 60;
-            const int updW = 96;        // 顶栏更新入口：平时「检查更新」，查到新版变「有新版本 x.y.z」
             const int viewW = 56;       // 台面 ⇄ 方案树
             const int panelW = 56;      // 左栏抽屉
             const int wsW = 64;         // 工坊导入
@@ -461,8 +460,7 @@ namespace Installer
             int installX = W - Theme.M - installW;
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
-            int updX = settingsX - topGap - updW;
-            int panelX = updX - groupGap - panelW;
+            int panelX = settingsX - groupGap - panelW;
             int viewX = panelX - topGap - viewW;
             int wsX = viewX - groupGap - wsW;
             int findX = wsX - topGap - findW;
@@ -483,14 +481,6 @@ namespace Installer
             tips.SetToolTip(btnWorkshop, "从 Steam 创意工坊导入：粘贴物品或合集链接，直接下到 MOD 库里。\r\n"
                 + "L4D2 的物品都是单个 vpk，能直接下，不需要 Steam 登录。");
             Controls.Add(btnWorkshop);
-
-            btnUpdate = new FlatButton(); btnUpdate.Soft = true;
-            btnUpdate.Text = Lang.S("检查更新");
-            btnUpdate.SetBounds(updX, 16, updW, Theme.H);
-            btnUpdate.AccessibleName = "程序更新";
-            btnUpdate.Click += delegate { ShowSettings(); };
-            tips.SetToolTip(btnUpdate, "程序更新：查到新版会变成「有新版本 x.y.z」，点开进设置按「立即更新」（会自动重启）。");
-            Controls.Add(btnUpdate);
 
             btnSettings = new FlatButton(); btnSettings.Text = Lang.S("设置");
             btnSettings.SetBounds(settingsX, 16, settingsW, Theme.H);
@@ -558,6 +548,7 @@ namespace Installer
             btnLogToggle.Font = Theme.UISmall;
             btnLogToggle.Soft = true;                 // 整栏大白按钮太抢眼，像个误放的主操作
             btnLogToggle.SetBounds(Theme.M, 438, 132, Theme.H);
+            btnLogToggle.Visible = false;      // 用户 2026-11-24 定：日志不给人看，只落文件
             btnLogToggle.Click += delegate { SetLogOpen(!logOpen); };
             tips.SetToolTip(btnLogToggle, Lang.S("安装日志：什么时候开始、每个文件复制到哪、哪一步跳过了。\r\n平时收起来，出问题再展开。"));
             Controls.Add(btnLogToggle);
@@ -568,6 +559,7 @@ namespace Installer
             gNow = new Section();
             gNow.Caption = Lang.S("游戏现状");
             gNow.SetBounds(Theme.M, 478, leftW, 200);
+            gNow.Visible = false;              // 与「总览」重复，主界面不再展示（数据仍照常读）
             Controls.Add(gNow);
 
             lblNowNum = new Label(); lblNowNum.Text = "0";
@@ -787,7 +779,16 @@ namespace Installer
             lblPre.BackColor = Color.Transparent;
             lblPre.Visible = false;
             Controls.Add(lblPre);
-            lblStatus = new Label(); lblStatus.SetBounds(Theme.M, CH - 28, W - 2 * Theme.M, 20); lblStatus.Text = "";
+            lblStatus = new Label(); lblStatus.SetBounds(Theme.M, CH - 28, W - 2 * Theme.M - 250, 20); lblStatus.Text = "";
+            // 右段常驻：临时消息（扫库/安装进度）在左，这条在右，两者互不覆盖
+            lblNotice = new Label();
+            lblNotice.SetBounds(W - Theme.M - 240, CH - 28, 240, 20);
+            lblNotice.Font = Theme.UISmall;
+            lblNotice.ForeColor = Theme.Ink2;
+            lblNotice.TextAlign = ContentAlignment.MiddleRight;
+            lblNotice.AutoEllipsis = true;
+            lblNotice.Text = "";
+            Controls.Add(lblNotice);
             lblStatus.ForeColor = Theme.Ink2; lblStatus.BackColor = Color.Transparent; Controls.Add(lblStatus);
 
             // 随窗口缩放：左右拉伸的跟着走，底部按钮贴右下
@@ -2448,6 +2449,17 @@ namespace Installer
             return true;
         }
 
+        /// <summary>状态行右段（常驻提示）。传空串 = 清掉。</summary>
+        internal void SetNotice(string text)
+        {
+            SafeInvoke(delegate
+            {
+                if (lblNotice == null) return;
+                lblNotice.Text = text ?? "";
+                lblNotice.ForeColor = string.IsNullOrEmpty(text) ? Theme.Ink2 : Theme.Accent;
+            });
+        }
+
         /// <summary>设置页读它：启动时已经查到的那个新版本（null = 没有）。</summary>
         internal UpdateInfo PendingUpdate { get { return pendingUpdate; } }
 
@@ -2479,7 +2491,9 @@ namespace Installer
         {
             pendingUpdate = u;
             RefreshUpdateBadge();
-            if (u == null) return;
+            if (u == null) { SetNotice(""); return; }
+            // 状态行右段是常驻通道：写进去不会被扫库/装 MOD 的临时消息盖掉。
+            SetNotice(Lang.F("新版本 {0} 可升级", u.Version));
             // 不用状态栏报这件事：那一行是「临时消息」通道，装个 MOD、扫个库就被盖掉了（用户实测）。
             // 挂在窗口标题上，一直在，且和顶栏那个实心按钮是两个不同的落点。
             Core.Log("INFO", "发现新版本 " + u.Version + "（当前 " + AppUpdate.Current + "）");
@@ -2488,18 +2502,12 @@ namespace Installer
         /// <summary>顶栏那个按钮的两种样子：平时「检查更新」（次要按钮），有新版时变实心主按钮。</summary>
         internal void RefreshUpdateBadge()
         {
-            if (btnUpdate == null) return;
-            if (pendingUpdate == null)
-            {
-                btnUpdate.Soft = true;
-                btnUpdate.Text = Lang.S("检查更新");
-            }
-            else
-            {
-                btnUpdate.Soft = false;
-                btnUpdate.Text = Lang.F("有新版本 {0}", pendingUpdate.Version);
-            }
-            btnUpdate.Invalidate();
+            if (btnSettings == null) return;
+            // 顶栏不再单独占一个「检查更新」按钮（九成时间是灰字，白占一格）：
+            // 有新版时在「设置」按钮上挂一颗点，点进去就是「程序更新」那一栏。
+            btnSettings.Text = pendingUpdate == null ? Lang.S("设置")
+                             : Lang.F("设置 ● {0}", pendingUpdate.Version);
+            btnSettings.Invalidate();
             // 标题栏跟着写一份：状态栏会被覆盖，标题栏不会
             try
             {
@@ -3685,7 +3693,6 @@ namespace Installer
             // 顶部：游戏目录 / 浏览 / 启动项 / 台面 / 抽屉 / 工坊 / 设置
             const int findW = 76;
             const int settingsW = 60;
-            const int updW = 96;
             const int viewW = 56;       // 台面 ⇄ 方案树
             const int panelW = 56;      // 左栏抽屉
             const int wsW = 64;         // 工坊导入
@@ -3696,15 +3703,13 @@ namespace Installer
             int installX = W - Theme.M - installW;
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
-            int updX = settingsX - topGap - updW;
-            int panelX = updX - groupGap - panelW;
+            int panelX = settingsX - groupGap - panelW;
             int viewX = panelX - topGap - viewW;
             int wsX = viewX - groupGap - wsW;
             int findX = wsX - topGap - findW;
             txtGame.Width = Dpi.S(findX - topGap - 8 - 80);
             btnLaunch.Left = Dpi.S(findX);
             btnSettings.Left = Dpi.S(settingsX);
-            if (btnUpdate != null) btnUpdate.Left = Dpi.S(updX);
             if (btnRefreshLib != null) btnRefreshLib.Left = Dpi.S(refreshX);
             btnView.Left = Dpi.S(viewX);
             btnPanel.Left = Dpi.S(panelX);
@@ -3716,7 +3721,8 @@ namespace Installer
             btnInstall.Width = Dpi.S(installW);
             btnRestore.Left = Dpi.S(Theme.M);
             btnRestore.Width = Dpi.S(96);
-            lblStatus.Width = Dpi.S(W - 2 * Theme.M);
+            lblStatus.Width = Dpi.S(W - 2 * Theme.M - 250);
+            if (lblNotice != null) { lblNotice.Left = Dpi.S(W - Theme.M - 240); lblNotice.Top = lblStatus.Top; }
             // 进度条 / 停止按钮 / 校验条 都从还原按钮右边起步（三者互斥显示，共用同一块）
             {
                 int preLeft = Theme.M + 96 + Theme.G;
