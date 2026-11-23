@@ -253,6 +253,17 @@ namespace Installer
                         new System.Text.UTF8Encoding(false));
                     return 0;
                 }
+                if (au.StartsWith("--updget=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string outp = au.Substring(9).Trim('"');
+                    UpdateInfo uu = AppUpdate.Check(15000);
+                    if (uu == null) { System.IO.File.WriteAllText(@"C:\temp\updget.txt", "check-null"); return 3; }
+                    string eu = AppUpdate.ApplyDownloadOnly(uu, outp);
+                    System.IO.File.WriteAllText(@"C:\temp\updget.txt",
+                        "ver=" + uu.Version + " api=" + (uu.ApiUrl.Length > 0 ? "yes" : "no") + " -> " + (eu == null ? "OK " + new System.IO.FileInfo(outp).Length : "ERR " + eu),
+                        new System.Text.UTF8Encoding(false));
+                    return eu == null ? 0 : 2;
+                }
                 if (string.Equals(au, "--updatecheck", StringComparison.OrdinalIgnoreCase))
                 {
                     UpdateInfo uu = AppUpdate.Check(8000);

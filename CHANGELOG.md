@@ -3,6 +3,13 @@
 > 本文件从 v0.5.0 起维护。更早的版本（v0.3.0 ~ v0.4.8）请见
 > [Releases](https://github.com/Yzy10086-l4d2/l4d2-mod-manager-local/releases)。
 
+## v0.6.32
+
+- **修更新下载**：直链 `github.com/.../releases/download/...` 在国内常被掐（实测 21 秒超时），
+  更新一律先走 `api.github.com/.../releases/assets/<id>`（加 `Accept: application/octet-stream`），
+  失败再退回直链。api 这条实测 2.5 秒拿完 1.9 MB。
+- 新增诊断开关 `--updget=输出文件`：只下载并校验最新版，不替换，用来验证下载线路。
+
 ## v0.6.31
 
 - **左栏撤掉，三列吃满整个窗口**：右栏从左边距直接起，位置 / 候选 / 详情各宽了约 100px。

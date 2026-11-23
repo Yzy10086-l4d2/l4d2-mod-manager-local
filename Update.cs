@@ -14,7 +14,8 @@ namespace Installer
     {
         public string Tag = "";        // v0.6.28
         public string Version = "";    // 0.6.28
-        public string Url = "";        // exe 资产直链
+        public string Url = "";        // exe 资产直链（github.com，国内常被掐）
+        public string ApiUrl = "";     // 同一个资产的 API 地址（api.github.com，通常能通）
         public string PageUrl = "";    // 发布页（下载页兜底）
         public long Size;              // 资产字节数（0 = 发布没给）
         public string Sha = "";        // sha256（小写；空 = 发布没给）
@@ -78,6 +79,8 @@ namespace Installer
                 string name = Last(win, "\"name\"\\s*:\\s*\"([^\"]+)\"");
                 if (name.Length == 0 || !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
                 u.Url = url;
+                // 同一窗口里最后一个 "url" 才是这个资产的 API 地址
+                u.ApiUrl = Last(win, "\"url\"\\s*:\\s*\"(https://api\\.github\\.com/[^\"]+/assets/\\d+)\"");
                 long n;
                 if (long.TryParse(Last(win, "\"size\"\\s*:\\s*(\\d+)"), out n)) u.Size = n;
                 u.Sha = Last(win, "\"digest\"\\s*:\\s*\"sha256:([0-9a-fA-F]+)\"").ToLowerInvariant();
@@ -119,13 +122,25 @@ namespace Installer
         /// 下载并替换当前 exe。返回 null = 成功（调用方负责 Process.Start + 退出）；
         /// 返回字符串 = 失败原因（已经回滚，当前程序照常能跑）。
         /// </summary>
+        /// <summary>只下载并校验，不替换（诊断用：--updget）。</summary>
+        internal static string ApplyDownloadOnly(UpdateInfo u, string to)
+        {
+            string err = Download(u.ApiUrl, u.Url, to, null);
+            if (err != null) return err;
+            long len = new FileInfo(to).Length;
+            if (u.Size > 0 && len != u.Size) return "尺寸不符：" + len + " / " + u.Size;
+            if (u.Sha.Length > 0 && !string.Equals(Sha256(to), u.Sha, StringComparison.OrdinalIgnoreCase)) return "sha256 不符";
+            return null;
+        }
+
         internal static string Apply(UpdateInfo u, Action<int> pct)
         {
             string self = Application.ExecutablePath;
             string part = Path.Combine(Path.GetTempPath(), "l4d2mm-" + San(u.Version) + ".part");
             TryDelete(part);
 
-            string err = Download(u.Url, part, pct);
+            // 先走 API 资产地址（api.github.com 能通），失败再退回 github.com 直链
+            string err = Download(u.ApiUrl, u.Url, part, pct);
             if (err != null) { TryDelete(part); return err; }
 
             try
@@ -196,7 +211,19 @@ namespace Installer
             catch (Exception ex) { Core.Log("INFO", "更新检查失败（" + url + "）：" + ex.Message); return null; }
         }
 
-        private static string Download(string url, string to, Action<int> pct)
+        private static string Download(string apiUrl, string url, string to, Action<int> pct)
+        {
+            if (!string.IsNullOrEmpty(apiUrl))
+            {
+                string e0 = DownloadOne(apiUrl, to, pct, true);
+                if (e0 == null) return null;
+                TryDelete(to);
+                Core.Log("INFO", "更新：API 资产地址下载失败，改用直链重试（" + e0 + "）");
+            }
+            return DownloadOne(url, to, pct, false);
+        }
+
+        private static string DownloadOne(string url, string to, Action<int> pct, bool api)
         {
             try
             {
@@ -204,7 +231,14 @@ namespace Installer
                 WebRequest req = WebRequest.Create(url);
                 req.Timeout = 30000;
                 HttpWebRequest hr = req as HttpWebRequest;
-                if (hr != null) { hr.ReadWriteTimeout = 60000; hr.UserAgent = "L4D2ModManager/" + Current; }
+                if (hr != null)
+                {
+                    hr.ReadWriteTimeout = 60000;
+                    hr.UserAgent = "L4D2ModManager/" + Current;
+                    // API 资产地址必须要求二进制，不然返回的是 JSON 元数据
+                    if (api) hr.Accept = "application/octet-stream";
+                    hr.KeepAlive = false;
+                }
                 using (WebResponse resp = req.GetResponse())
                 using (Stream s = resp.GetResponseStream())
                 using (FileStream f = new FileStream(to, FileMode.Create, FileAccess.Write, FileShare.None))
