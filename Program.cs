@@ -227,6 +227,32 @@ namespace Installer
                     System.IO.File.WriteAllText(@"C:\temp\upd-apply.txt", eu == null ? "OK" : ("ERR " + eu), new System.Text.UTF8Encoding(false));
                     return eu == null ? 0 : 2;
                 }
+                if (au.StartsWith("--recprobe=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string nm = au.Substring(11).Trim('"');
+                    Positions.Row pr = Positions.Find(nm);
+                    string sub = pr == null ? "" : pr.Sub;
+                    string cat = SlotIndex.CatOfSub(sub);
+                    string prim = Workshop.SearchWord(nm, "");
+                    string[] list = Workshop.SlotQueryList(nm, prim, Workshop.SlotAliases(nm));
+                    string q0 = list.Length > 0 ? list[0] : prim;
+                    string[] al = list.Length > 1 ? Workshop.Take(list, 1, 2) : new string[0];
+                    int pc = 0;
+                    long t1 = 0, t2 = 0;
+                    System.Collections.Generic.List<WsItem> got = null;
+                    for (int k = 0; k < 2; k++)
+                    {
+                        System.Diagnostics.Stopwatch sw0 = System.Diagnostics.Stopwatch.StartNew();
+                        got = Workshop.SearchWithAliases(q0, al, "trend", 1, Workshop.TagFor(cat, sub), 2, 1, out pc);
+                        sw0.Stop();
+                        if (k == 0) t1 = sw0.ElapsedMilliseconds; else t2 = sw0.ElapsedMilliseconds;
+                    }
+                    System.IO.File.AppendAllText(@"C:\temp\recprobe.txt",
+                        nm + " | cat=" + cat + " sub=" + sub + " | 词=" + q0 + " + " + string.Join(",", al)
+                        + " | 主=" + pc + " 合并=" + (got == null ? -1 : got.Count) + " | 首次=" + t1 + "ms 再跑=" + t2 + "ms\r\n",
+                        new System.Text.UTF8Encoding(false));
+                    return 0;
+                }
                 if (string.Equals(au, "--updatecheck", StringComparison.OrdinalIgnoreCase))
                 {
                     UpdateInfo uu = AppUpdate.Check(8000);

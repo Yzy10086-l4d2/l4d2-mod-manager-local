@@ -300,6 +300,9 @@ namespace Installer
             }
 
             NetRoute pref = Preferred(host);
+            NetRoute good;
+            bool fromGood = false;
+            if (pref == NetRoute.Unknown && TryGood(host, out good)) { pref = good; fromGood = true; }
             bool triedDirect = pref == NetRoute.Direct, triedProxy = pref == NetRoute.Proxy, triedDns = pref == NetRoute.Dns;
             byte[] b = null;
             if (pref != NetRoute.Unknown)
@@ -311,9 +314,12 @@ namespace Installer
                 {
                     MarkOnline(host);
                     NoteRouteTime(host, pref, (int)sw.ElapsedMilliseconds);
+                    RememberGood(host, pref);
                     return b;
                 }
                 Invalidate(host);              // 体检结论这次不灵：回退常规阶梯，同时触发后台重测
+                ForgetGood(host);              // 上次成功的那档也不行：忘掉，别下次还先撞它
+                if (fromGood) { try { Core.Log("WARN", "工坊：上次成功的线路这次失败，回退常规阶梯"); } catch { } }
             }
 
             if (b == null && !triedDirect && !DirectBlocked(host))
@@ -321,7 +327,7 @@ namespace Installer
                 Stopwatch sw = Stopwatch.StartNew();
                 b = TryGet(url, ua, cap, true, null);
                 sw.Stop();
-                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Direct, (int)sw.ElapsedMilliseconds); return b; }
+                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Direct, (int)sw.ElapsedMilliseconds); RememberGood(host, NetRoute.Direct); return b; }
                 BlockDirect(host);             // 直连确认走不通：记下来，十分钟内别再试
             }
 
@@ -331,7 +337,7 @@ namespace Installer
                 Stopwatch sw = Stopwatch.StartNew();
                 b = TryGet(url, ua, cap, false, px);
                 sw.Stop();
-                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Proxy, (int)sw.ElapsedMilliseconds); try { Core.Log("INFO", "工坊：直连不通，改走系统代理连上了"); } catch { } return b; }
+                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Proxy, (int)sw.ElapsedMilliseconds); RememberGood(host, NetRoute.Proxy); try { Core.Log("INFO", "工坊：直连不通，改走系统代理连上了"); } catch { } return b; }
             }
 
             if (b == null && !triedDns && host != null)
@@ -339,7 +345,7 @@ namespace Installer
                 Stopwatch sw = Stopwatch.StartNew();
                 b = TryTransport(url, ua, cap, NetRoute.Dns);
                 sw.Stop();
-                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Dns, (int)sw.ElapsedMilliseconds); try { Core.Log("INFO", "工坊：走 Akamai 前置/公共 DNS 连上了 (" + host + ")"); } catch { } return b; }
+                if (b != null) { MarkOnline(host); LearnRoute(host, NetRoute.Dns, (int)sw.ElapsedMilliseconds); RememberGood(host, NetRoute.Dns); try { Core.Log("INFO", "工坊：走 Akamai 前置/公共 DNS 连上了 (" + host + ")"); } catch { } return b; }
             }
 
             // 只有工坊主站挂了才标主站离线（90 秒），不影响 API 和 CDN
@@ -422,6 +428,52 @@ namespace Installer
         internal static IWebProxy PreferredProxy(string host)
         {
             return Preferred(host) == NetRoute.Proxy ? SystemProxy() : null;
+        }
+
+
+        // ---- 上次成功的档位：只在「这条线自己失败」时作废，不跟着体检和其他请求清空 ----
+        // 目的：同一域名十分钟内不重复走「直连→代理→DNS」这一整套阶梯（每档 4 秒封顶）。
+        static readonly Dictionary<string, NetRoute> goodRoute = new Dictionary<string, NetRoute>(StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string, DateTime> goodAt = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        static string RouteKey(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return "";
+            string h = host.ToLowerInvariant();
+            if (h.EndsWith("steamcommunity.com", StringComparison.Ordinal)) return "community";
+            if (h.EndsWith("steampowered.com", StringComparison.Ordinal)) return "api";
+            if (h.EndsWith("steamusercontent.com", StringComparison.Ordinal)) return "cdn";
+            return h;
+        }
+
+        static void RememberGood(string host, NetRoute r)
+        {
+            string k = RouteKey(host);
+            if (k.Length == 0 || r == NetRoute.Unknown) return;
+            lock (gate) { goodRoute[k] = r; goodAt[k] = DateTime.Now; }
+        }
+
+        static void ForgetGood(string host)
+        {
+            string k = RouteKey(host);
+            if (k.Length == 0) return;
+            lock (gate) { goodRoute.Remove(k); goodAt.Remove(k); }
+        }
+
+        /// <summary>十分钟内这条线成功过，就直接用那一档。</summary>
+        static bool TryGood(string host, out NetRoute r)
+        {
+            r = NetRoute.Unknown;
+            string k = RouteKey(host);
+            if (k.Length == 0) return false;
+            lock (gate)
+            {
+                NetRoute rr; DateTime at;
+                if (!goodRoute.TryGetValue(k, out rr) || !goodAt.TryGetValue(k, out at)) return false;
+                if ((DateTime.Now - at).TotalMinutes > 10) { goodRoute.Remove(k); goodAt.Remove(k); return false; }
+                r = rr;
+                return true;
+            }
         }
 
         static NetRoute Preferred(string host)
