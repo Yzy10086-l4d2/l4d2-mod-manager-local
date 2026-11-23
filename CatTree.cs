@@ -4131,8 +4131,8 @@ namespace Installer
             {
                 List<WsItem> got = null;
                 // 每次开程序都换一批：页码随机，不落磁盘、不跨会话缓存
-                int pg = recRnd.Next(1, 4);
-                if (pg == recPage) pg = pg % 3 + 1;      // 换一换别撞回同一页
+                int pg = recRnd.Next(1, 3);
+                if (pg == recPage) pg = pg % 2 + 1;      // 换一换别撞回同一页（最新只有两页在轮换）
                 recPage = pg;
                 // Steam 和「来源」同时问：Steam 现在经常是死的，不能让它把每次点击拖成好几秒
                 List<WsItem> steamGot = null;
@@ -4148,7 +4148,8 @@ namespace Installer
                     steamTh = new System.Threading.Thread(delegate()
                     {
                         int pc;
-                        try { steamGot = Workshop.SearchWithAliases(recQ, recAliases, "trend", pg, keyTag, 2, 1, out pc); }
+                        // 从「最新发布」里抽：换一换在最新那两页之间轮换，再打散 —— 不再给热门的同一批
+                        try { steamGot = Workshop.SearchWithAliases(recQ, recAliases, "mostrecent", pg, keyTag, 2, 1, out pc); }
                         catch { }
                     });
                     steamTh.IsBackground = true;

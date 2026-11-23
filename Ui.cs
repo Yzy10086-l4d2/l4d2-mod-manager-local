@@ -180,6 +180,7 @@ namespace Installer
         // 启动时查到的新版本（设置页直接读它，不用再查一次）
         private UpdateInfo pendingUpdate;
         private Label lblNotice;                    // 状态行右段：常驻提示（新版 / 离线 / 未识别数），不被临时消息覆盖
+        private Label lblSchemeDiff;                // 方案行右侧：这套方案和当前勾选差几处（套用前先看得到）
         private string titleBase = "";             // 窗口标题原文（有新版时在后面挂一句）
         private string pendingRoot;                 // 扫库期间用户选的新目录，扫完接着切
         // 扫库心跳：扫库期间每 5 秒往日志报一声、状态栏刷新一次秒数。
@@ -671,6 +672,16 @@ namespace Installer
             btnUnmatched.Click += delegate { if (treeView != null) treeView.SelectUnmatched(); };
             tips.SetToolTip(btnUnmatched, Lang.S("程序没认出位置的 MOD 都收在这里，点开可以手动指定分类。\r\n这些不再出现在左边的树里。"));
             gm.Controls.Add(btnUnmatched);
+
+            // 方案行右侧的差异摘要：选中方案后立刻知道「套用会发生什么」
+            lblSchemeDiff = new Label();
+            lblSchemeDiff.SetBounds(548, 34, 400, 18);
+            lblSchemeDiff.Font = Theme.UISmall;
+            lblSchemeDiff.ForeColor = Theme.Ink3;
+            lblSchemeDiff.AutoEllipsis = true;
+            lblSchemeDiff.TextAlign = ContentAlignment.MiddleLeft;
+            lblSchemeDiff.Text = "";
+            gm.Controls.Add(lblSchemeDiff);
 
             Label l9 = new Label(); l9.Text = Lang.S("搜索"); l9.SetBounds(12, 66, 34, 20); Theme.Dress(l9); gm.Controls.Add(l9);
             txtSearch = new TextBox(); txtSearch.SetBounds(50, 62, rightW - 126, 24); txtSearch.AccessibleName = "搜索 MOD"; Theme.Dress(txtSearch); txtSearch.TextChanged += delegate { searchTimer.Stop(); searchTimer.Start(); }; gm.Controls.Add(txtSearch);
@@ -3490,6 +3501,7 @@ namespace Installer
             LoadSchemeKeys();
             RefreshMods();
             UpdateSchemeLabel();
+            UpdateSchemeDiff();
             if (name.StartsWith("（")) return;
             Log("正在对照方案「" + name + "」，点「套用」才会替换当前勾选");
         }
@@ -3515,6 +3527,37 @@ namespace Installer
             LoadSchemeKeys();
             LoadProfileIntoUi(p, true, false);
             RefreshMods();
+        }
+
+        /// <summary>
+        /// 方案行右侧的差异摘要：当前勾选 vs 选中的方案，各差几个。
+        /// 只做统计，不改任何东西 —— 用户点「套用」之前就能看到会发生什么。
+        /// </summary>
+        private void UpdateSchemeDiff()
+        {
+            if (lblSchemeDiff == null) return;
+            if (cboProfile == null || cboProfile.SelectedItem == null)
+            {
+                lblSchemeDiff.Text = "";
+                return;
+            }
+            string name = cboProfile.SelectedItem.ToString();
+            if (name.StartsWith("（")) { lblSchemeDiff.Text = ""; return; }
+            Profile p = ProfileStore.Load(name);
+            if (p == null) { lblSchemeDiff.Text = ""; return; }
+            HashSet<string> stored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string k in p.Mods) if (Core.ByRel.ContainsKey(k)) stored.Add(k);
+            int add = 0, del = 0;
+            foreach (string k in stored) if (!checkedKeys.Contains(k)) add++;
+            foreach (string k in checkedKeys) if (!stored.Contains(k)) del++;
+            if (add == 0 && del == 0)
+            {
+                lblSchemeDiff.Text = Lang.S("与当前勾选一致");
+                lblSchemeDiff.ForeColor = Theme.Ok;
+                return;
+            }
+            lblSchemeDiff.Text = Lang.F("套用将改 {0} 处：新增 {1} · 移除 {2}", add + del, add, del);
+            lblSchemeDiff.ForeColor = Theme.Warn;
         }
 
         private bool CurrentSelectionDiffersFrom(Profile p)
