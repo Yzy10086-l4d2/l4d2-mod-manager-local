@@ -284,7 +284,9 @@ namespace Installer
             for (int i = 0; i < shownList.Count; i++)
             {
                 WsDownload d = shownList[i];
-                ListViewItem li = new ListViewItem(d.Title.Length > 0 ? d.Title : ("workshop_" + d.Id));
+                string shown = d.Title.Length > 0 ? d.Title : ("workshop_" + d.Id);
+                // 配套 / 合集子项：后面缀上「配套于 XX」，否则一堆同批下的条目看不出谁是谁的
+                ListViewItem li = new ListViewItem(shown + WorkshopDownloads.ParentText(d.Id));
                 li.SubItems.Add(d.SizeText);
                 li.SubItems.Add(d.StateText);
                 li.SubItems.Add(d.Time.ToString("MM-dd HH:mm"));

@@ -116,6 +116,69 @@ namespace Installer
 
         private static void DropCtl(string id) { lock (gate) { ctls.Remove(id ?? ""); } }
 
+        // ---------------- 工坊「配套 / 合集」关系（只给界面看，不参与识别） ----------------
+
+        /// <summary>
+        /// 子 id → { 父 id, 父标题, 类型 D=配套 / C=合集子项 }。
+        /// 工坊页面的 Required items 是「声明关系」，识别模块不看它 —— 这里单独存一份，
+        /// 只在下载管理和详情页标「配套于 XX」，绝不拿去改识别结果（避免两个事实源打架）。
+        /// </summary>
+        private static readonly Dictionary<string, string[]> depParent = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        private static bool depsLoaded;
+
+        public static string DepStorePath { get { return Path.Combine(Core.LogDir, "workshop-deps.tsv"); } }
+
+        public static void RememberDep(string childId, string parentId, string parentTitle, bool collection)
+        {
+            if (string.IsNullOrEmpty(childId) || string.IsNullOrEmpty(parentId)) return;
+            EnsureDeps();
+            string kind = collection ? "C" : "D";
+            string title = Clean(parentTitle);
+            lock (gate)
+            {
+                string[] old;
+                if (depParent.TryGetValue(childId, out old) && old != null && old.Length >= 3
+                    && old[0] == parentId && old[1] == title && old[2] == kind) return;   // 已经有这条，不再追加
+                depParent[childId] = new string[] { parentId, title, kind };
+                try
+                {
+                    Directory.CreateDirectory(Core.LogDir);
+                    File.AppendAllText(DepStorePath, Clean(childId) + "\t" + Clean(parentId) + "\t" + title + "\t" + kind + "\n", new UTF8Encoding(false));
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>这件东西是谁的配套 / 子项；没关系返回空串。给列表和详情页拼后缀用。</summary>
+        public static string ParentText(string childId)
+        {
+            if (string.IsNullOrEmpty(childId)) return "";
+            EnsureDeps();
+            string[] v;
+            lock (gate) { if (!depParent.TryGetValue(childId, out v)) return ""; }
+            if (v == null || v.Length < 3) return "";
+            string name = v[1].Length > 0 ? v[1] : v[0];
+            return v[2] == "C" ? "　·　合集「" + name + "」的子项" : "　·　配套于「" + name + "」";
+        }
+
+        private static void EnsureDeps()
+        {
+            if (depsLoaded) return;
+            depsLoaded = true;
+            try
+            {
+                if (!File.Exists(DepStorePath)) return;
+                foreach (string line in File.ReadAllLines(DepStorePath, Encoding.UTF8))
+                {
+                    if (line.Length == 0) continue;
+                    string[] f = line.Split('\t');
+                    if (f.Length < 3) continue;
+                    depParent[f[0]] = new string[] { f[1], f.Length > 2 ? f[2] : "", f.Length > 3 ? f[3] : "D" };
+                }
+            }
+            catch { }
+        }
+
         public static string StorePath { get { return Path.Combine(Core.LogDir, "workshop-downloads.tsv"); } }
 
         private static void Ensure()

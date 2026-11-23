@@ -40,6 +40,8 @@ namespace Installer
         private List<WsItem> depItems = new List<WsItem>();          // 配套 MOD / 合集子项
         private bool depIsCollection;                                // 这一栏是"合集子项"而不是"配套"
         private readonly FlowLayoutPanel depList = new FlowLayoutPanel();  // 每条可点：进它自己的详情页
+        private readonly Dictionary<string, FlatButton> depRowOf = new Dictionary<string, FlatButton>(StringComparer.Ordinal);   // 配套 id → 那一行按钮（刷状态用）
+        private DateTime depRefreshAt;
         private readonly FlatButton btnLang = new FlatButton();   // 原文 / 译文 切换
 
         private readonly ComboBox cboCat = new ComboBox();
@@ -904,7 +906,7 @@ namespace Installer
             string saveTo;
             try { saveTo = "保存到 " + ShortPath(Workshop.DestDir()) + "（点这里改）"; }
             catch (Exception ex) { saveTo = ex.Message; }
-            lblState.Text = where + saveTo;
+            lblState.Text = where + saveTo + WorkshopDownloads.ParentText(it.Id);
             // GameBanana 的文件是 zip/7z 打包：按钮照常给，点下去走「下载 → 解包 → 导入 addons」
             btnGet.Enabled = !it.IsCollection && it.Url.Length > 0;
 
@@ -1163,6 +1165,7 @@ namespace Installer
         private void RebuildDepList()
         {
             depList.Controls.Clear();
+            depRowOf.Clear();
             int max = Math.Min(depItems.Count, 4);
             for (int i = 0; i < max; i++)
             {
@@ -1170,11 +1173,8 @@ namespace Installer
                 FlatButton b = new FlatButton();
                 b.Soft = true;
                 b.Font = Theme.UISmall;
-                string t = "• " + (string.IsNullOrEmpty(rq.Title) ? rq.Id : rq.Title);
-                if (t.Length > 44) t = t.Substring(0, 43) + "…";
-                // 已经是本机有的：标出来，别让人以为还得再下一遍（用户 2026-11-22 要求）
-                if (Workshop.IsInstalledLocally(rq.Id, rq.Title)) t += Lang.S("　·　已装");
-                b.Text = t;
+                b.Text = DepRowText(rq);          // 标题 + 这一条自己的下载状态
+                depRowOf[rq.Id] = b;
                 b.Height = S(21);
                 b.Width = Math.Max(S(120), detail.ClientSize.Width - S(8));
                 b.Tag = rq;
@@ -1199,6 +1199,53 @@ namespace Installer
             }
             depList.Visible = depItems.Count > 0;
             ApplyLayout();                    // 数据回来后才置 Visible，这里必须重排一次，否则高度还是 0（看不见）
+        }
+
+        /// <summary>
+        /// 配套清单的一行：标题 + 当前下载状态（下载中 42% / 已暂停 / 已下载 / 失败）。
+        /// 以前只有打开时标一次「已装」，批量下载时完全看不出进度（用户 2026-11-23 反馈）。
+        /// </summary>
+        private string DepRowText(WsItem rq)
+        {
+            string title = string.IsNullOrEmpty(rq.Title) ? rq.Id : rq.Title;
+            string status = DepStatus(rq.Id);
+            if (status.Length == 0 && Workshop.IsInstalledLocally(rq.Id, rq.Title)) status = Lang.S("已装");
+            int keep = status.Length > 0 ? 38 : 44;
+            if (title.Length > keep) title = title.Substring(0, keep - 1) + "…";
+            return "• " + title + (status.Length > 0 ? "　·　" + status : "");
+        }
+
+        /// <summary>这条配套现在什么状态（取最近一条下载记录）。</summary>
+        private static string DepStatus(string id)
+        {
+            foreach (WsDownload d in WorkshopDownloads.All())
+            {
+                if (!string.Equals(d.Id, id, StringComparison.Ordinal)) continue;
+                if (d.Running)
+                {
+                    if (d.Size > 0) return "下载中 " + (int)Math.Min(100, d.Got * 100 / d.Size) + "%";
+                    return "下载中…";
+                }
+                if (d.Paused) return "已暂停";
+                if (d.Status == "ok") return d.ExistsOnDisk ? "已下载" : "文件已删除";
+                if (d.Status == "fail") return "失败";
+                if (d.Status == "cancel") return "已取消";
+                return "";
+            }
+            return "";
+        }
+
+        /// <summary>只改文字、不重建控件：下载过程中每几百毫秒刷一次，重建会闪。</summary>
+        private void RefreshDepRows()
+        {
+            if (depRowOf.Count == 0) return;
+            foreach (WsItem rq in depItems)
+            {
+                if (rq == null) continue;
+                FlatButton b;
+                if (!depRowOf.TryGetValue(rq.Id, out b) || b == null) continue;
+                try { b.Text = DepRowText(rq); } catch { }
+            }
         }
 
         /// <summary>
@@ -1228,6 +1275,15 @@ namespace Installer
             catch (Exception ex) { lblState.Text = ex.Message; return; }
             btnDeps.Enabled = false;
             lblState.Text = Lang.S("正在下载配套 MOD…");
+            // 先把「这些是它的配套」记下来：只给界面标「配套于 XX」（下载管理 / 详情页），
+            // 识别模块不看这个文件，仍然只按 vpk 内容判定（单一事实源）。
+            string parentId = detailItem == null ? "" : detailItem.Id;
+            string parentTitle = detailItem == null ? "" : detailItem.Title;
+            if (parentId.Length > 0)
+                foreach (WsItem rq in depItems)
+                    if (rq != null && !string.IsNullOrEmpty(rq.Id))
+                        WorkshopDownloads.RememberDep(rq.Id, parentId, parentTitle, depIsCollection);
+            RefreshDepRows();
             Thread t = new Thread(delegate()
             {
                 int ok = 0, fail = 0;
@@ -1235,30 +1291,46 @@ namespace Installer
                 try
                 {
                     List<WsItem> items = Workshop.Fetch(ids);
-                    // 一个一个下：同时开两路会互相抢带宽、进度也看不出是谁的（用户 2026-11-23 要求）
-                    // 结果走 out 参数，不再读 Workshop.LastSavedPath（共享静态，多任务会串味）
+                    // 一个一个下（用户 2026-11-23 要求）。每条都登记进「下载管理」，
+                    // 并把自己那一行的状态刷成「下载中 42%」——以前批量下完全不进记录，所以哪儿都看不到。
                     foreach (WsItem one in items)
                     {
                         if (one == null || one.IsCollection || one.Url.Length == 0) { fail++; continue; }
-                        string dest = "";
+                        string id = one.Id;
+                        string dest = Path.Combine(dir, Workshop.SafeFileName(one.Title, one.Id));
+                        WorkshopDownloads.Begin(id, one.Title, one.Url, dir);
+                        Ui(delegate() { RefreshDepRows(); });
                         try
                         {
-                            dest = Path.Combine(dir, Workshop.SafeFileName(one.Title, one.Id));
                             string saved2, note2;
-                            Workshop.Download(one, dest, null, out saved2, out note2, WorkshopDownloads.Ctl(one.Id));
+                            Workshop.Download(one, dest, delegate(long got, long total)
+                            {
+                                WorkshopDownloads.Progress(id, got, total);
+                                if ((DateTime.Now - depRefreshAt).TotalMilliseconds < 400) return;   // 别每来一块就刷一次界面
+                                depRefreshAt = DateTime.Now;
+                                Ui(delegate() { RefreshDepRows(); });
+                            }, out saved2, out note2, WorkshopDownloads.Ctl(id));
                             if (!string.IsNullOrEmpty(saved2)) dest = saved2;
                             Workshop.SavePreview(one, dest);
                             Workshop.RenameToAddonTitle(dest);
+                            long size = 0;
+                            try { size = new FileInfo(dest).Length; } catch { }
+                            WorkshopDownloads.Finish(id, true, dest, size, "");
                             if (File.Exists(dest)) gotNames.Add(Path.GetFileName(dest));
                             ok++;
                         }
                         catch (WsNet.DlAbort ab)
                         {
                             // 批量里的一条被暂停 / 取消：只停这一条，后面的照常接着下
-                            if (ab.Canceled) { try { Workshop.CleanPartial(dest); } catch { } WorkshopDownloads.Cancel(one.Id); }
-                            else WorkshopDownloads.Pause(one.Id);
+                            if (ab.Canceled) { try { Workshop.CleanPartial(dest); } catch { } WorkshopDownloads.Cancel(id); }
+                            else WorkshopDownloads.Pause(id);
                         }
-                        catch { fail++; }
+                        catch (Exception ex)
+                        {
+                            WorkshopDownloads.Finish(id, false, dest, 0, ex.Message);
+                            fail++;
+                        }
+                        Ui(delegate() { RefreshDepRows(); });
                     }
                 }
                 catch { }
@@ -1268,6 +1340,7 @@ namespace Installer
                 {
                     btnDeps.Enabled = true;
                     lblState.Text = Lang.F("配套 MOD 下载完成：成功 {0} / 失败 {1}", okF, failF);
+                    RefreshDepRows();
                     try { if (owner != null) owner.RefreshAfterImport(gotArr); } catch { }
                 });
             });
@@ -1636,6 +1709,7 @@ namespace Installer
                 {
                     UpdateDownsCaption();
                     UpdateDetailProgress();
+                    RefreshDepRows();          // 配套清单上的「下载中 / 已下载 / 失败」跟着变
                     // 从「有在下」变成 0 = 这一批下完了：把卡片上的「已下载」角标按磁盘重新对一遍。
                     // 以前只在本窗口自己下完时加角标、打开窗口时读一次；从方案树推荐区或下载管理下完回来，
                     // 卡片还写着「可下载」（2026-11-22 审计）。
