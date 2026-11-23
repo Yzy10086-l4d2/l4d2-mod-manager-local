@@ -1624,6 +1624,9 @@ namespace Installer
                     if (showSub && !onePos && folded.Contains(SubKey(cat, s.Sub))) continue;   // 这一段整段收起
                     TreeRow r = new TreeRow();
                     r.Slot = s; r.Cat = cat; r.Sub = s.Sub;
+                    // 单位置分组不再「标题 + 一行子项」两行，改成标题即位置（八人包）：
+                    // 和大类标题行当容器同一个套路 —— IsSub 管长相，Slot 管点下去选谁。
+                    if (showSub && onePos) r.IsSub = true;
                     rows.Add(r);
                 }
             }
@@ -4833,22 +4836,45 @@ namespace Installer
 
                     if (r.IsSub)
                     {
+                        bool merged = r.Slot != null;          // 标题即位置（单位置分组，如八人包）
                         bool open = !owner.IsSubFolded(r.Cat, r.Sub);
-                        if (i == hov) g.FillRectangle(hovBg, 0, y, W, RowH);
-                        g.DrawLine(branch, 17, y, 17, y + RowH);
-                        g.DrawLine(branch, 17, y + RowH / 2, 26, y + RowH / 2);
-                        DrawTri(g, 32, y + RowH / 2, open);
+                        bool subSel = merged && string.Equals(r.Slot.Key, owner.SelectedKey, StringComparison.Ordinal);
+                        if (subSel) g.FillRectangle(selBg, 0, y, W, RowH);
+                        else if (i == hov) g.FillRectangle(hovBg, 0, y, W, RowH);
+                        if (subSel) using (SolidBrush b = new SolidBrush(Theme.Mark)) g.FillRectangle(b, 0, y + 3, 2, RowH - 6);
+                        if (!merged)
+                        {
+                            g.DrawLine(branch, 17, y, 17, y + RowH);
+                            g.DrawLine(branch, 17, y + RowH / 2, 26, y + RowH / 2);
+                            DrawTri(g, 32, y + RowH / 2, open);
+                        }
                         Glyph.Draw(g, Glyph.ForSub(r.Sub, r.Cat), new Rectangle(40, y + (RowH - 17) / 2, 17, 17), Theme.Ink2);
                         TextRenderer.DrawText(g, Lang.S(r.Sub), Theme.UIBold, new Rectangle(62, y, W - 126, RowH), Theme.Ink2,
                             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding
                             | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
                         int k = 0;
                         if (all != null) foreach (Slot sl in all) if (sl.Cat == r.Cat && sl.Sub == r.Sub) k++;
-                        string num = Lang.F("{0} 个", k);
-                        TextRenderer.DrawText(g, num, Theme.UISmall, new Rectangle(W - 62, y, 50, RowH), Theme.Ink3,
-                            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-                        // 往下连一小段，免得和位置行的竖线断开
-                        if (open && k > 0) g.DrawLine(branch, 39, y + RowH / 2, 39, y + RowH);
+                        if (merged)
+                        {
+                            // 这一行就是位置：右边给状态点 + 候选数，和位置行完全一致
+                            Slot ms = r.Slot;
+                            int mcnt = owner.CheckedGroups(ms);
+                            Color mdot = ms.Pile ? (mcnt > 0 ? Theme.Ok : Theme.TreeBranch)
+                                       : mcnt > 1 ? (Core.Cfg.MultiSlots.Contains(ms.Key) ? Theme.Info : Theme.Warn)
+                                       : mcnt == 1 ? Theme.Ok
+                                       : Theme.TreeBranch;
+                            using (SolidBrush b = new SolidBrush(mdot)) g.FillEllipse(b, W - 54, y + RowH / 2 - 3, 6, 6);
+                            TextRenderer.DrawText(g, ms.Items.Count.ToString(), Theme.UISmall, new Rectangle(W - 42, y, 32, RowH), Theme.Ink3,
+                                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                        }
+                        else
+                        {
+                            string num = Lang.F("{0} 个", k);
+                            TextRenderer.DrawText(g, num, Theme.UISmall, new Rectangle(W - 62, y, 50, RowH), Theme.Ink3,
+                                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                            // 往下连一小段，免得和位置行的竖线断开
+                            if (open && k > 0) g.DrawLine(branch, 39, y + RowH / 2, 39, y + RowH);
+                        }
                         continue;
                     }
 
@@ -6136,7 +6162,7 @@ namespace Installer
                 // 按左右键看着像没反应（键盘自测就是这么抓出来的）。
                 if (r.IsCat && ((k == Keys.Left && open) || (k == Keys.Right && !open)))
                     owner.SetFolded(r.Cat, open);
-                else if (r.IsSub && ((k == Keys.Left && open) || (k == Keys.Right && !open)))
+                else if (r.IsSub && r.Slot == null && ((k == Keys.Left && open) || (k == Keys.Right && !open)))
                     owner.SetSubFolded(r.Cat, r.Sub, open);
             }
             else { base.OnKeyDown(e); return; }
@@ -6187,7 +6213,11 @@ namespace Installer
                 if (r.Slot != null) owner.SelectSlot(r.Slot.Key);     // 「地图」这类：类标题行就是容器
                 else owner.SetFolded(r.Cat, !owner.IsFolded(r.Cat));
             }
-            else if (r.IsSub) owner.SetSubFolded(r.Cat, r.Sub, !owner.IsSubFolded(r.Cat, r.Sub));
+            else if (r.IsSub)
+            {
+                if (r.Slot != null) owner.SelectSlot(r.Slot.Key);       // 标题即位置：点它 = 选中
+                else owner.SetSubFolded(r.Cat, r.Sub, !owner.IsSubFolded(r.Cat, r.Sub));
+            }
             else if (r.Slot != null) owner.SelectSlot(r.Slot.Key);
         }
 
