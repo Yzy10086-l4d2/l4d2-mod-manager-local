@@ -915,31 +915,40 @@ namespace Installer
             long total = totalHint;
             if (!ProbeRange(url, ua, u, out total) || total < 2L * 1024 * 1024) return 0;
 
-            // 大文件多切几段：单段越小，碰到慢节点时损失的秒数越少（178MB → 16 段，每段约 11MB）
+            // 并发条数：4/8/16。但**分片切成两倍于并发条数的小块**，用队列轮流取：
+            // 固定切 N 大段有个天然毛病 —— 快下完时只剩最后一段在跑，总速度掉回单连接水平，
+            // 那一段哪怕正常速度也显得"蜗牛爬"（用户 2026-11-23 反馈「最后一段很慢」）。
+            // 小块排队时，谁先下完谁接下一块，连接一直排到队尾，最后阶段还是多条线在跑。
             int parts = total >= 64L * 1024 * 1024 ? 16 : (total >= 16L * 1024 * 1024 ? 8 : 4);
-            string[] files = new string[parts];
-            long[] froms = new long[parts];
-            long[] tos = new long[parts];
-            long chunk = total / parts;
+            int units = total >= 16L * 1024 * 1024 ? parts * 2 : parts;
+            long chunk = total / units;
+            if (chunk < 512L * 1024 && units > 4)            // 别切得太碎：每块至少 512KB
+            {
+                units = Math.Max(4, (int)(total / (512L * 1024)));
+                chunk = total / units;
+            }
+            string[] files = new string[units];
+            long[] froms = new long[units];
+            long[] tos = new long[units];
             // 分片放系统临时目录：以前直接写在 addons 旁边（xxx.vpk.p0…p7），
             // 下到一半强退就留在游戏目录里一堆文件（用户 2026-11-22 反馈）。
             string tmpDir = TempPartDir(partPath);
             // 上次留下的分片不删：点「继续 / 重试」要接着下（用户 2026-11-23 反馈「卡一下就从头重下」）
             try { Directory.CreateDirectory(tmpDir); } catch { return 0; }
-            for (int i = 0; i < parts; i++)
+            for (int i = 0; i < units; i++)
             {
                 files[i] = Path.Combine(tmpDir, "p" + i);
                 froms[i] = i * chunk;
-                tos[i] = (i == parts - 1) ? (total - 1) : (froms[i] + chunk - 1);
+                tos[i] = (i == units - 1) ? (total - 1) : (froms[i] + chunk - 1);
             }
 
             // 有单连接留下的 .part 就别浪费：把已经下下来的那段字节切进分片文件，接着并发下。
             // （以前这里直接交给单连接，结果「接着下」的大文件变成单线程 —— 用户 2026-11-23 要求改掉）
-            try { SeedFromPart(partPath, files, froms, tos); } catch { }
+            try { SeedFromPart(partPath, files, froms, tos, units); } catch { }
             // 分片也走赛马：先量一遍线路，快的前置域名优先分到分片
             try { RaceRoutes(url, ua, u.Host, total); } catch { }
 
-            long done = SumParts(files, froms, tos);
+            long done = SumParts(files, froms, tos, units);
             partialBytes = done;
             Action<long> report = delegate(long delta)
             {
@@ -948,31 +957,43 @@ namespace Installer
             };
             if (done > 0 && progress != null) { try { progress(done, total); } catch { } }   // 续传：进度条从断点起步
 
-            // 每轮只补没下完的段；换节点重试最多三轮，还是不行就把分片留着等「继续」
+            // 每轮重新排队把没下完的块扫一遍；换节点重试最多三轮，还是不行就把分片留着等「继续」
             for (int round = 0; round < 3; round++)
             {
                 if (ctl != null) ctl.Tick();
-                string[] errs = new string[parts];
+                string[] errs = new string[units];
                 DlAbort aborted = null;
+                int next = 0;
                 System.Threading.Thread[] ths = new System.Threading.Thread[parts];
-                for (int i = 0; i < parts; i++)
+                for (int w = 0; w < parts; w++)
                 {
-                    int idx = i;
-                    ths[i] = new System.Threading.Thread(delegate()
+                    ths[w] = new System.Threading.Thread(delegate()
                     {
-                        try { errs[idx] = GetRangeWithRetry(url, ua, timeoutMs, files[idx], froms[idx], tos[idx], u.Host, idx, report, ctl); }
-                        catch (DlAbort ab) { errs[idx] = "aborted"; if (aborted == null) aborted = ab; }
+                        while (true)
+                        {
+                            int idx = System.Threading.Interlocked.Increment(ref next) - 1;
+                            if (idx >= units) return;
+                            if (aborted != null) return;
+                            long span = tos[idx] - froms[idx] + 1;
+                            if (LenOf(files[idx]) == span) continue;      // 这块已经齐了
+                            try
+                            {
+                                errs[idx] = GetRangeWithRetry(url, ua, timeoutMs, files[idx], froms[idx], tos[idx], u.Host, idx, report, ctl);
+                                if (errs[idx] != null) { /* 这块失败：本轮先放着，下轮再排 */ }
+                            }
+                            catch (DlAbort ab) { if (aborted == null) aborted = ab; return; }
+                        }
                     });
-                    ths[i].IsBackground = true;
-                    ths[i].Start();
+                    ths[w].IsBackground = true;
+                    ths[w].Start();
                 }
-                for (int i = 0; i < parts; i++) ths[i].Join();
+                for (int w = 0; w < parts; w++) ths[w].Join();
                 if (aborted != null) throw aborted;                  // 线程都停了才往外抛，别让半截线程接着写
 
                 bool ok = true;
-                for (int i = 0; i < parts; i++)
+                for (int i = 0; i < units; i++)
                 {
-                    if (errs[i] != null || LenOf(files[i]) != (tos[i] - froms[i] + 1)) { ok = false; break; }
+                    if (LenOf(files[i]) != (tos[i] - froms[i] + 1)) { ok = false; break; }
                 }
                 if (ok)
                 {
@@ -980,7 +1001,7 @@ namespace Installer
                     {
                         using (FileStream fs = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 131072))
                         {
-                            for (int i = 0; i < parts; i++)
+                            for (int i = 0; i < units; i++)
                                 using (FileStream si = File.OpenRead(files[i])) si.CopyTo(fs, 131072);
                         }
                         if (LenOf(partPath) != total) { DelIfExists(partPath); return -1; }
@@ -993,16 +1014,16 @@ namespace Installer
                         return -1;
                     }
                 }
-                partialBytes = SumParts(files, froms, tos);
+                partialBytes = SumParts(files, froms, tos, units);
                 if (partialBytes <= 0) return 0;                     // 一点没下来：交给单连接阶梯试别的路
-                System.Threading.Thread.Sleep(500);
+                System.Threading.Thread.Sleep(400);
             }
-            partialBytes = SumParts(files, froms, tos);
+            partialBytes = SumParts(files, froms, tos, units);
             return -1;
         }
 
         /// <summary>把单连接断点 .part 里已有的字节按段切进分片文件（只补空段，不覆盖已有进度）。</summary>
-        static void SeedFromPart(string partPath, string[] files, long[] froms, long[] tos)
+        static void SeedFromPart(string partPath, string[] files, long[] froms, long[] tos, int segs)
         {
             if (!File.Exists(partPath)) return;
             long have = LenOf(partPath);
@@ -1010,7 +1031,7 @@ namespace Installer
             byte[] buf = new byte[131072];
             using (FileStream src = new FileStream(partPath, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                for (int i = 0; i < files.Length; i++)
+                for (int i = 0; i < segs; i++)
                 {
                     long start = froms[i];
                     if (start >= have) break;
@@ -1036,10 +1057,10 @@ namespace Installer
         }
 
         /// <summary>各分片已下字节合计（超过本段长度的按本段算，防半截垃圾撑大进度）。</summary>
-        static long SumParts(string[] files, long[] froms, long[] tos)
+        static long SumParts(string[] files, long[] froms, long[] tos, int segs)
         {
             long sum = 0;
-            for (int i = 0; i < files.Length; i++)
+            for (int i = 0; i < segs; i++)
             {
                 long have = LenOf(files[i]);
                 if (have <= 0) continue;
