@@ -234,6 +234,7 @@ namespace Installer
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
             ShowInTaskbar = false;
+            Theme.DressForm(this);
             MaximizeBox = true;
 
             Label hint = new Label();
@@ -276,7 +277,7 @@ namespace Installer
             status.ForeColor = Theme.Ink3;
             Controls.Add(status);
 
-            FlatButton bVerify = new FlatButton(); bVerify.Text = Lang.S("核对内容");
+            FlatButton bVerify = new FlatButton(); bVerify.Text = Lang.S("核对内容"); bVerify.Primary = true;
             bVerify.SetBounds(14, 470, 96, Theme.H);
             bVerify.Click += delegate { Verify(); };
             tipsSet(bVerify, "算一遍内容指纹（独立 vpk、zip / rar 内条目统一用 CRC32）。\r\n只有整组都核对成功且一致，才会标成“内容完全相同”。");
@@ -288,7 +289,7 @@ namespace Installer
             tipsSet(bSkip, "把勾选的从这次的勾选里去掉，文件原样留在 U 盘。");
             Controls.Add(bSkip);
 
-            FlatButton bDel = new FlatButton(); bDel.Text = Lang.S("直接删掉");
+            FlatButton bDel = new FlatButton(); bDel.Text = Lang.S("直接删掉"); bDel.Danger = true;
             bDel.SetBounds(222, 470, 110, Theme.H);
             bDel.Click += delegate { DeleteChecked(); };
             tipsSet(bDel, "从 U 盘库里真删（删了没法恢复）。\r\n压缩包里的 vpk 不支持，请用「这次不装」。");

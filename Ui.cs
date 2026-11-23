@@ -453,12 +453,12 @@ namespace Installer
             Label l1 = new Label(); l1.Text = Lang.S("游戏目录"); l1.SetBounds(Theme.M, 20, 60, 20); Theme.Dress(l1); l1.Font = Theme.UISmall; l1.ForeColor = Theme.Ink3; Controls.Add(l1);
             const int findW = 76;
             const int browseW = 76;
-            const int settingsW = 60;
-            const int viewW = 56;       // 台面 ⇄ 方案树
+            const int settingsW = 52;
+            const int viewW = 48;       // 总览（原「方案管理」，四个字在 1080 宽下太占地方）
             const int panelW = 56;      // 左栏抽屉
             const int wsW = 64;         // 工坊导入
-            const int installW = 132;   // 「替换此方案」：主操作上顶栏最右（方案 B）
-            const int refreshW = 60;    // 「刷新」：常驻顶栏，和主操作同一排
+            const int installW = 124;   // 「安装这套方案」：主操作上顶栏最右（方案 B）
+            const int refreshW = 52;    // 「刷新」：常驻顶栏，和主操作同一排
             const int topGap = 8;
             // 顶栏分三组：游戏目录 | 启动项·工坊（对象操作）| 总览·面板（视图）| 主操作 · 设置
             const int groupGap = 22;
@@ -516,7 +516,7 @@ namespace Installer
             Controls.Add(btnSettings);
 
             // 总览 / 方案树：同一份数据的两种看法，按钮上写的是「点了会去哪种」
-            btnView = new FlatButton(); btnView.Soft = true; btnView.Text = Lang.S("方案管理");
+            btnView = new FlatButton(); btnView.Soft = true; btnView.Text = Lang.S("总览");
             btnView.SetBounds(viewX, 16, viewW, Theme.H);
             btnView.Click += delegate
             {
@@ -676,7 +676,7 @@ namespace Installer
 
             btnScheme = new FlatButton(); btnScheme.Soft = true;
             btnScheme.Text = Lang.S("当前选择") + " ▾";
-            btnScheme.SetBounds(50, 30, 204, Theme.H);
+            btnScheme.SetBounds(50, 30, 168, Theme.H);
             btnScheme.Click += delegate { ToggleSchemeMenu(); };
             tips.SetToolTip(btnScheme, "切换方案：弹层里每套都写着覆盖了几个位置、几个 MOD，\r\n带 ● 的是正在用的，带 * 的是和当前勾选不一致的。");
             gm.Controls.Add(btnScheme);
@@ -684,55 +684,67 @@ namespace Installer
             pnlScheme = new Panel();
             pnlScheme.SetBounds(50, 58, 300, 200);
             pnlScheme.BackColor = Theme.Surface;
-            pnlScheme.BorderStyle = BorderStyle.FixedSingle;
+            pnlScheme.BorderStyle = BorderStyle.None;      // 原生 FixedSingle 是浅色线，深色下像一道白框
+            pnlScheme.Paint += delegate(object sp, PaintEventArgs ep)
+            {
+                using (Pen p = new Pen(Theme.CardEdge))
+                    ep.Graphics.DrawRectangle(p, 0, 0, pnlScheme.Width - 1, pnlScheme.Height - 1);
+            };
             pnlScheme.Visible = false;
             gm.Controls.Add(pnlScheme);
             cboProfile.SelectedIndexChanged += delegate { ProfileSelectionChanged(); };
             tips.SetToolTip(cboProfile, Lang.S("只选择方案，不会立刻改当前勾选；确认后点「套用」。"));
-            btnSaveProfile = new FlatButton(); btnSaveProfile.Text = Lang.S("另存"); btnSaveProfile.SetBounds(262, 28, 84, Theme.H); btnSaveProfile.Click += delegate { SaveProfile(); }; gm.Controls.Add(btnSaveProfile);
-            btnApplyProfile = new FlatButton(); btnApplyProfile.Text = Lang.S("套用"); btnApplyProfile.SetBounds(354, 28, 58, Theme.H); btnApplyProfile.Click += delegate { ApplyProfile(); }; gm.Controls.Add(btnApplyProfile);
+            btnSaveProfile = new FlatButton(); btnSaveProfile.Text = Lang.S("另存"); btnSaveProfile.SetBounds(226, 30, 64, Theme.H); btnSaveProfile.Click += delegate { SaveProfile(); }; gm.Controls.Add(btnSaveProfile);
+            btnApplyProfile = new FlatButton(); btnApplyProfile.Text = Lang.S("套用"); btnApplyProfile.SetBounds(296, 30, 52, Theme.H); btnApplyProfile.Click += delegate { ApplyProfile(); }; gm.Controls.Add(btnApplyProfile);
             tips.SetToolTip(btnApplyProfile, Lang.S("把选中的方案套用到当前勾选；如果会覆盖现有选择，会先确认。"));
             btnUnmatched = new FlatButton();
             btnUnmatched.Text = Lang.S("未识别 0 个");
-            btnUnmatched.SetBounds(420, 28, 120, Theme.H);
+            btnUnmatched.SetBounds(356, 30, 104, Theme.H);
             btnUnmatched.Click += delegate { if (treeView != null) treeView.SelectUnmatched(); };
             tips.SetToolTip(btnUnmatched, Lang.S("程序没认出位置的 MOD 都收在这里，点开可以手动指定分类。\r\n这些不再出现在左边的树里。"));
             gm.Controls.Add(btnUnmatched);
 
-            // 方案行右侧的差异摘要：选中方案后立刻知道「套用会发生什么」
+            // 方案差异摘要挪到卡片标题行右端：它说的是「这套方案套下去会变什么」，
+            // 跟标题同排比挤在按钮右边更好读，也把整行让给搜索框。
             lblSchemeDiff = new Label();
-            lblSchemeDiff.SetBounds(548, 34, 400, 18);
+            lblSchemeDiff.SetBounds(rightW - 376, 2, 360, 20);
             lblSchemeDiff.Font = Theme.UISmall;
             lblSchemeDiff.ForeColor = Theme.Ink3;
             lblSchemeDiff.AutoEllipsis = true;
-            lblSchemeDiff.TextAlign = ContentAlignment.MiddleLeft;
+            lblSchemeDiff.TextAlign = ContentAlignment.MiddleRight;
             lblSchemeDiff.Text = "";
+            lblSchemeDiff.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             gm.Controls.Add(lblSchemeDiff);
+            gm.RightPad = 372;      // 标题让出右侧这条，两段文字不打架
 
-            Label l9 = new Label(); l9.Text = Lang.S("搜索"); l9.SetBounds(12, 66, 34, 20); Theme.Dress(l9); gm.Controls.Add(l9);
-            txtSearch = new TextBox(); txtSearch.SetBounds(50, 62, rightW - 126, 24); txtSearch.AccessibleName = "搜索 MOD"; Theme.Dress(txtSearch); txtSearch.TextChanged += delegate { searchTimer.Stop(); searchTimer.Start(); }; gm.Controls.Add(txtSearch);
+            // 搜索并进方案行：以前「方案」「搜索」各占一行，加上顶栏和卡片标题，
+            // 树上面堆了四层横条。合成一行后树整整多出 48px 高度。
+            Label l9 = new Label(); l9.Text = Lang.S("搜索"); l9.SetBounds(472, 36, 34, 20); Theme.Dress(l9); gm.Controls.Add(l9);
+            int searchW = Math.Max(160, rightW - 12 - 56 - 8 - 510);
+            txtSearch = new TextBox(); txtSearch.SetBounds(510, 34, searchW, 24); txtSearch.AccessibleName = "搜索 MOD"; Theme.Dress(txtSearch); txtSearch.TextChanged += delegate { searchTimer.Stop(); searchTimer.Start(); }; gm.Controls.Add(txtSearch);
             tips.SetToolTip(txtSearch, Lang.S("搜名字 / 替换了什么 / 位置名。Ctrl+F 快速聚焦，Esc 清空并返回方案树。\r\n停止输入 250 ms 自动筛；点搜索结果可跳回它在树里的位置。"));
-            btnClearSearch = new FlatButton(); btnClearSearch.Text = Lang.S("清空"); btnClearSearch.SetBounds(rightW - 68, 62, 56, 24);
+            btnClearSearch = new FlatButton(); btnClearSearch.Text = Lang.S("清空"); btnClearSearch.SetBounds(rightW - 68, 34, 56, 24);
             btnClearSearch.AccessibleName = "清空搜索并返回方案树";
             btnClearSearch.Click += delegate { txtSearch.Clear(); RefreshMods(); txtSearch.Focus(); };
             tips.SetToolTip(btnClearSearch, Lang.S("清空搜索并返回方案树（Esc）"));
             gm.Controls.Add(btnClearSearch);
 
-            // 方案分布：一行说完这套在各类里放了几个
+            // 方案分布：这句话和卡片标题上的「已选 N」重复，界面上不再占一行（数据照旧算，日志里能看）
             lblScheme = new Label();
             lblScheme.SetBounds(12, 92, rightW - 24, 18);
             lblScheme.Font = Theme.UISmall;
             lblScheme.ForeColor = Theme.Ink3;
             lblScheme.AutoEllipsis = true;
             lblScheme.Text = "";
+            lblScheme.Visible = false;
             gm.Controls.Add(lblScheme);
 
             int cw = rightW - 24;
-            int ch = modH - 118 - 74;
+            int ch = modH - 70 - 74;
 
             // 方案树就放在这块矩形里
             viewHost = new Panel();
-            viewHost.SetBounds(12, 118, cw, ch);
+            viewHost.SetBounds(12, 70, cw, ch);
             viewHost.BackColor = Theme.Surface;
             viewHost.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             viewHost.SizeChanged += delegate
@@ -1135,11 +1147,7 @@ namespace Installer
                 Application.DoEvents();
                 System.Threading.Thread.Sleep(250);
                 Application.DoEvents();
-                using (System.Drawing.Bitmap bmp = new System.Drawing.Bitmap(lf.Width, lf.Height))
-                {
-                    lf.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, lf.Width, lf.Height));
-                    bmp.Save(Path.Combine(Core.LogDir, "launch.png"), System.Drawing.Imaging.ImageFormat.Png);
-                }
+                Shot(lf, "launch");
                 lf.Close();
             }
         }
@@ -1165,11 +1173,7 @@ namespace Installer
                 Application.DoEvents();
                 f.VerifyAll();                       // 真算一遍内容指纹，验证 rar 的 CRC 和独立 vpk 的 SHA 都走得通
                 Application.DoEvents();
-                using (System.Drawing.Bitmap bmp = new System.Drawing.Bitmap(f.Width, f.Height))
-                {
-                    f.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, f.Width, f.Height));
-                    bmp.Save(Path.Combine(Core.LogDir, "dup.png"), System.Drawing.Imaging.ImageFormat.Png);
-                }
+                Shot(f, "dup");
                 foreach (DupGroup g in gs)
                     Core.Log("INFO", "DUPTEST " + Core.Human(g.Size) + " x" + g.Items.Count + " → " + g.Verdict
                         + (g.VerdictNote.Length > 0 ? "（" + g.VerdictNote + "）" : ""));
@@ -1192,11 +1196,7 @@ namespace Installer
                     Application.DoEvents();
                     System.Threading.Thread.Sleep(250);
                     Application.DoEvents();
-                    using (System.Drawing.Bitmap bmp = new System.Drawing.Bitmap(pf.Width, pf.Height))
-                    {
-                        pf.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, pf.Width, pf.Height));
-                        bmp.Save(Path.Combine(Core.LogDir, "parts.png"), System.Drawing.Imaging.ImageFormat.Png);
-                    }
+                    Shot(pf, "parts");
                     Core.Log("INFO", "PARTSTEST " + g.Name + " 共 " + g.Parts.Count + " 件，默认勾 " + Catalog.DefaultParts(g).Count + " 件");
                     pf.Close();
                 }
@@ -2047,11 +2047,7 @@ namespace Installer
             for (int i = 0; i < 8; i++) { Application.DoEvents(); System.Threading.Thread.Sleep(120); }
             try
             {
-                using (Bitmap b = new Bitmap(ClientSize.Width, ClientSize.Height))
-                {
-                    DrawToBitmap(b, new Rectangle(0, 0, b.Width, b.Height));
-                    b.Save(System.IO.Path.Combine(Core.LogDir, "loading.png"), System.Drawing.Imaging.ImageFormat.Png);
-                }
+                Shot(this, "loading");
                 // 自绘控件的真容：直接调它的 Render 画进图里（DrawToBitmap 抓不到自绘控件）
                 if (lblLoading != null)
                 {
@@ -3378,6 +3374,7 @@ namespace Installer
                 MaximizeBox = false;
                 MinimizeBox = false;
                 ShowInTaskbar = false;
+                Theme.DressForm(this);
 
                 Label top = new Label();
                 top.SetBounds(12, 10, 536, 52);
@@ -3819,9 +3816,9 @@ namespace Installer
                 int modH = Dpi.Un(physH - Dpi.S(BottomBarH)) - 56;   // 到下方按钮行为止：按物理客户区收口，别用设计值换算（差出来的就是窗口底下那条空白）
                 gMod.Top = Dpi.S(56);
                 gMod.Height = Dpi.S(modH);
-                viewHost.Top = Dpi.S(118);
+                viewHost.Top = Dpi.S(70);
                 // 页脚只剩一行状态：候选列表一路贴到页脚上沿（原来留 74px，第二次收到 40，现在 22）
-                viewHost.Height = Dpi.S(Math.Max(80, modH - 118 - 22));
+                viewHost.Height = Dpi.S(Math.Max(80, modH - 70 - 22));
                 lblConflict.Top = Dpi.S(modH - 46);
                 // 左栏纵向：安装选项搬进设置后，顶上那张卡没了 —— 切换按钮和「游戏现状」直接贴顶，
                 // 把原来空出来的半屏交给现状卡（它自己会按高度铺分类分布）。
@@ -3880,7 +3877,7 @@ namespace Installer
                 // 底部动作区同理：Anchor 只在「距底多远」这一维上跟，自检里连着改几档尺寸时
                 // 会一路漂（窗口缩回 900 却还停在 200% 的位置），所以每次按设计值钉死。
                 btnInstall.Top = Dpi.S(16);
-                btnInstall.Left = Dpi.S(W - Theme.M - 132);
+                btnInstall.Left = Dpi.S(W - Theme.M - 124);
                 btnRestore.Top = Dpi.S(H - BottomBarH);
                 bar.Top = Dpi.S(H - StatusRowH + 7);
                 btnCancel.Top = Dpi.S(H - StatusRowH + 1);
@@ -3894,20 +3891,24 @@ namespace Installer
                 }
             }
 
-            txtSearch.Width = Dpi.S(rightW - 126);
+            // 方案行 / 搜索行并成一行后，这几处左边界必须跟着响应式一起算，
+            // 否则窗口一缩放，搜索框就横穿「未识别」和「清空」（2026-11-24 截图实锤）。
+            txtSearch.Left = Dpi.S(510);
+            txtSearch.Width = Dpi.S(Math.Max(160, rightW - 12 - 56 - 8 - 510));
             btnClearSearch.Left = Dpi.S(rightW - 68);
-            if (btnUnmatched != null) btnUnmatched.Left = Dpi.S(rightW - 12 - 88 - 8 - 120);
+            if (btnUnmatched != null) btnUnmatched.Left = Dpi.S(356);
+            if (lblSchemeDiff != null) lblSchemeDiff.Left = Dpi.S(rightW - 376);
 
             // 顶部：游戏目录 / 浏览 / 启动项 / 台面 / 抽屉 / 工坊 / 设置
             const int findW = 76;
-            const int settingsW = 60;
-            const int viewW = 56;       // 台面 ⇄ 方案树
-            const int panelW = 56;      // 左栏抽屉
+            const int settingsW = 52;
+            const int viewW = 48;       // 总览
+            const int panelW = 56;      // 左栏抽屉（按钮已隐藏，位置照旧留出来）
             const int wsW = 64;         // 工坊导入
             const int topGap = 8;
             const int groupGap = 22;
-            const int installW = 132;
-            const int refreshW = 60;
+            const int installW = 124;
+            const int refreshW = 52;
             int installX = W - Theme.M - installW;
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
@@ -5467,6 +5468,7 @@ namespace Installer
             Theme.UseDpi(this);
             Text = title; ClientSize = Dpi.Sz(420, 132); Font = Theme.UI; BackColor = Theme.Bg;
             StartPosition = FormStartPosition.CenterParent; MaximizeBox = false; MinimizeBox = false;
+            Theme.DressForm(this);
             Label l = new Label(); l.Text = hint; l.SetBounds(12, 12, 396, 20); Theme.Dress(l); Controls.Add(l);
             box = new TextBox(); box.SetBounds(12, 38, 396, 24); Theme.Dress(box); box.Text = def ?? ""; Controls.Add(box);
             FlatButton ok = new FlatButton(); ok.Text = Lang.S("确定"); ok.Primary = true; ok.SetBounds(240, 76, 80, Theme.H); ok.DialogResult = DialogResult.OK; Controls.Add(ok);

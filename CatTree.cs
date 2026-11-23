@@ -3996,8 +3996,9 @@ namespace Installer
                 else
                 {
                     int whole = lv.Height;
-                    // 用户 2026-11-21 定：上下各一半，别做成一条扁带
-                    int recH = Math.Max(Dpi.S(120), (whole - Dpi.S(6)) / 2);
+                    // 2026-11-24：以前是「上下各一半」，候选只有两三条时下半截那面卡片墙反而更抢眼，
+                    // 真正要挑的候选被压到一半高。现在固定只占一行卡（120~152），余下的全给候选列表。
+                    int recH = Math.Min(Dpi.S(152), Math.Max(Dpi.S(120), whole / 3));
                     if (whole - recH < Dpi.S(90)) { recPanel.Visible = false; }
                     else
                     {
@@ -6917,15 +6918,7 @@ namespace Installer
                 if (sugNames.Count == 0) Core.Log("FAIL", "CATFORM 候选没猜出来（测试_佐伊和止痛药.vpk）");
                 else Core.Log("INFO", "CATFORM 候选: " + string.Join(" / ", sugNames.ToArray())
                     + "（对话框预选: " + (ff.lblSuggested.Length > 0 ? ff.lblSuggested : "无") + "）");
-                try
-                {
-                    using (System.Drawing.Bitmap fb = new System.Drawing.Bitmap(ff.Width, ff.Height))
-                    {
-                        ff.DrawToBitmap(fb, new System.Drawing.Rectangle(0, 0, ff.Width, ff.Height));
-                        fb.Save(System.IO.Path.Combine(Core.LogDir, "modcat-suggest.png"), System.Drawing.Imaging.ImageFormat.Png);
-                    }
-                }
-                catch { }
+                Shot(ff, "modcat-suggest");
                 ff.Close();
             }
 
@@ -6939,12 +6932,7 @@ namespace Installer
                 Application.DoEvents();
                 f.PerformLayout();
                 Application.DoEvents();
-                using (System.Drawing.Bitmap bmp = new System.Drawing.Bitmap(f.Width, f.Height))
-                {
-                    f.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, f.Width, f.Height));
-                    bmp.Save(System.IO.Path.Combine(Core.LogDir, "modcat.png"),
-                             System.Drawing.Imaging.ImageFormat.Png);
-                }
+                Shot(f, "modcat");
                 Core.Log("INFO", "CATFORM " + g.Name + "（" + g.Cat + "）截图已存 modcat.png"
                     + (f.lblSuggested.Length > 0 ? "｜候选: " + f.lblSuggested : "｜无候选"));
                 f.Close();
@@ -6987,12 +6975,7 @@ namespace Installer
                     Application.DoEvents();
                     f.PerformLayout();
                     Application.DoEvents();
-                    using (System.Drawing.Bitmap bmp = new System.Drawing.Bitmap(f.Width, f.Height))
-                    {
-                        f.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, f.Width, f.Height));
-                        bmp.Save(System.IO.Path.Combine(Core.LogDir, "addonswitch.png"),
-                                 System.Drawing.Imaging.ImageFormat.Png);
-                    }
+                    Shot(f, "addonswitch");
                     Core.Log("INFO", "ADDONSW " + i + " 个假 MOD，截图已存 addonswitch.png");
                     f.Close();
                 }

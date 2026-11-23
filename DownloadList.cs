@@ -55,6 +55,7 @@ namespace Installer
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
             ShowInTaskbar = true;
+            Theme.DressForm(this);
 
             // ---- 顶部：保存位置 ----
             lblSaveTo.Text = Lang.S("保存到");
@@ -97,6 +98,7 @@ namespace Installer
             // 滚轮发给有焦点的控件：鼠标进哪个列表就把焦点给它，免得"滚轮怎么滚都不动"
             lv.MouseEnter += delegate { if (!lv.Focused) lv.Focus(); };
             tree.MouseEnter += delegate { if (!tree.Focused) tree.Focus(); };
+            Theme.StyleListRows(lv);
             Controls.Add(lv);
 
             // 左侧分类：按"这个 MOD 在方案树里的位置"归档，和工坊首页的分类思路一致
@@ -111,6 +113,7 @@ namespace Installer
             tree.Font = Theme.UISmall;
             tree.Columns.Add(Lang.S("分类"), S(160));
             tree.SelectedIndexChanged += delegate { PickCatFilter(); };
+            Theme.StyleListRows(tree);
             Controls.Add(tree);
 
             lblEmpty.Font = Theme.UISmall;
@@ -123,22 +126,29 @@ namespace Installer
             Controls.Add(lblEmpty);
 
             // ---- 底部 ----
+            // 主次分一下：常用的是「重新下载」，破坏性的是「从磁盘删除」，
+            // 其余都是偶尔用的辅助操作。以前七颗按钮一个样，扫一眼不知道该点哪个。
+            btnAgain.Primary = true;
             btnAgain.Text = Lang.S("重新下载");
             btnAgain.Click += delegate { Redownload(); };
             Controls.Add(btnAgain);
 
+            btnPause.Soft = true;
             btnPause.Text = Lang.S("暂停");
             btnPause.Click += delegate { PauseOrResume(); };
             Controls.Add(btnPause);
 
+            btnCancel.Soft = true;
             btnCancel.Text = Lang.S("取消下载");
             btnCancel.Click += delegate { CancelTask(); };
             Controls.Add(btnCancel);
 
+            btnShop.Soft = true;
             btnShop.Text = Lang.S("在工坊查看");
             btnShop.Click += delegate { OpenInWorkshop(); };
             Controls.Add(btnShop);
 
+            btnLocate.Soft = true;
             btnLocate.Text = Lang.S("打开所在位置");
             btnLocate.Click += delegate { Locate(); };
             Controls.Add(btnLocate);
@@ -212,8 +222,20 @@ namespace Installer
             // 注意：构造里设置 ClientSize 就会触发 OnResize，那时列还没加，得先判个数
             if (lv.Columns.Count >= 4)
             {
-                int wSize = S(130), wState = S(190), wTime = S(120);
-                lv.Columns[0].Width = Math.Max(S(180), listW - wSize - wState - wTime - S(6));
+                // 以前名称列保底 180、状态列 190，780 宽时四列合计超出列表宽度，底下就冒出一条横向滚动条，
+                // 「时间」被截成 "11-12 0…"。改成按比例分，并保证合计永远不超过可视宽度。
+                int avail = Math.Max(S(220), listW - S(4));
+                int wTime = Math.Max(S(84), avail * 14 / 100);
+                int wSize = Math.Max(S(76), avail * 15 / 100);
+                int wState = Math.Max(S(112), avail * 22 / 100);
+                int wName = avail - wTime - wSize - wState;
+                if (wName < S(140))
+                {
+                    int take = Math.Min(S(140) - wName, Math.Max(0, wState - S(96)));
+                    wState -= take;
+                    wName = avail - wTime - wSize - wState;
+                }
+                lv.Columns[0].Width = wName;
                 lv.Columns[1].Width = wSize;
                 lv.Columns[2].Width = wState;
                 lv.Columns[3].Width = wTime;

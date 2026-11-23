@@ -218,7 +218,9 @@ namespace Installer
 
             int iw = Math.Max(Dpi.S(40), Width - pad * 2);
             int ih = iw * 9 / 16;
-            int maxH = Math.Max(Dpi.S(40), Height * 55 / 100);
+            // 图最多占 45%，并且有绝对上限：窗口拉到 1100 高时，55% 会吃掉大半个详情栏，
+            // 标题和「改了什么」被挤到屏幕外（用户反馈「详情看不出啥」）。
+            int maxH = Math.Min(Dpi.S(212), Math.Max(Dpi.S(40), Height * 45 / 100));
             if (ih > maxH) { ih = maxH; iw = ih * 16 / 9; }
             Rectangle thumb = new Rectangle((Width - iw) / 2, pad, iw, ih);
 
@@ -260,9 +262,10 @@ namespace Installer
                     Theme.Ink3, TextFormatFlags.Left | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
                 return;
             }
-            TextRenderer.DrawText(g, title, Theme.UIBold, new Rectangle(tx, y, tw, Dpi.S(40)),
-                Theme.Ink, TextFormatFlags.Left | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
-            y += Dpi.S(42);
+            using (Font tf = new Font(Theme.UIBold.FontFamily, 11f, FontStyle.Bold))
+                TextRenderer.DrawText(g, title, tf, new Rectangle(tx, y, tw, Dpi.S(44)),
+                    Theme.Ink, TextFormatFlags.Left | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+            y += Dpi.S(46);
             TextRenderer.DrawText(g, meta, Theme.UISmall, new Rectangle(tx, y, tw, Dpi.S(20)),
                 Theme.Ink2, TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             y += Dpi.S(22);

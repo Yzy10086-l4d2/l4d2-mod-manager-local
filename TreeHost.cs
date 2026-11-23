@@ -48,9 +48,10 @@ namespace Installer
         {
             if (map == null) return;
             const int top = 56;                    // 顶栏下面
-            int bottom = 104;                      // 底栏（开始安装那一排）上面
+            // 以前这里还减掉 104 的底栏，可底栏早撤了（BottomBarH=0），
+            // 结果画布下面空出 104px，方案树的残影从缝里透出来（2026-11-24 截图实锤）。
             map.SetBounds(0, top, ClientSize.Width,
-                Math.Max(140, ClientSize.Height - top - bottom));
+                Math.Max(140, ClientSize.Height - top));
         }
 
         internal void HideOverview()
@@ -482,6 +483,9 @@ namespace Installer
             int sk = treeView == null ? 0 : treeView.SlotCheckedCount;
             string tail = treeView != null && treeView.Unmatched > 0 ? " · " + treeView.Unmatched + " 个未归类" : "";
             gMod.Caption = Lang.F("方案树 · {0} 个位置 · 已选 {1}{2}", sc, sk, tail);
+            // 没认出来的 MOD 为 0 时，这个按钮点了也没内容可看；常驻只增加噪音。
+            if (btnUnmatched != null)
+                btnUnmatched.Visible = treeView != null && treeView.Unmatched > 0;
 
             if (lblLibInfo != null)
             {

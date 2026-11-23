@@ -1342,23 +1342,50 @@ namespace Installer
             gameRoot = root;
             Text = Lang.S("已装 MOD 开关 —— 勾上=进游戏时启用");
             Theme.UseDpi(this);
-            ClientSize = Dpi.Sz(560, 480);
-            Font = new Font("Microsoft YaHei UI", 9F);
+            ClientSize = Dpi.Sz(620, 600);
+            MinimumSize = Dpi.Sz(520, 460);
+            Font = Theme.UI;
+            BackColor = Theme.Bg;
+            ForeColor = Theme.Ink;
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
+            Theme.DressForm(this);
+
+            int cw = ClientSize.Width;
+
+            // 一行说清这个列表的两个语义：勾=启用，上下=优先级。以前这句话压在按钮行里，没人看。
+            Label hint = new Label();
+            hint.Text = Lang.S("勾上 = 进游戏时启用；上下顺序 = 覆盖优先级（下面的覆盖上面的）");
+            hint.Font = Theme.UISmall;
+            hint.ForeColor = Theme.Ink3;
+            hint.AutoSize = false;
+            hint.AutoEllipsis = true;
+            hint.SetBounds(Theme.M - 2, Dpi.S(12), cw - 2 * Theme.M + 4, Dpi.S(18));
+            Controls.Add(hint);
 
             state = AddonList.Read(gameRoot);
             lv = new ListView();
-            lv.SetBounds(12, 12, 536, 380);
+            lv.SetBounds(Theme.M - 2, Dpi.S(34), cw - 2 * Theme.M + 4, ClientSize.Height - Dpi.S(34) - Dpi.S(112));
+            lv.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
             lv.View = View.Details;
             lv.CheckBoxes = true;
             lv.FullRowSelect = true;
-            lv.Columns.Add(Lang.S("MOD 文件"), 380);
-            lv.Columns.Add(Lang.S("状态"), 120);
+            lv.HideSelection = false;
+            lv.MultiSelect = true;
+            lv.BackColor = Theme.Surface;
+            lv.ForeColor = Theme.Ink;
+            lv.Columns.Add(Lang.S("MOD 文件"), cw - 2 * Theme.M - 96);
+            lv.Columns.Add(Lang.S("状态"), 84);
             lv.ItemChecked += delegate(object s, ItemCheckedEventArgs e)
             {
                 if (e.Item.SubItems.Count > 1)
                     e.Item.SubItems[1].Text = e.Item.Checked ? "启用" : "关闭";
+            };
+            // 窗口拉宽时名称列跟着长，别只在右边留空白
+            lv.SizeChanged += delegate
+            {
+                if (lv.Columns.Count >= 2)
+                    lv.Columns[0].Width = Math.Max(160, lv.ClientSize.Width - lv.Columns[1].Width - 6);
             };
             Controls.Add(lv);
             ContextMenuStrip cms = new ContextMenuStrip();
@@ -1383,16 +1410,32 @@ namespace Installer
             };
             lv.ContextMenuStrip = cms;
 
-            Button up = new Button(); up.Text = Lang.S("上移 ↑"); up.SetBounds(12, 360, 90, 28); up.Click += delegate { MoveItem(-1); }; Controls.Add(up);
-            Button dn = new Button(); dn.Text = Lang.S("下移 ↓"); dn.SetBounds(108, 360, 90, 28); dn.Click += delegate { MoveItem(1); }; Controls.Add(dn);
-            Label tip = new Label(); tip.Text = Lang.S("顺序 = 覆盖优先级（下面的覆盖上面的）"); tip.SetBounds(210, 364, 330, 20); Controls.Add(tip);
-            Button all = new Button(); all.Text = Lang.S("全开"); all.SetBounds(12, 402, 80, 30);
+            int ySort = ClientSize.Height - Dpi.S(106);
+            int yAct = ClientSize.Height - Dpi.S(66);
+            int x = Theme.M - 2;
+
+            FlatButton up = new FlatButton(); up.Text = Lang.S("上移 ↑"); up.Soft = true;
+            up.SetBounds(x, ySort, 88, Theme.H); up.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            up.Click += delegate { MoveItem(-1); }; Controls.Add(up);
+            FlatButton dn = new FlatButton(); dn.Text = Lang.S("下移 ↓"); dn.Soft = true;
+            dn.SetBounds(x + 96, ySort, 88, Theme.H); dn.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            dn.Click += delegate { MoveItem(1); }; Controls.Add(dn);
+            Label tip = new Label(); tip.Text = Lang.S("按住 Ctrl / Shift 可多选，右键可删除");
+            tip.Font = Theme.UISmall; tip.ForeColor = Theme.Ink3;
+            tip.SetBounds(x + 196, ySort + 7, 300, 20); tip.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            Controls.Add(tip);
+
+            FlatButton all = new FlatButton(); all.Text = Lang.S("全开"); all.Soft = true;
+            all.SetBounds(x, yAct, 80, Theme.H); all.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
             all.Click += delegate { SetAll(true); }; Controls.Add(all);
-            Button none = new Button(); none.Text = Lang.S("全关"); none.SetBounds(98, 402, 80, 30);
+            FlatButton none = new FlatButton(); none.Text = Lang.S("全关"); none.Soft = true;
+            none.SetBounds(x + 88, yAct, 80, Theme.H); none.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
             none.Click += delegate { SetAll(false); }; Controls.Add(none);
-            Button collect = new Button(); collect.Text = Lang.S("收回新 MOD"); collect.SetBounds(184, 402, 110, 30);
+            FlatButton collect = new FlatButton(); collect.Text = Lang.S("收回新 MOD"); collect.Soft = true;
+            collect.SetBounds(x + 176, yAct, 108, Theme.H); collect.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
             collect.Click += delegate { Collect(); }; Controls.Add(collect);
-            Button park = new Button(); park.Text = Lang.S("清理关着的"); park.SetBounds(300, 402, 104, 30);
+            FlatButton park = new FlatButton(); park.Text = Lang.S("清理关着的"); park.Soft = true;
+            park.SetBounds(x + 292, yAct, 104, Theme.H); park.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
             park.Click += delegate { Park(); }; Controls.Add(park);
             // 这两个都是「往 U 盘库搬东西」：本地模式没有库，搬过去只会进一个不参与扫描的目录，
             // 同时把游戏 addons 里那份删掉 —— MOD 于是在本地模式列表里凭空消失。按模式锁死。
@@ -1404,9 +1447,15 @@ namespace Installer
                 tipLocal.SetToolTip(collect, "本地模式没有 U 盘库，这个功能用不上");
                 tipLocal.SetToolTip(park, "本地模式没有 U 盘库，这个功能用不上");
             }
-            Button ok = new Button(); ok.Text = Lang.S("写入并关闭"); ok.SetBounds(410, 402, 138, 30);
+            FlatButton ok = new FlatButton(); ok.Text = Lang.S("写入并关闭"); ok.Primary = true;
+            ok.SetBounds(cw - Theme.M + 2 - 128, yAct, 128, Theme.H);
+            ok.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
             ok.Click += delegate { Apply(); }; Controls.Add(ok);
-            lbl = new Label(); lbl.SetBounds(12, 436, 536, 20); lbl.Text = ""; Controls.Add(lbl);
+            lbl = new Label(); lbl.Text = "";
+            lbl.Font = Theme.UISmall; lbl.ForeColor = Theme.Ink3;
+            lbl.SetBounds(x, ClientSize.Height - Dpi.S(24), cw - 2 * Theme.M, Dpi.S(18));
+            lbl.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            Controls.Add(lbl);
 
             LoadItems();
         }
@@ -1507,7 +1556,7 @@ namespace Installer
                 lv.Items.Add(li);
             }
             lv.EndUpdate();
-            lbl.Text = "共 " + files.Length + " 个已装 MOD，顺序 = 覆盖优先级（下面的压上面的）";
+            lbl.Text = "共 " + files.Length + " 个已装 MOD";
         }
 
         private void MoveItem(int dir)

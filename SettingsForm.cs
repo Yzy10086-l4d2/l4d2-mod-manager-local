@@ -60,7 +60,13 @@ namespace Installer
 
             Text = Lang.S("设置 · L4D2 MOD 管理工具");
             Theme.UseDpi(this);
-            ClientSize = Dpi.Sz(620, 1012);
+            // 内容比一屏还高（1080p 笔记本 + 任务栏就放不下 1052）：按屏幕高度收口并开滚动，
+            // 以前固定 1012 高，底部的「程序更新」和保存按钮直接被屏幕切掉一半。
+            const int wantH = 1052;
+            int maxH = Dpi.Un(Screen.PrimaryScreen.WorkingArea.Height - Dpi.S(72));
+            int h = Math.Min(wantH, Math.Max(520, maxH));
+            ClientSize = Dpi.Sz(620, h);
+            AutoScroll = h < wantH;
             Font = Theme.UI;
             BackColor = Theme.Bg;
             ForeColor = Theme.Ink;
@@ -481,13 +487,13 @@ namespace Installer
         private void BuildFooter()
         {
             Panel rule = new Panel();
-            rule.SetBounds(20, 826, 580, 0);
+            rule.SetBounds(20, 966, 580, 0);
             rule.BackColor = Theme.Line;
             Controls.Add(rule);
 
             Label note = new Label();
             note.Text = Lang.S("保存后立即生效，不改已经装进游戏的文件。");
-            note.SetBounds(20, 830, 360, 20);
+            note.SetBounds(20, 970, 360, 20);
             note.Font = Theme.UISmall;
             note.ForeColor = Theme.Ink3;
             note.BackColor = Color.Transparent;
@@ -496,13 +502,13 @@ namespace Installer
             FlatButton cancel = new FlatButton();
             cancel.Text = Lang.S("取消");
             cancel.Plain = true;
-            cancel.SetBounds(408, 878, 88, 32);
+            cancel.SetBounds(408, 998, 88, 32);
             cancel.DialogResult = DialogResult.Cancel;
             Controls.Add(cancel);
 
             btnSave = new FlatButton();
             btnSave.Text = Lang.S("保存设置");
-            btnSave.SetBounds(504, 878, 96, 32);
+            btnSave.SetBounds(504, 998, 96, 32);
             btnSave.Primary = true;
             btnSave.DialogResult = DialogResult.OK;
             // 校验放进点击里：以前是「先关窗、再在 ShowSettings 里发现路径不对」，
@@ -780,6 +786,8 @@ namespace Installer
                 f.PerformLayout();
                 Application.DoEvents();
 
+                // 设置窗口整窗比屏幕还高（1052），Shot() 走 PrintWindow 时屏幕外的底部会抓成空白；
+                // 这里用 DrawToBitmap：它按逻辑内容画，能看到"到底排到哪、有没有互相压"。
                 Size full = f.Size;
                 using (Bitmap bmp = new Bitmap(full.Width, full.Height))
                 {

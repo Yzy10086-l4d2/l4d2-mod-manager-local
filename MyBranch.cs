@@ -400,6 +400,7 @@ namespace Installer
             BackColor = Theme.Bg;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false; MinimizeBox = false;
+            Theme.DressForm(this);
 
             Label l = new Label();
             l.Text = "选一个分支（一组里能同时开好几个；文件不会被移动）";

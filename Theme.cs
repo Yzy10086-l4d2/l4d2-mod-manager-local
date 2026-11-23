@@ -425,6 +425,129 @@ namespace Installer
             Native.RoundCorners(f.Handle);
         }
 
+        /// <summary>
+        /// 新建窗口统一装扮：字体、底色、标题栏、原生控件皮肤，一次挂好。
+        /// 以前每个窗口各写一半 —— 有的只设了 BackColor，标题栏还是系统白；
+        /// 有的整窗忘了上色，深色界面里弹出一张白纸。构造函数最后调这一句就不会漏。
+        /// </summary>
+        public static void DressForm(Form f)
+        {
+            if (f == null) return;
+            if (f.Font == null || f.Font.Name != UI.Name) f.Font = UI;
+            // 只兜系统默认底色：调用方自己指定过的颜色不动（比如卡片区用 Surface）
+            if (f.BackColor == SystemColors.Control) f.BackColor = Bg;
+            if (f.ForeColor == SystemColors.ControlText) f.ForeColor = Ink;
+            f.HandleCreated += delegate { ApplyChrome(f); };
+            f.Load += delegate { ApplyTo(f); ApplyChrome(f); };
+            f.Shown += delegate
+            {
+                ApplyTo(f);
+                ApplyChrome(f);
+                DeepNative(f);
+                // 表头 / 滚动条这些子窗口是 Show 之后才陆续建出来的，Shown 这一刻可能还没有句柄；
+                // 再排一次到消息队列尾部补一遍，列表头的深色才不会漏（实测 AddonSwitch 的列头就是漏在这里）。
+                try
+                {
+                    f.BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (f.IsDisposed) return;
+                        ApplyChrome(f);
+                        DeepNative(f);
+                    });
+                }
+                catch { }
+            };
+        }
+
+        /// <summary>
+        /// 列表统一外观：自绘每一行。原生 ListBox 的选中色是系统蓝，跟这套配色打架；
+        /// 自绘之后选中 = 树里那套 TreeSel，未选中 = Surface，和方案树看起来是一家。
+        /// </summary>
+        public static void StyleList(ListBox lb)
+        {
+            if (lb == null) return;
+            lb.DrawMode = DrawMode.OwnerDrawFixed;
+            lb.ItemHeight = 22;
+            lb.BorderStyle = BorderStyle.None;      // 原生边框改不掉颜色，边框交给 Frame()
+            lb.BackColor = Surface;
+            lb.ForeColor = Ink;
+            lb.IntegralHeight = false;
+            lb.DrawItem += ListRowPaint;
+        }
+
+        private static void ListRowPaint(object sender, DrawItemEventArgs e)
+        {
+            ListBox lb = sender as ListBox;
+            if (lb == null || e.Index < 0) return;
+            bool sel = (e.State & DrawItemState.Selected) != 0;
+            using (SolidBrush bg = new SolidBrush(sel ? TreeSel : Surface))
+                e.Graphics.FillRectangle(bg, e.Bounds);
+            string txt = lb.Items[e.Index] == null ? "" : lb.Items[e.Index].ToString();
+            Rectangle r = e.Bounds;
+            r.X += 8;
+            r.Width = Math.Max(0, r.Width - 12);
+            TextRenderer.DrawText(e.Graphics, txt, lb.Font, r, Ink,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+
+        /// <summary>
+        /// 详情列表（非 CheckBoxes 的 ListView）改成自绘行。
+        /// 原生选中高亮在深色下会画成一块白（或系统亮蓝），跟这套配色完全对不上；
+        /// 自绘之后选中 = TreeSel，行色仍按调用方给 item/subitem 设的 ForeColor/BackColor 走，
+        /// 所以「失败=红、已下载=灰」这些语义色不会丢。
+        /// </summary>
+        public static void StyleListRows(ListView lv)
+        {
+            if (lv == null || lv.CheckBoxes) return;      // 带勾选框的不能自绘，否则勾没了
+            lv.OwnerDraw = true;
+            lv.DrawColumnHeader += delegate(object s, DrawListViewColumnHeaderEventArgs e)
+            {
+                using (SolidBrush b = new SolidBrush(SurfaceAlt)) e.Graphics.FillRectangle(b, e.Bounds);
+                using (Pen p = new Pen(LineSoft))
+                    e.Graphics.DrawLine(p, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
+                Rectangle r = e.Bounds;
+                r.X += 10;
+                r.Width = Math.Max(0, r.Width - 14);
+                TextRenderer.DrawText(e.Graphics, e.Header == null ? "" : e.Header.Text, UISmall, r, Ink3,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            };
+            lv.DrawItem += delegate(object s, DrawListViewItemEventArgs e)
+            {
+                // 行背景统一在 DrawSubItem 里铺（见下），这里不画，避免覆盖子项文字
+            };
+            lv.DrawSubItem += delegate(object s, DrawListViewSubItemEventArgs e)
+            {
+                bool sel = e.Item.Selected;
+                Color bg = sel ? TreeSel
+                    : (e.Item.BackColor.A == 255 && e.Item.BackColor != SystemColors.Window ? e.Item.BackColor : Surface);
+                using (SolidBrush b = new SolidBrush(bg)) e.Graphics.FillRectangle(b, e.Bounds);
+
+                Color fg;
+                if (e.SubItem != null && e.SubItem.ForeColor.A == 255) fg = e.SubItem.ForeColor;
+                else if (e.Item.ForeColor.A == 255 && e.Item.ForeColor != SystemColors.WindowText) fg = e.Item.ForeColor;
+                else fg = Ink;
+
+                Rectangle r = e.Bounds;
+                r.X += 10;
+                r.Width = Math.Max(0, r.Width - 14);
+                // 分组行通常是粗体（DupForm 的「187.9 MB x2」那种），按 item 自己的字体走
+                Font f = (e.Item.Font != null && e.Item.Font.Bold) ? UIBold : UISmall;
+                TextRenderer.DrawText(e.Graphics, e.SubItem == null ? "" : e.SubItem.Text, f, r, fg,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+            };
+        }
+
+        /// <summary>给去掉原生边框的控件套一圈 1px 主题线（ListBox 用）。返回的 Panel 自己设 Bounds。</summary>
+        public static Panel Frame(Control inner)
+        {
+            Panel p = new Panel();
+            p.BackColor = Line;
+            p.Padding = new Padding(1);
+            inner.Dock = DockStyle.Fill;
+            p.Controls.Add(inner);
+            return p;
+        }
+
         /// <summary>原生控件（输入框、列表、进度条）的深色皮肤：滚动条、表头、下拉箭头。</summary>
         public static void DeepNative(Control root)
         {
@@ -437,14 +560,37 @@ namespace Installer
             }
             else if (root.IsHandleCreated && root is ListView)
             {
+                // 列表底色默认是系统白：只挂深色主题句柄是不够的，客户区照样一片白。
+                ListView lvv = (ListView)root;
+                if (lvv.BackColor == SystemColors.Window) lvv.BackColor = Surface;
+                if (lvv.ForeColor == SystemColors.WindowText) lvv.ForeColor = Ink;
                 Native.DarkList(root.Handle, pal.IsDark);      // 不用 Explorer：它会给列画竖线
             }
             else if (root.IsHandleCreated
-                && (root is TextBox
+                && (root is TextBox || root is RichTextBox
                     || root is TreeView || root is ProgressBar || root is NumericUpDown))
             {
                 Native.DarkControl(root.Handle, pal.IsDark);
-                if (root is TextBox) SetEdge(root, InputEdgeIdle);   // 换主题后边线跟着换色
+                if (root is TextBox)
+                {
+                    SetEdge(root, InputEdgeIdle);            // 换主题后边线跟着换色
+                    Native.DarkScroll(root.Handle, pal.IsDark);   // 多行正文框的竖滚动条
+                }
+                if (root is RichTextBox)
+                {
+                    // 详情正文那个框：底白 + 亮滚动条，在深色页面上像贴了张纸
+                    if (root.BackColor == SystemColors.Window) root.BackColor = Surface;
+                    if (root.ForeColor == SystemColors.WindowText) root.ForeColor = Ink;
+                    Native.DarkScroll(root.Handle, pal.IsDark);
+                }
+            }
+            else if (root.IsHandleCreated && root is ListBox)
+            {
+                // ListBox 自己不带主题：不给底色就永远是系统白，深色窗口里像贴了张纸。
+                if (root.BackColor.A == 255) root.BackColor = Surface;
+                if (root.ForeColor.A == 255) root.ForeColor = Ink;
+                Native.DarkControl(root.Handle, pal.IsDark);
+                Native.DarkScroll(root.Handle, pal.IsDark);         // 竖滚动条
             }
             // 滚动面板的滚动条是系统画的，要单独打招呼；列表的表头同理
             if (root.IsHandleCreated && root is ScrollableControl && !(root is TextBox))
@@ -989,6 +1135,14 @@ namespace Installer
             set { caption = value == null ? "" : value; Invalidate(); }
         }
 
+        /// <summary>标题右端预留的宽度：给「套用将改 N 处」这种右侧小字让位，别和标题叠在一起。</summary>
+        public int RightPad
+        {
+            get { return rightPad; }
+            set { rightPad = value < 0 ? 0 : value; Invalidate(); }
+        }
+        private int rightPad;
+
         public Section()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
@@ -1005,7 +1159,7 @@ namespace Installer
                 g.DrawLine(pen, 0, 22, Width, 22);
             using (SolidBrush mark = new SolidBrush(Theme.Mark))
                 g.FillRectangle(mark, 0, 6, 3, 10);
-            TextRenderer.DrawText(g, caption, Theme.UIBold, new Rectangle(10, 0, Math.Max(0, Width - 10), 22), Theme.Ink,
+            TextRenderer.DrawText(g, caption, Theme.UIBold, new Rectangle(10, 0, Math.Max(0, Width - 10 - rightPad), 22), Theme.Ink,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
         }
     }
@@ -1535,6 +1689,22 @@ namespace Installer
                 // 网格线样式、ItemsView 主题都去不掉）。不挂主题就没有那几条线，底色/字色本来就是我们自己设的。
                 AllowDark(hwnd, dark);
                 SetWindowTheme(hwnd, "", "");
+                SendMessage(hwnd, WM_THEMECHANGED, IntPtr.Zero, IntPtr.Zero);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 给控件自己的滚动条换皮。滚动条属于非客户区，SetWindowTheme + 暗标记一起上才生效；
+        /// 只改 BackColor 的话，深色列表右边会挂一条亮白的长条（实测在分类窗口里非常刺眼）。
+        /// </summary>
+        public static void DarkScroll(IntPtr hwnd, bool dark)
+        {
+            try
+            {
+                if (ux == IntPtr.Zero) { uxTried = true; ux = LoadLibrary("uxtheme.dll"); }
+                AllowDark(hwnd, dark);
+                SetWindowTheme(hwnd, dark ? "DarkMode_Explorer" : "Explorer", null);
                 SendMessage(hwnd, WM_THEMECHANGED, IntPtr.Zero, IntPtr.Zero);
             }
             catch { }

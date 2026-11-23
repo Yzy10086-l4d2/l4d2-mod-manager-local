@@ -749,6 +749,7 @@ namespace Installer
         private readonly string autoSlot;
         private readonly ListBox lbCat, lbSlot;
         private readonly Label lblTop, lblTip, lblCatHd, lblSlotHd;
+        private Label lblHint;            // 操作说明独立一行：以前跟「识别结果」挤在同一句里，读起来像乱码
         private List<Slot> snapshot;      // 打开时算一次，切换大类不再重扫
 
         private string curCat = "";
@@ -777,9 +778,10 @@ namespace Installer
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
+            Theme.DressForm(this);
 
             lblTop = new Label();
-            lblTop.SetBounds(12, 12, 656, 40);
+            lblTop.SetBounds(12, 12, 656, 34);
             lblTop.Font = Theme.UISmall;
             lblTop.ForeColor = Theme.Ink2;
             StringBuilder sb = new StringBuilder();
@@ -792,61 +794,67 @@ namespace Installer
             // 位置认不出来时先按名字/标题猜 2~3 个候选，写在最上面 —— 新人不用自己研究该归哪。
             string hint = Positions.Hint(group.Name,
                 (group.Main != null) ? group.Main.AddonTitle : "", 3);
+            string act;
             if (autoSlot.Length == 0 && hint.Length > 0)
             {
-                sb.AppendLine();
-                sb.Append(hint).Append("（右边列表里点一下就是它）");
+                act = hint + "（右边列表里点一下就是它）";
                 lblSuggested = Positions.Suggest(group.Name + " " +
                     ((group.Main != null && group.Main.AddonTitle != null) ? group.Main.AddonTitle : ""), 1)[0].Name;
             }
-            else sb.Append("　·　左边点一行 = 归到这一类；右边点一行 = 它替换那个位置");
+            else act = "左边点一行 = 归到这一类；右边点一行 = 它替换那个位置";
             lblTop.Text = sb.ToString();
             Controls.Add(lblTop);
 
+            lblHint = new Label();
+            lblHint.SetBounds(12, 48, 656, 18);
+            lblHint.Font = Theme.UISmall;
+            lblHint.ForeColor = Theme.Ink3;
+            lblHint.AutoEllipsis = true;
+            lblHint.Text = act;
+            Controls.Add(lblHint);
+
             lblCatHd = new Label();
-            lblCatHd.SetBounds(12, 56, 240, 20);
+            lblCatHd.SetBounds(12, 76, 232, 18);
             lblCatHd.Text = "大类（树里从上到下的顺序）";
             lblCatHd.Font = Theme.UIBold;
             lblCatHd.ForeColor = Theme.Ink;
             Controls.Add(lblCatHd);
 
             lbCat = new ListBox();
-            lbCat.SetBounds(12, 80, 232, 320);
-            lbCat.BorderStyle = BorderStyle.FixedSingle;
-            lbCat.IntegralHeight = false;
-            lbCat.BackColor = Theme.Surface;
-            lbCat.ForeColor = Theme.Ink;
             lbCat.Font = Theme.UI;
+            Theme.StyleList(lbCat);
             Controls.Add(lbCat);
+            Panel catBox = Theme.Frame(lbCat);
+            catBox.SetBounds(12, 96, 232, 296);
+            Controls.Add(catBox);
 
             lblSlotHd = new Label();
-            lblSlotHd.SetBounds(264, 56, 300, 20);
+            lblSlotHd.SetBounds(256, 76, 320, 18);
             lblSlotHd.Text = "替换什么（这一类的具体位置）";
             lblSlotHd.Font = Theme.UIBold;
             lblSlotHd.ForeColor = Theme.Ink;
             Controls.Add(lblSlotHd);
 
             lbSlot = new ListBox();
-            lbSlot.SetBounds(264, 80, 300, 320);
-            lbSlot.BorderStyle = BorderStyle.FixedSingle;
-            lbSlot.IntegralHeight = false;
-            lbSlot.BackColor = Theme.Surface;
-            lbSlot.ForeColor = Theme.Ink;
             lbSlot.Font = Theme.UI;
+            Theme.StyleList(lbSlot);
             Controls.Add(lbSlot);
+            Panel slotBox = Theme.Frame(lbSlot);
+            slotBox.SetBounds(256, 96, 412, 296);
+            Controls.Add(slotBox);
 
-            Small("新建分类…", 12, 404, 110).Click += delegate { NewCat(); };
-            Small("改名…", 128, 404, 60).Click += delegate { RenameCat(); };
-            Small("↑", 194, 404, 24).Click += delegate { MoveCat(-1); };
-            Small("↓", 222, 404, 22).Click += delegate { MoveCat(1); };
+            Small("新建分类…", 12, 400, 104).Click += delegate { NewCat(); };
+            Small("改名…", 120, 400, 56).Click += delegate { RenameCat(); };
+            Small("↑", 180, 400, 26).Click += delegate { MoveCat(-1); };
+            Small("↓", 210, 400, 26).Click += delegate { MoveCat(1); };
 
-            Small("新建位置…", 262, 404, 110).Click += delegate { NewSlot(); };
-            Small("↑", 378, 404, 24).Click += delegate { MoveSlot(-1); };
-            Small("↓", 406, 404, 24).Click += delegate { MoveSlot(1); };
-            Small("并到上面的位置", 436, 404, 126).Click += delegate { HintSlot(); };
+            Small("新建位置…", 256, 400, 104).Click += delegate { NewSlot(); };
+            Small("↑", 364, 400, 26).Click += delegate { MoveSlot(-1); };
+            Small("↓", 394, 400, 26).Click += delegate { MoveSlot(1); };
+            Small("并到上面的位置", 424, 400, 152).Click += delegate { HintSlot(); };
 
             lblTip = new Label();
-            lblTip.SetBounds(12, 436, 656, 56);
+            lblTip.SetBounds(12, 436, 656, 48);
             lblTip.Font = Theme.UISmall;
             lblTip.ForeColor = Theme.Ink3;
             lblTip.Text = "分类只有这一套：方案树、搜索都按它走，改一处两处一起变。\r\n"

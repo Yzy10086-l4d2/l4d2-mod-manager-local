@@ -410,19 +410,26 @@ namespace Installer
             lblStatus.SetBounds(m, by + S(6), Math.Max(S(130), btnPrevPage.Left - S(8) - m), S(18));
 
             // 详情页内部
-            // 大图高度跟着窗口走：窗口矮的时候（最小 940×600）固定 300 会把正文挤成十几像素、
-            // 还会被 Math.Max(80) 撑起来压到按钮上。留出下面这几行的固定开销，剩下的才给大图。
+            // 2026-11-24：大图从「通栏 16:9 横幅」改成左图右信息的两栏 ——
+            // 1080 宽下通栏图有 300px 高、把标题和说明全挤到下面，看着像网页 banner 不像详情页。
+            // 现在图占左边不到一半，标题/订阅数/大小/分类/状态/进度就贴在它右边，正文从图下方开始。
             int dw = detail.ClientSize.Width, dh = detail.ClientSize.Height;
-            int heroH = Math.Min(S(300), Math.Max(S(140), dh - S(300)));
-            picHero.SetBounds(0, 0, dw, heroH);
+            int heroBoxH = Math.Min(S(240), Math.Max(S(140), dh - S(320)));
+            int heroW = Math.Min(dw * 46 / 100, heroBoxH * 16 / 9);
+            heroW = Math.Max(S(200), Math.Min(heroW, dw - S(260)));
+            picHero.SetBounds(0, 0, heroW, heroBoxH);
             lblHeroHint.SetBounds(0, 0, picHero.ClientSize.Width, picHero.ClientSize.Height);   // 子控件坐标：相对 picHero
-            int ty = heroH + S(10);
-            lblTitle.SetBounds(0, ty, dw, S(46));
-            lblMeta.SetBounds(0, ty + S(48), dw, S(18));
-            lblTags.SetBounds(0, ty + S(68), dw, S(18));
-            lblState.SetBounds(0, ty + S(86), dw, S(18));
-            barLoad.SetBounds(0, ty + S(104), dw, S(7));
-            int descTop = ty + S(118);
+            int tx = heroW + S(18);
+            int tw = Math.Max(S(200), dw - tx);
+            // 信息块在大图右侧垂直居中：贴顶会在大图下半截旁边留一大片空
+            int infoH = S(128);
+            int ty = Math.Max(S(4), (heroBoxH - infoH) / 2);
+            lblTitle.SetBounds(tx, ty, tw, S(52));
+            lblMeta.SetBounds(tx, ty + S(56), tw, S(18));
+            lblTags.SetBounds(tx, ty + S(76), tw, S(18));
+            lblState.SetBounds(tx, ty + S(96), tw, S(18));
+            barLoad.SetBounds(tx, ty + S(116), tw, S(7));
+            int descTop = Math.Max(heroBoxH, ty + S(128)) + S(14);
             int btnY = dh - S(34);
             // 配套/合集清单：每条一行、可点进详情；有它时正文整体下移，别互相压。
             // 高度按条目数算，不看 Visible —— 列表是数据回来后才置 Visible，那时布局早跑过了。
@@ -2031,6 +2038,7 @@ namespace Installer
             MinimizeBox = false;
             MaximizeBox = false;
             ShowInTaskbar = false;
+            Theme.DressForm(this);
 
             Label hint = new Label();
             hint.Text = Lang.S("勾选要更新的 MOD，然后点「开始更新」。更新会覆盖原文件，分类和档位不变。");

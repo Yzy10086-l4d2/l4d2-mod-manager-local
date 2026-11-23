@@ -36,6 +36,7 @@ namespace Installer
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
             MinimizeBox = false;
+            Theme.DressForm(this);
             ShowInTaskbar = false;
 
             lblHint = new Label();

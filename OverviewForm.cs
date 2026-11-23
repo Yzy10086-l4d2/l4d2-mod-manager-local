@@ -22,6 +22,7 @@ namespace Installer
             BackColor = Theme.Bg;
             Font = Theme.UI;
             ShowInTaskbar = true;
+            Theme.DressForm(this);
 
             canvas = new OverviewCanvas(owner);
             canvas.Dock = DockStyle.Fill;

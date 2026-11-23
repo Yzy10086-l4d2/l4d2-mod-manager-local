@@ -168,6 +168,7 @@ namespace Installer
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
+            Theme.DressForm(this);
             MinimizeBox = false;
             ShowInTaskbar = false;
 
@@ -187,6 +188,9 @@ namespace Installer
             lv.HideSelection = false;
             lv.HeaderStyle = ColumnHeaderStyle.None;
             lv.Font = Theme.UISmall;
+            // 不设底色的话整个开关列表是一片系统白，深色窗口里像贴了张打印纸
+            lv.BackColor = Theme.Surface;
+            lv.ForeColor = Theme.Ink;
             Theme.Dress(lv);
             lv.Columns.Add("", Dpi.S(400));
             lv.SizeChanged += delegate { if (lv.Columns.Count > 0) lv.Columns[0].Width = Math.Max(120, lv.ClientSize.Width - Dpi.S(4)); };
