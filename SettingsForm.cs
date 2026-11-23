@@ -158,7 +158,7 @@ namespace Installer
 
         private void BuildGeneral()
         {
-            Card s = AddGroup(Lang.S("常规"), 56, 248);
+            Card s = AddGroup(Lang.S("常规"), 56, 232);
 
             RowTitle(s, Lang.S("减少动态效果"), 16, 8, 220);
             RowNote(s, Lang.S("关掉按钮与状态切换的过渡，低配机器更轻快"), 16, 28, 320);
@@ -168,16 +168,16 @@ namespace Installer
             tglMotion.Checked = Core.Cfg.ReduceMotion;
             s.Controls.Add(tglMotion);
 
-            s.Separate(96);
+            s.Separate(64);
 
             // 外观：纯粹的显示开关，没有「生效代价」，所以点了就立刻应用并落配置。
             // 不跟着「保存设置」走 —— 用户点完看到颜色变了，关掉窗口却又变回去，会当成 bug。
-            RowTitle(s, Lang.S("外观"), 16, 104, 220);
-            RowNote(s, Lang.S("跟随系统 = 跟 Windows 走；选了立即生效"), 16, 124, 310);
+            RowTitle(s, Lang.S("外观"), 16, 72, 220);
+            RowNote(s, Lang.S("跟随系统 = 跟 Windows 走；选了立即生效"), 16, 92, 310);
 
             segAppearance = new Segmented();
             segAppearance.Items = new string[] { "跟随系统", "浅色", "深色" };
-            segAppearance.SetBounds(332, 108, 232, 32);
+            segAppearance.SetBounds(332, 76, 232, 32);
             segAppearance.SelectedIndex = (int)Theme.Mode;
             segAppearance.SelectedIndexChanged += delegate
             {
@@ -196,16 +196,16 @@ namespace Installer
             };
             s.Controls.Add(segAppearance);
 
-            s.Separate(148);
+            s.Separate(116);
 
             // 语言：和外观一样「点了就生效」，但它必须重建界面（控件文案是构造时定下的），
             // 所以这里只落配置 + 打标记，由主窗口关掉自己、Program 那边重建一次。
-            RowTitle(s, Lang.S("语言 / Language"), 16, 152, 240);
-            RowNote(s, Lang.S("切换后界面立即重建，其它设置不会丢"), 16, 172, 320);
+            RowTitle(s, Lang.S("语言 / Language"), 16, 124, 240);
+            RowNote(s, Lang.S("切换后界面立即重建，其它设置不会丢"), 16, 144, 320);
 
             segLang = new Segmented();
             segLang.Items = new string[] { "中文", "English" };
-            segLang.SetBounds(332, 156, 232, 32);
+            segLang.SetBounds(332, 128, 232, 32);
             segLang.SelectedIndex = Lang.IsEn ? 1 : 0;
             segLang.SelectedIndexChanged += delegate
             {
@@ -218,16 +218,16 @@ namespace Installer
             };
             s.Controls.Add(segLang);
 
-            s.Separate(192);
+            s.Separate(168);
 
             // MOD 名称：只影响显示和搜索，一个文件都不动。两种来源库里都现成：
             //   文件名 = vpk 原名；标题 = 包内 addoninfo 的 AddonTitle（工坊名那种）。
-            RowTitle(s, Lang.S("MOD 名称"), 16, 200, 220);
-            RowNote(s, Lang.S("文件名 = vpk 原名；标题 = 包内 addoninfo 的名字"), 16, 220, 320);
+            RowTitle(s, Lang.S("MOD 名称"), 16, 176, 220);
+            RowNote(s, Lang.S("文件名 = vpk 原名；标题 = 包内 addoninfo 的名字"), 16, 196, 320);
 
             segName = new Segmented();
             segName.Items = new string[] { Lang.S("文件名"), Lang.S("标题") };
-            segName.SetBounds(332, 208, 232, 32);
+            segName.SetBounds(332, 184, 232, 32);
             segName.SelectedIndex = Core.Cfg.NameByTitle ? 1 : 0;
             segName.SelectedIndexChanged += delegate
             {
@@ -250,7 +250,7 @@ namespace Installer
         /// </summary>
         private void BuildGameDir()
         {
-            Card s = AddGroup(Lang.S("游戏目录"), 344, 112);
+            Card s = AddGroup(Lang.S("游戏目录"), 328, 112);
 
             RowTitle(s, Lang.S("游戏根目录"), 16, 8, 200);
 
@@ -285,7 +285,7 @@ namespace Installer
         /// </summary>
         private void BuildWorkshop()
         {
-            Card s = AddGroup(Lang.S("MOD 来源"), 496, 156);
+            Card s = AddGroup(Lang.S("MOD 来源"), 480, 156);
 
             // 左：Steam 工坊 + key
             RowTitle(s, Lang.S("Steam 创意工坊"), 16, 8, 250);
@@ -368,7 +368,7 @@ namespace Installer
 
         private void BuildDiagnostics()
         {
-            Card s = AddGroup(Lang.S("位置与诊断"), 676, 120);
+            Card s = AddGroup(Lang.S("位置与诊断"), 660, 120);
 
             lblCfg = new Label();
             lblCfg.SetBounds(16, 8, 548, 16);
@@ -652,7 +652,7 @@ namespace Installer
         /// </summary>
         private void BuildUpdate()
         {
-            Card s = AddGroup(Lang.S("程序更新"), 822, 118);
+            Card s = AddGroup(Lang.S("程序更新"), 806, 96);
 
             lblUpd = new Label();
             lblUpd.SetBounds(16, 8, 548, 16);
@@ -948,6 +948,28 @@ namespace Installer
             txtGame.Text = root;
             txtGame.SelectionStart = txtGame.Text.Length;
             txtGame.SelectionLength = 0;
+            UpdateBrandLine();          // 顶栏那行「当前游戏目录」跟着换
+        }
+
+        /// <summary>
+        /// 顶栏标题区第二行：现在管的是哪个游戏目录。
+        /// 路径太长时中间省略（尾巴必须留 —— 「\Left 4 Dead 2」才是能认人的部分），
+        /// 鼠标停上去给完整路径。
+        /// </summary>
+        internal void UpdateBrandLine()
+        {
+            if (lblBrandSub == null || lblBrandSub.IsDisposed) return;
+            string root = (Core.Cfg == null || Core.Cfg.GameRoot == null) ? "" : Core.Cfg.GameRoot.Trim();
+            if (root.Length == 0)
+            {
+                lblBrandSub.Text = Lang.S("还没有选游戏目录 —— 点这里去设置");
+                return;
+            }
+            string shown = root;
+            if (shown.Length > 62)
+                shown = shown.Substring(0, 16) + "…" + shown.Substring(shown.Length - 42);
+            lblBrandSub.Text = Lang.S("游戏目录 · ") + shown;
+            if (tips != null) tips.SetToolTip(lblBrandSub, root + "\r\n" + Lang.S("点一下进设置改。"));
         }
 
         /// <summary>主库或模式变更后重扫。extra 为空时状态文案由调用场景决定。</summary>

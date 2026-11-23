@@ -3372,11 +3372,9 @@ namespace Installer
                     // 窄窗口下这一行只剩一百多像素，长句子必被省略号切 —— 怎么进货交给悬停提示（UpdateTip）
                     lblFoot.Text = Lang.S("这个位置还没有 MOD · 游戏里仍是原版");
                 }
-                else lblFoot.Text = s.Items.Count == 0
-                    ? "这个位置还没有换模型的包"
-                    : Lang.F("{0} 个模型候选 · 点一个就换掉原来的", s.Items.Count)
-                      + (HasSet(s) ? " · 组合装双击可挑部件" : "")
-                      + " · 「开关 ⇄」列点一下=把这个 MOD 开 / 关";
+                else lblFoot.Text = "";
+                // 有一批候选时，这行只留给「已移到 / 已开关」这类临时反馈，平时不写废话小字：
+                // 「N 个模型候选 · 点一个就换掉原来的…」整句删掉，把行高让给下面的推荐区。
 
 
             }
@@ -3996,9 +3994,10 @@ namespace Installer
                 else
                 {
                     int whole = lv.Height;
-                    // 2026-11-24：以前是「上下各一半」，候选只有两三条时下半截那面卡片墙反而更抢眼，
-                    // 真正要挑的候选被压到一半高。现在固定只占一行卡（120~152），余下的全给候选列表。
-                    int recH = Math.Min(Dpi.S(152), Math.Max(Dpi.S(120), whole / 3));
+                    // 2026-11-24（用户）：推荐改成两行卡。卡格是 58 图 + 18 标题 + 8 间距 = 84，
+                    // 两行要 2*84 + 一点余量；候选列不够高时自动退回一行，不硬撑。
+                    int recH = whole >= Dpi.S(380) ? Dpi.S(196) : Dpi.S(152);
+                    if (whole - recH < Dpi.S(150)) recH = Math.Min(Dpi.S(152), Math.Max(Dpi.S(120), whole / 3));
                     if (whole - recH < Dpi.S(90)) { recPanel.Visible = false; }
                     else
                     {

@@ -42,6 +42,7 @@ namespace Installer
         private LoadingPane lblLoading;          // 读取/重扫期间的加载占位（启动报步骤 / 重扫报细条），平时藏着
         private CatTree treeView;                // 方案树：按「能替换的东西」看，一个位置只留一个 MOD
         private Label lblStatus, lblConflict;
+        private Label lblBrand, lblBrandSub;     // 顶栏标题区：产品名 + 当前游戏目录（点进设置）
         private string statusBase = "", wsSuffix = "";   // 状态行正文 + 「工坊：离线」这类的常驻后缀
         // 底栏总高（设计值）：按钮行 36 + 间距 12 + 状态栏 20 + 触底 8。
         // 原来是 116，按钮下面空出 68px，「下巴」明显偏厚；收到 76 之后按钮行和状态栏只隔 12px。
@@ -449,30 +450,51 @@ namespace Installer
             int rightX = Theme.M;               // 左栏撤掉：右栏直接顶到左边距
             int rightW = W - 2 * Theme.M;
 
-            // ---- 顶部：游戏目录 ----
-            Label l1 = new Label(); l1.Text = Lang.S("游戏目录"); l1.SetBounds(Theme.M, 20, 60, 20); Theme.Dress(l1); l1.Font = Theme.UISmall; l1.ForeColor = Theme.Ink3; Controls.Add(l1);
+            // ---- 顶部：品牌 / 当前游戏（改路径是设置里的事）+ 工具 + 主操作 ----
+            // 2026-11-24 用户定：游戏目录不该挂在首页。那一行输入框占了半个顶栏，
+            // 真正的用途（换路径、自动找）一年用不了几次，早就在设置里有了。
+            // 空出来的地方给标题区：一行产品名，一行「现在管的是哪个游戏目录」，点一下直接进设置。
+            lblBrand = new Label();
+            lblBrand.Text = Lang.S("L4D2 MOD 管理工具");
+            lblBrand.Font = Theme.H1;
+            lblBrand.ForeColor = Theme.Ink;
+            lblBrand.BackColor = Color.Transparent;
+            lblBrand.SetBounds(Theme.M, 6, 340, 26);
+            Controls.Add(lblBrand);
+
+            lblBrandSub = new Label();
+            lblBrandSub.Font = Theme.UISmall;
+            lblBrandSub.ForeColor = Theme.Ink3;
+            lblBrandSub.BackColor = Color.Transparent;
+            lblBrandSub.AutoEllipsis = true;
+            lblBrandSub.Cursor = Cursors.Hand;
+            lblBrandSub.SetBounds(Theme.M + 1, 32, 380, 16);
+            lblBrandSub.Click += delegate { ShowSettings(); };
+            tips.SetToolTip(lblBrandSub, Lang.S("当前游戏目录。点这里进设置改（可以自动找，也可以浏览…）。"));
+            Controls.Add(lblBrandSub);
+
             const int findW = 76;
-            const int browseW = 76;
             const int settingsW = 52;
             const int viewW = 48;       // 总览（原「方案管理」，四个字在 1080 宽下太占地方）
-            const int panelW = 56;      // 左栏抽屉
+            const int panelW = 56;      // 左栏抽屉（按钮已隐藏，位置照旧留出来）
             const int wsW = 64;         // 工坊导入
-            const int installW = 124;   // 「安装这套方案」：主操作上顶栏最右（方案 B）
+            const int installW = 124;   // 「安装这套方案」：主操作上顶栏最右
             const int refreshW = 52;    // 「刷新」：常驻顶栏，和主操作同一排
             const int topGap = 8;
-            // 顶栏分三组：游戏目录 | 启动项·工坊（对象操作）| 总览·面板（视图）| 主操作 · 设置
+            // 顶栏分三组：启动项·工坊（对象操作）| 总览·设置·刷新（视图与状态）| 主操作
             const int groupGap = 22;
             int installX = W - Theme.M - installW;
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
-            int panelX = settingsX - groupGap - panelW;   // 仅给隐藏的「统计」按钮留位
-            int viewX = settingsX - groupGap - viewW;      // 左栏撤掉：「方案管理」直接贴到设置左边
+            int viewX = settingsX - groupGap - viewW;
             int wsX = viewX - groupGap - wsW;
             int findX = wsX - topGap - findW;
-            int browseX = findX - topGap - browseW;
-            txtGame = new ComboBox(); txtGame.SetBounds(80, 18, browseX - topGap - 8 - 80, 24);
+            // 路径输入框从顶栏撤下（改路径在设置里）。控件留着当「当前游戏目录」的唯一数据源，
+            // 隐藏起来，所有读写它的既有代码（预检、换模式、最近列表）都不用动。
+            txtGame = new ComboBox(); txtGame.SetBounds(80, 18, 200, 24);
             txtGame.DropDownStyle = ComboBoxStyle.DropDown; Theme.Dress(txtGame); Controls.Add(txtGame);
-            txtGame.TextChanged += delegate { QueuePrecheck(); };   // 手输路径时底栏那句提示跟着变
+            txtGame.Visible = false;
+            txtGame.TextChanged += delegate { QueuePrecheck(); };
             btnLaunch = new FlatButton(); btnLaunch.Soft = true; btnLaunch.Text = Lang.S("启动项"); btnLaunch.SetBounds(findX, 16, findW, Theme.H);
             btnLaunch.AccessibleName = "启动项组合";
             btnLaunch.Click += delegate { using (LaunchCatalogForm f = new LaunchCatalogForm()) f.ShowDialog(this); };
@@ -531,7 +553,7 @@ namespace Installer
 
             btnPanel = new FlatButton(); btnPanel.Text = Lang.S("统计");
             btnPanel.Visible = false;           // 左栏撤掉后这个开关没意义了（对象留着，免得别处引用崩）
-            btnPanel.SetBounds(panelX, 16, panelW, Theme.H);
+            btnPanel.SetBounds(viewX, 16, panelW, Theme.H);
             btnPanel.Click += delegate
             {
                 SetDrawer(!drawerOpen);
@@ -666,7 +688,10 @@ namespace Installer
             // ---- 右栏：MOD 库 ----
             // 只有一屏：方案树。左边是「能替换的东西」的位置，右边是它的候选。
             // 不另开窗口，勾选、搜索、方案下拉始终在视线里，关窗口把进程留在后台这种事也不会再发生。
-            int modH = CH - 56 - BottomBarH;                 // 到下方按钮行为止，中间全给 MOD 库
+            // 卡片不能长到窗口最下沿：底部还有一行状态（就绪 / 游戏目录 · N 个 MOD），
+            // 以前卡片底边压在状态行上，卡片最底下那条黄色冲突提示被状态行盖掉一半，
+            // 看着就是「就绪上面挂了半截黄字」（用户 2026-11-24 反馈）。
+            int modH = CH - 56 - BottomBarH - StatusRowH - 8;
             Section gm = new Section();
             gm.Caption = Lang.S("MOD 库（U 盘的 vpk + 压缩包）"); gm.SetBounds(rightX, 56, rightW, modH); Controls.Add(gm);
 
@@ -763,7 +788,7 @@ namespace Installer
                 "第一次启动或刚更新完可能要等几秒，别急着关", true);
 
             lblConflict = new Label();
-            lblConflict.SetBounds(12, modH - 40, rightW - 24, 34);
+            lblConflict.SetBounds(12, modH - 24, rightW - 24, 20);
             lblConflict.Text = "";
             lblConflict.Font = Theme.UISmall;
             lblConflict.BackColor = Color.Transparent;
@@ -869,6 +894,7 @@ namespace Installer
             SetDrawer(Core.Cfg.DrawerOpen);
             Resize += delegate { ApplyResponsive(); };
             ApplyResponsive();
+            UpdateBrandLine();
         }
 
         /// <summary>请求重算校验条（防抖 220ms）。勾选、路径、模式变了都走这里。</summary>
@@ -2825,12 +2851,13 @@ namespace Installer
                 foreach (DupGroup g in dups) waste += g.Size * (g.Items.Count - 1);
                 string one = dups[0].Items[0].Name;
                 if (one.Length > 26) one = one.Substring(0, 26) + "…";
-                lblConflict.Text = Lang.F("⚠ {0} 组体积重复 · 最多白占 {1} · {2}\r\n", dups.Count, Core.Human(waste), one)
-                                 + "点这里处理：先核对内容是不是同一个文件，再决定这次不装 / 直接删掉";
+                // 一行说完，点开看明细：以前这里带换行、高 34px，被下面的方案树压掉上半截，
+                // 屏幕上只剩半行黄字挂在「就绪」上面（用户 2026-11-24 反馈）。
+                lblConflict.Text = Lang.F("⚠ {0} 组体积重复 · 最多白占 {1} · {2} —— 点这里处理", dups.Count, Core.Human(waste), one);
             }
             else
             {
-                lblConflict.Text = "⚠ " + msgs.Count + " 条提示（同名 / 已装）\r\n点这里看清单";
+                lblConflict.Text = Lang.F("⚠ {0} 条提示（同名 / 已装）—— 点这里看清单", msgs.Count);
             }
             foreach (string m in msgs) Core.Log("WARN", m);
         }
@@ -3813,13 +3840,13 @@ namespace Installer
             // 用户看到的就是「下面的按钮全没了」。所以这里按设计坐标把每条高度重新算死。
             int H = Dpi.Un(physH);
             {
-                int modH = Dpi.Un(physH - Dpi.S(BottomBarH)) - 56;   // 到下方按钮行为止：按物理客户区收口，别用设计值换算（差出来的就是窗口底下那条空白）
+                int modH = Dpi.Un(physH - Dpi.S(BottomBarH)) - 56 - StatusRowH - 8;   // 扣掉底部那行状态，卡片别压住它
                 gMod.Top = Dpi.S(56);
                 gMod.Height = Dpi.S(modH);
                 viewHost.Top = Dpi.S(70);
                 // 页脚只剩一行状态：候选列表一路贴到页脚上沿（原来留 74px，第二次收到 40，现在 22）
-                viewHost.Height = Dpi.S(Math.Max(80, modH - 70 - 22));
-                lblConflict.Top = Dpi.S(modH - 46);
+                viewHost.Height = Dpi.S(Math.Max(80, modH - 70 - 30));
+                lblConflict.Top = Dpi.S(modH - 26);
                 // 左栏纵向：安装选项搬进设置后，顶上那张卡没了 —— 切换按钮和「游戏现状」直接贴顶，
                 // 把原来空出来的半屏交给现状卡（它自己会按高度铺分类分布）。
                 int infoTop = H - BottomBarH - 24;
@@ -3899,11 +3926,10 @@ namespace Installer
             if (btnUnmatched != null) btnUnmatched.Left = Dpi.S(356);
             if (lblSchemeDiff != null) lblSchemeDiff.Left = Dpi.S(rightW - 376);
 
-            // 顶部：游戏目录 / 浏览 / 启动项 / 台面 / 抽屉 / 工坊 / 设置
+            // 顶部：品牌区（标题 + 当前游戏目录）· 工具 · 主操作
             const int findW = 76;
             const int settingsW = 52;
             const int viewW = 48;       // 总览
-            const int panelW = 56;      // 左栏抽屉（按钮已隐藏，位置照旧留出来）
             const int wsW = 64;         // 工坊导入
             const int topGap = 8;
             const int groupGap = 22;
@@ -3912,16 +3938,17 @@ namespace Installer
             int installX = W - Theme.M - installW;
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
-            int panelX = settingsX - groupGap - panelW;   // 仅给隐藏的「统计」按钮留位
-            int viewX = settingsX - groupGap - viewW;      // 左栏撤掉：「方案管理」直接贴到设置左边
+            int viewX = settingsX - groupGap - viewW;
             int wsX = viewX - groupGap - wsW;
             int findX = wsX - topGap - findW;
-            txtGame.Width = Dpi.S(findX - topGap - 8 - 80);
+            // 标题区吃掉按钮组左边剩下的全部宽度；游戏目录那一行小字跟着一起伸缩
+            if (lblBrand != null) lblBrand.Width = Dpi.S(Math.Max(120, findX - Theme.M - 12));
+            if (lblBrandSub != null) lblBrandSub.Width = Dpi.S(Math.Max(120, findX - Theme.M - 12));
             btnLaunch.Left = Dpi.S(findX);
             btnSettings.Left = Dpi.S(settingsX);
             if (btnRefreshLib != null) btnRefreshLib.Left = Dpi.S(refreshX);
             btnView.Left = Dpi.S(viewX);
-            btnPanel.Left = Dpi.S(panelX);
+            btnPanel.Left = Dpi.S(viewX);
             if (btnWorkshop != null) btnWorkshop.Left = Dpi.S(wsX);
 
             // 底部：右边一组（工具 + 次要 + 主操作），「一键还原」单独钉在左下角
