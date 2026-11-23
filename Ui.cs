@@ -178,6 +178,7 @@ namespace Installer
         private Action afterScanQueue;
         // 启动时查到的新版本（设置页直接读它，不用再查一次）
         private UpdateInfo pendingUpdate;
+        private FlatButton btnUpdate;              // 顶栏「检查更新 / 有新版本」
         private string pendingRoot;                 // 扫库期间用户选的新目录，扫完接着切
         // 扫库心跳：扫库期间每 5 秒往日志报一声、状态栏刷新一次秒数。
         // 「一直在加载」的时候，用户至少看得到程序还活着、进行到第几秒；
@@ -446,6 +447,7 @@ namespace Installer
             const int findW = 76;
             const int browseW = 76;
             const int settingsW = 60;
+            const int updW = 96;        // 顶栏更新入口：平时「检查更新」，查到新版变「有新版本 x.y.z」
             const int viewW = 56;       // 台面 ⇄ 方案树
             const int panelW = 56;      // 左栏抽屉
             const int wsW = 64;         // 工坊导入
@@ -457,7 +459,8 @@ namespace Installer
             int installX = W - Theme.M - installW;
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
-            int panelX = settingsX - groupGap - panelW;
+            int updX = settingsX - topGap - updW;
+            int panelX = updX - groupGap - panelW;
             int viewX = panelX - topGap - viewW;
             int wsX = viewX - groupGap - wsW;
             int findX = wsX - topGap - findW;
@@ -478,6 +481,14 @@ namespace Installer
             tips.SetToolTip(btnWorkshop, "从 Steam 创意工坊导入：粘贴物品或合集链接，直接下到 MOD 库里。\r\n"
                 + "L4D2 的物品都是单个 vpk，能直接下，不需要 Steam 登录。");
             Controls.Add(btnWorkshop);
+
+            btnUpdate = new FlatButton(); btnUpdate.Soft = true;
+            btnUpdate.Text = Lang.S("检查更新");
+            btnUpdate.SetBounds(updX, 16, updW, Theme.H);
+            btnUpdate.AccessibleName = "程序更新";
+            btnUpdate.Click += delegate { ShowSettings(); };
+            tips.SetToolTip(btnUpdate, "程序更新：查到新版会变成「有新版本 x.y.z」，点开进设置按「立即更新」（会自动重启）。");
+            Controls.Add(btnUpdate);
 
             btnSettings = new FlatButton(); btnSettings.Text = Lang.S("设置");
             btnSettings.SetBounds(settingsX, 16, settingsW, Theme.H);
@@ -2445,19 +2456,47 @@ namespace Installer
         internal void StartUpdateCheck()
         {
             if (!Core.Cfg.UpdateCheck) return;
+            // 同一天只在第一次启动查一次：一天开好几次不该反复去连 GitHub。
+            // 日期先落盘再查 —— 查失败了今天也不再重试，省得每次开窗都卡 4 秒。
+            string today = DateTime.Now.ToString("yyyy-MM-dd");
+            if (string.Equals(Core.Cfg.UpdateDay ?? "", today, StringComparison.Ordinal)) return;
+            Core.Cfg.UpdateDay = today;
+            try { Core.SaveConfig(); } catch { }
             System.Threading.Thread t = new System.Threading.Thread(delegate()
             {
                 UpdateInfo u = AppUpdate.Check(4000);
                 if (u == null || !AppUpdate.Newer(AppUpdate.Current, u.Version)) return;
-                SafeInvoke(delegate()
-                {
-                    pendingUpdate = u;
-                    SetStatus(Lang.F("发现新版本 {0} —— 打开「设置 → 程序更新」升级", u.Version));
-                    Core.Log("INFO", "发现新版本 " + u.Version + "（当前 " + AppUpdate.Current + "）");
-                });
+                SafeInvoke(delegate() { SetPendingUpdate(u); });
             });
             t.IsBackground = true;
             t.Start();
+        }
+
+        /// <summary>查到新版（启动检查或设置里手动检查都走这里）：记下来 + 顶栏按钮变样。</summary>
+        internal void SetPendingUpdate(UpdateInfo u)
+        {
+            pendingUpdate = u;
+            RefreshUpdateBadge();
+            if (u == null) return;
+            SetStatus(Lang.F("发现新版本 {0} —— 点顶栏「有新版本」升级", u.Version));
+            Core.Log("INFO", "发现新版本 " + u.Version + "（当前 " + AppUpdate.Current + "）");
+        }
+
+        /// <summary>顶栏那个按钮的两种样子：平时「检查更新」（次要按钮），有新版时变实心主按钮。</summary>
+        internal void RefreshUpdateBadge()
+        {
+            if (btnUpdate == null) return;
+            if (pendingUpdate == null)
+            {
+                btnUpdate.Soft = true;
+                btnUpdate.Text = Lang.S("检查更新");
+            }
+            else
+            {
+                btnUpdate.Soft = false;
+                btnUpdate.Text = Lang.F("有新版本 {0}", pendingUpdate.Version);
+            }
+            btnUpdate.Invalidate();
         }
 
         /// <summary>把扫描期间排队的活一次跑完（只在 UI 线程上调）。</summary>
@@ -3636,6 +3675,7 @@ namespace Installer
             // 顶部：游戏目录 / 浏览 / 启动项 / 台面 / 抽屉 / 工坊 / 设置
             const int findW = 76;
             const int settingsW = 60;
+            const int updW = 96;
             const int viewW = 56;       // 台面 ⇄ 方案树
             const int panelW = 56;      // 左栏抽屉
             const int wsW = 64;         // 工坊导入
@@ -3646,13 +3686,15 @@ namespace Installer
             int installX = W - Theme.M - installW;
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
-            int panelX = settingsX - groupGap - panelW;
+            int updX = settingsX - topGap - updW;
+            int panelX = updX - groupGap - panelW;
             int viewX = panelX - topGap - viewW;
             int wsX = viewX - groupGap - wsW;
             int findX = wsX - topGap - findW;
             txtGame.Width = Dpi.S(findX - topGap - 8 - 80);
             btnLaunch.Left = Dpi.S(findX);
             btnSettings.Left = Dpi.S(settingsX);
+            if (btnUpdate != null) btnUpdate.Left = Dpi.S(updX);
             if (btnRefreshLib != null) btnRefreshLib.Left = Dpi.S(refreshX);
             btnView.Left = Dpi.S(viewX);
             btnPanel.Left = Dpi.S(panelX);

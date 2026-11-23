@@ -709,6 +709,7 @@ namespace Installer
                     }
                     foundUpdate = u;
                     ShowFound(u);
+                    if (owner != null) owner.SetPendingUpdate(u);      // 顶栏按钮跟着变成「有新版本」
                     Core.Log("INFO", "发现新版本 " + u.Version + "（当前 " + AppUpdate.Current + "）");
                 });
             });
