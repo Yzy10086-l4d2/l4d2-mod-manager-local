@@ -661,21 +661,68 @@ namespace Installer
             "community.akamai.steamstatic.com"
         };
 
+        /// <summary>
+        /// 一条下载的暂停 / 取消开关。下载线程在每个读循环里查它，点按钮不用等这一包下完；
+        /// 放在这里而不是界面层：界面可能已经关了（下载还在跑），开关不能跟着窗口一起没。
+        /// </summary>
+        internal sealed class DlCtl
+        {
+            public readonly string Id;
+            public volatile bool Pause;
+            public volatile bool Cancel;
+            public DlCtl(string id) { Id = id ?? ""; }
+            public void Tick()
+            {
+                if (Cancel) throw new DlAbort(true);
+                if (Pause) throw new DlAbort(false);
+            }
+        }
+
+        /// <summary>暂停（Canceled=false）/ 取消（true）时从下载线程里抛出来，一路往上交给界面收尾。</summary>
+        internal sealed class DlAbort : Exception
+        {
+            public readonly bool Canceled;
+            public DlAbort(bool canceled) : base(canceled ? "已取消下载" : "已暂停下载") { Canceled = canceled; }
+        }
+
+        /// <summary>
+        /// 分片临时目录名用稳定哈希：string.GetHashCode 换进程就变，
+        /// 暂停后关掉程序再开就找不到上次的分片，只能从头下。
+        /// </summary>
+        static string TempPartDir(string partPath)
+        {
+            ulong h = 1469598103934665603UL;
+            foreach (char c in partPath) { h ^= c; h *= 1099511628211UL; }
+            return Path.Combine(Path.GetTempPath(), "l4d2dl-" + (h & 0xFFFFFFFFUL).ToString("x8"));
+        }
+
         /// <summary>大文件下载：大于 2MB 的文件默认走 8 路跨节点并发分段下载（速度翻 6~8 倍且自动绕开 SNI 阻断）；小文件或断点续传走单连接阶梯。</summary>
         public static long DownloadTo(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress)
         {
+            return DownloadTo(url, ua, timeoutMs, partPath, totalHint, progress, null);
+        }
+
+        /// <summary>可中断版：ctl 非空时，界面点「暂停 / 取消」会从读循环里抛 DlAbort 退出，已下字节留在磁盘上。</summary>
+        public static long DownloadTo(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, DlCtl ctl)
+        {
             Tune();
             try { if (ServicePointManager.DefaultConnectionLimit < 24) ServicePointManager.DefaultConnectionLimit = 24; } catch { }
+            if (ctl != null) ctl.Tick();
 
-            // 默认开启多段跨节点并发（文件 ≥ 2MB 且无未完断点时）；任一段失败会自动清理并无损退回下方单连接阶梯
+            // 默认开启多段跨节点并发（文件 ≥ 2MB 且无未完断点时）
             if (totalHint <= 0 || totalHint >= 2L * 1024 * 1024)
             {
-                long mc = TryMultiParts(url, ua, timeoutMs, partPath, totalHint, progress);
+                long partial;
+                long mc = TryMultiParts(url, ua, timeoutMs, partPath, totalHint, progress, ctl, out partial);
                 if (mc > 0)
                 {
-                    try { Core.Log("INFO", "下载：8 路并发完成 " + (mc / 1048576) + " MB"); } catch { }
+                    try { Core.Log("INFO", "下载：多段并发完成 " + (mc / 1048576) + " MB"); } catch { }
                     return mc;
                 }
+                // 分段下了一部分又换节点失败：不许退回单连接从头下（用户看到的就是「进度跳回起点重新下」）。
+                // 分片留着，「继续 / 重试」从断点接着下。
+                if (mc < 0)
+                    throw new IOException("分段下载连续换节点仍未完成，已下 " + Core.Human(partial) + "；点「继续」接着下，不会从头重来");
             }
             Uri u = null;
             try { u = new Uri(url); } catch { }
@@ -687,20 +734,20 @@ namespace Installer
             long got = -1;
             if (pref == NetRoute.Proxy && px != null)
             {
-                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px, null);
+                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px, null, ctl);
                 if (got > 0) return got;
                 Invalidate(host);
             }
             if (CanFrontHost(host))
             {
-                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null, FrontDomain);
+                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null, FrontDomain, ctl);
                 if (got > 0) { LearnRoute(host, NetRoute.Dns, 0); return got; }
             }
-            got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null, null);
+            got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null, null, ctl);
             if (got > 0) { LearnRoute(host, NetRoute.Direct, 0); return got; }
             if (px != null && pref != NetRoute.Proxy)
             {
-                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px, null);
+                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px, null, ctl);
                 if (got > 0) { LearnRoute(host, NetRoute.Proxy, 0); try { Core.Log("INFO", "下载：直连不通，改走系统代理成功"); } catch { } return got; }
             }
             return -1;
@@ -709,14 +756,20 @@ namespace Installer
         /// <summary>
         /// 8 路跨节点并发下载：把大 VPK 切成 8 段，分散到多个未阻断的 Akamai 边缘节点并发拉取（单段失败自动换节点重试一次）。
         /// </summary>
-        static long TryMultiParts(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress)
+        /// <summary>
+        /// 多段跨节点并发下载：把大文件切成 4~16 段分散到不同 Akamai 边缘节点拉。
+        /// 每段都能断点续传：某段被速度看门狗掐掉只重下这一段剩下的一截，不再整段清零。
+        /// 返回 &gt;0 = 成功字节数；0 = 不适合并发（交给单连接）；-1 = 并发过且下了分片但最终没成（分片保留）。
+        /// </summary>
+        static long TryMultiParts(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, DlCtl ctl, out long partialBytes)
         {
+            partialBytes = 0;
             Uri u = null;
-            try { u = new Uri(url); } catch { return -1; }
-            if (u == null || string.IsNullOrEmpty(partPath)) return -1;
-            if (File.Exists(partPath)) return -1;                     // 有断点就不并发，交给单连接续传
+            try { u = new Uri(url); } catch { return 0; }
+            if (u == null || string.IsNullOrEmpty(partPath)) return 0;
+            if (File.Exists(partPath)) return 0;                     // 有单连接断点就不并发，交给单连接续传
             long total = totalHint;
-            if (!ProbeRange(url, ua, u, out total) || total < 2L * 1024 * 1024) return -1;
+            if (!ProbeRange(url, ua, u, out total) || total < 2L * 1024 * 1024) return 0;
 
             // 大文件多切几段：单段越小，碰到慢节点时损失的秒数越少（178MB → 16 段，每段约 11MB）
             int parts = total >= 64L * 1024 * 1024 ? 16 : (total >= 16L * 1024 * 1024 ? 8 : 4);
@@ -726,9 +779,9 @@ namespace Installer
             long chunk = total / parts;
             // 分片放系统临时目录：以前直接写在 addons 旁边（xxx.vpk.p0…p7），
             // 下到一半强退就留在游戏目录里一堆文件（用户 2026-11-22 反馈）。
-            string tmpDir = Path.Combine(Path.GetTempPath(), "l4d2dl-" + Math.Abs(partPath.GetHashCode()).ToString("x"));
-            try { if (Directory.Exists(tmpDir)) Directory.Delete(tmpDir, true); } catch { }
-            try { Directory.CreateDirectory(tmpDir); } catch { return -1; }
+            string tmpDir = TempPartDir(partPath);
+            // 上次留下的分片不删：点「继续 / 重试」要接着下（用户 2026-11-23 反馈「卡一下就从头重下」）
+            try { Directory.CreateDirectory(tmpDir); } catch { return 0; }
             for (int i = 0; i < parts; i++)
             {
                 files[i] = Path.Combine(tmpDir, "p" + i);
@@ -736,54 +789,80 @@ namespace Installer
                 tos[i] = (i == parts - 1) ? (total - 1) : (froms[i] + chunk - 1);
             }
 
-            long done = 0;
+            long done = SumParts(files, froms, tos);
+            partialBytes = done;
             Action<long> report = delegate(long delta)
             {
                 long now = System.Threading.Interlocked.Add(ref done, delta);
                 if (progress != null) { try { progress(now, total); } catch { } }
             };
+            if (done > 0 && progress != null) { try { progress(done, total); } catch { } }   // 续传：进度条从断点起步
 
-            string[] errs = new string[parts];
-            System.Threading.Thread[] ths = new System.Threading.Thread[parts];
-            for (int i = 0; i < parts; i++)
+            // 每轮只补没下完的段；换节点重试最多三轮，还是不行就把分片留着等「继续」
+            for (int round = 0; round < 3; round++)
             {
-                int idx = i;
-                ths[i] = new System.Threading.Thread(delegate()
+                if (ctl != null) ctl.Tick();
+                string[] errs = new string[parts];
+                DlAbort aborted = null;
+                System.Threading.Thread[] ths = new System.Threading.Thread[parts];
+                for (int i = 0; i < parts; i++)
                 {
-                    errs[idx] = GetRangeWithRetry(url, ua, timeoutMs, files[idx], froms[idx], tos[idx], u.Host, idx, report);
-                });
-                ths[i].IsBackground = true;
-                ths[i].Start();
-            }
-            for (int i = 0; i < parts; i++) ths[i].Join();
-
-            bool ok = true;
-            for (int i = 0; i < parts; i++)
-            {
-                if (errs[i] != null || LenOf(files[i]) != (tos[i] - froms[i] + 1)) { ok = false; break; }
-            }
-            if (!ok)
-            {
-                try { Directory.Delete(tmpDir, true); } catch { }
-                return -1;
-            }
-            try
-            {
-                using (FileStream fs = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 131072))
-                {
-                    for (int i = 0; i < parts; i++)
-                        using (FileStream si = File.OpenRead(files[i])) si.CopyTo(fs, 131072);
+                    int idx = i;
+                    ths[i] = new System.Threading.Thread(delegate()
+                    {
+                        try { errs[idx] = GetRangeWithRetry(url, ua, timeoutMs, files[idx], froms[idx], tos[idx], u.Host, idx, report, ctl); }
+                        catch (DlAbort ab) { errs[idx] = "aborted"; if (aborted == null) aborted = ab; }
+                    });
+                    ths[i].IsBackground = true;
+                    ths[i].Start();
                 }
-                try { Directory.Delete(tmpDir, true); } catch { }
-                if (LenOf(partPath) != total) { DelIfExists(partPath); return -1; }
-                return total;
+                for (int i = 0; i < parts; i++) ths[i].Join();
+                if (aborted != null) throw aborted;                  // 线程都停了才往外抛，别让半截线程接着写
+
+                bool ok = true;
+                for (int i = 0; i < parts; i++)
+                {
+                    if (errs[i] != null || LenOf(files[i]) != (tos[i] - froms[i] + 1)) { ok = false; break; }
+                }
+                if (ok)
+                {
+                    try
+                    {
+                        using (FileStream fs = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 131072))
+                        {
+                            for (int i = 0; i < parts; i++)
+                                using (FileStream si = File.OpenRead(files[i])) si.CopyTo(fs, 131072);
+                        }
+                        if (LenOf(partPath) != total) { DelIfExists(partPath); return -1; }
+                        try { Directory.Delete(tmpDir, true); } catch { }
+                        return total;
+                    }
+                    catch
+                    {
+                        DelIfExists(partPath);
+                        return -1;
+                    }
+                }
+                partialBytes = SumParts(files, froms, tos);
+                if (partialBytes <= 0) return 0;                     // 一点没下来：交给单连接阶梯试别的路
+                System.Threading.Thread.Sleep(500);
             }
-            catch
+            partialBytes = SumParts(files, froms, tos);
+            return -1;
+        }
+
+        /// <summary>各分片已下字节合计（超过本段长度的按本段算，防半截垃圾撑大进度）。</summary>
+        static long SumParts(string[] files, long[] froms, long[] tos)
+        {
+            long sum = 0;
+            for (int i = 0; i < files.Length; i++)
             {
-                try { Directory.Delete(tmpDir, true); } catch { }
-                DelIfExists(partPath);
-                return -1;
+                long have = LenOf(files[i]);
+                if (have <= 0) continue;
+                long span = tos[i] - froms[i] + 1;
+                sum += have > span ? span : have;
             }
+            return sum;
         }
 
         /// <summary>Range 探针：优先用未阻断的 Akamai 前置域名探 1 字节，确认支持 206 + Content-Range 并拿到精确总字节数。</summary>
@@ -819,29 +898,34 @@ namespace Installer
             return false;
         }
 
-        static string GetRangeWithRetry(string url, string ua, int timeoutMs, string path, long from, long to, string host, int slot, Action<long> report)
+        static string GetRangeWithRetry(string url, string ua, int timeoutMs, string path, long from, long to, string host, int slot, Action<long> report, DlCtl ctl)
         {
             bool canFront = CanFrontHost(host);
+            long span = to - from + 1;
             for (int attempt = 0; attempt < 3; attempt++)
             {
-                long gotThisAttempt = 0;
-                Action<long> subReport = delegate(long d) { gotThisAttempt += d; report(d); };
+                if (ctl != null) ctl.Tick();
+                long have = LenOf(path);
+                if (have < 0) have = 0;
+                if (have > span) { DelIfExists(path); have = 0; }    // 比本段还大：旧垃圾，重来
+                if (have == span) return null;
                 string front = canFront ? UgcMirrors[(slot + attempt) % UgcMirrors.Length] : null;
                 // HTTP 80 在 Akamai 上免 TLS 握手且不被 SNI 掐，大文件分片优先走 HTTP + 跨节点前置，失败再退 HTTPS
                 bool useHttp = canFront && attempt < 2;
-                string err = GetRange(url, ua, timeoutMs, path, from, to, host, front, useHttp, subReport);
-                if (err == null && LenOf(path) == (to - from + 1)) return null;
-                if (gotThisAttempt > 0) report(-gotThisAttempt);     // 回退本段进度，准备换节点重下
-                DelIfExists(path);
+                string err = GetRange(url, ua, timeoutMs, path, from + have, to, host, front, useHttp, report, ctl);
+                if (err == null && LenOf(path) == span) return null;
+                // 已经下下来的字节不删：下一次从断点接着要。
+                // 以前这里 DelIfExists(path) + report(-已下) 把整段清零重下，用户看到的就是「进度跳回去重新开始」。
             }
             return "分段下载重试失败";
         }
 
-        /// <summary>下某一段到独立文件；成功返回 null，失败返回原因。</summary>
-        static string GetRange(string url, string ua, int timeoutMs, string path, long from, long to, string host, string frontHost, bool useHttp, Action<long> report)
+        /// <summary>下某一段到独立文件（可续）：path 里已有的字节算已下，只请求 from..to 还没拿到的部分。</summary>
+        static string GetRange(string url, string ua, int timeoutMs, string path, long from, long to, string host, string frontHost, bool useHttp, Action<long> report, DlCtl ctl)
         {
             try
             {
+                if (to < from) return null;
                 Uri u = new Uri(url);
                 UriBuilder ub = new UriBuilder(u);
                 if (frontHost != null) ub.Host = frontHost;
@@ -863,7 +947,7 @@ namespace Installer
                 {
                     if (r.StatusCode != HttpStatusCode.PartialContent) return "服务器没按 Range 返回（" + r.StatusCode + "）";
                     using (Stream src = r.GetResponseStream())
-                    using (FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 131072))
+                    using (FileStream fs = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.None, 131072))
                     {
                         byte[] buf = new byte[131072];
                         int n;
@@ -875,6 +959,7 @@ namespace Installer
                             fs.Write(buf, 0, n);
                             report(n);
                             totalGot += n;
+                            if (ctl != null) ctl.Tick();      // 暂停 / 取消：立刻停手，已经写进文件的字节留着续传
                             long now = clock.ElapsedMilliseconds;
                             if (now - sampleAt >= 3000)
                             {
@@ -890,6 +975,7 @@ namespace Installer
                 }
                 return null;
             }
+            catch (DlAbort) { throw; }                    // 暂停 / 取消要往上传，不能当成一次普通失败吞掉
             catch (Exception ex) { return ex.Message; }
         }
 
@@ -898,15 +984,30 @@ namespace Installer
             try { if (File.Exists(p)) File.Delete(p); } catch { }
         }
 
+        /// <summary>取消下载：删掉这件没下完的临时东西（单连接的 .part 和分段用的 %TEMP% 分片目录）。</summary>
+        internal static void CleanPartial(string dest)
+        {
+            if (string.IsNullOrEmpty(dest)) return;
+            string part = dest + ".part";
+            DelIfExists(part);
+            try
+            {
+                string d = TempPartDir(part);
+                if (Directory.Exists(d)) Directory.Delete(d, true);
+            }
+            catch { }
+        }
+
         static long LenOf(string p)
         {
             try { return new FileInfo(p).Length; } catch { return -1; }
         }
 
-        static long TryDownload(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, bool allowPin, IWebProxy proxy, string frontHost)
+        static long TryDownload(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, bool allowPin, IWebProxy proxy, string frontHost, DlCtl ctl)
         {
             Uri u = null;
             try { u = new Uri(url); } catch { }
+            if (ctl != null) ctl.Tick();
             try
             {
                 string pinnedUrl = null;
@@ -961,6 +1062,7 @@ namespace Installer
                             got += n;
                             lastByteAt = dlClock.ElapsedMilliseconds;
                             if (progress != null) progress(got, total);
+                            if (ctl != null) ctl.Tick();      // 暂停 / 取消：立刻停手，part 留着续传
                             if (dlClock.ElapsedMilliseconds > capMs) throw new IOException("下载超时（超过 " + (capMs / 1000) + " 秒）");
                         }
                         if (dlClock.ElapsedMilliseconds - lastByteAt > 25000)
@@ -970,6 +1072,7 @@ namespace Installer
                     }
                 }
             }
+            catch (DlAbort) { throw; }                    // 暂停 / 取消要往上传，不能当成普通失败吞掉
             catch (WebException wex)
             {
                 // 416 = 断点位置越界（文件被换过/服务器不认）：把 part 清掉，下次从头来
@@ -2582,7 +2685,7 @@ namespace Installer
         public static void Download(WsItem it, string dest, Action<long, long> progress)
         {
             string saved, note;
-            Download(it, dest, progress, out saved, out note);
+            Download(it, dest, progress, out saved, out note, null);
             LastSavedPath = saved;
             LastDownloadNote = note;
         }
@@ -2592,6 +2695,18 @@ namespace Installer
         /// 合集/配套那批以前是一条一条下（每条都等上一条写完），两路并行能明显缩短整批时间。
         /// </summary>
         public static void Download(WsItem it, string dest, Action<long, long> progress, out string savedPath, out string note)
+        {
+            Download(it, dest, progress, out savedPath, out note, null);
+        }
+
+        /// <summary>取消下载时清掉没下完的临时文件（.part 与分段用的 %TEMP% 分片目录）；库里的成品不动。</summary>
+        internal static void CleanPartial(string dest)
+        {
+            WsNet.CleanPartial(dest);
+        }
+
+        /// <summary>带暂停 / 取消开关的版本：ctl 非空时，界面点「暂停 / 取消」会从这个调用里抛 DlAbort。</summary>
+        public static void Download(WsItem it, string dest, Action<long, long> progress, out string savedPath, out string note, WsNet.DlCtl ctl)
         {
             savedPath = "";
             note = "";
@@ -2604,7 +2719,7 @@ namespace Installer
             catch { }
 
             // 走联网层：优选 IP（CDN 大多命中 cdn.steamusercontent），失败自动退回域名重下
-            long gotBytes = WsNet.DownloadTo(it.Url, Ua, 30000, part, it.Size, progress);
+            long gotBytes = WsNet.DownloadTo(it.Url, Ua, 30000, part, it.Size, progress, ctl);
             if (gotBytes <= 0) throw new IOException("下载失败（连不上 steamusercontent，已重试一次）");
 
             long real = 0;

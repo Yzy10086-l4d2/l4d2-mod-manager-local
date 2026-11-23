@@ -340,6 +340,14 @@ namespace Installer
             Add(d, "时间", "Time");
             Add(d, "状态", "Status");
             Add(d, "重新下载", "Download again");
+            Add(d, "暂停", "Pause");
+            Add(d, "继续", "Resume");
+            Add(d, "取消下载", "Cancel download");
+            Add(d, "正在暂停…", "Pausing…");
+            Add(d, "正在取消…", "Canceling…");
+            Add(d, "已取消：没下完的临时文件已删除", "Canceled; the unfinished temp file is deleted");
+            Add(d, "已暂停（到「下载管理」点继续，会接着下）", "Paused (click Resume in Downloads to continue)");
+            Add(d, "已取消下载（没下完的临时文件已删除）", "Download canceled (the unfinished temp file is deleted)");
             Add(d, "打开所在位置", "Show in folder");
             Add(d, "从磁盘删除", "Delete from disk");
             Add(d, "改位置", "Change folder");

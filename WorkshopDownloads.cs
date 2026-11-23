@@ -23,6 +23,7 @@ namespace Installer
         public DateTime Time = DateTime.Now;
 
         public bool Running { get { return Status == "downloading"; } }
+        public bool Paused { get { return Status == "paused"; } }
 
         public bool ExistsOnDisk
         {
@@ -54,6 +55,11 @@ namespace Installer
                     int pct = Size > 0 ? (int)Math.Min(100, Got * 100 / Size) : 0;
                     return Size > 0 ? "下载中 " + pct + "%" : "下载中…";
                 }
+                if (Status == "paused")
+                {
+                    int pct = Size > 0 ? (int)Math.Min(100, Got * 100 / Size) : 0;
+                    return Size > 0 ? "已暂停 " + pct + "%（点「继续」接着下）" : "已暂停（点「继续」接着下）";
+                }
                 if (Status == "ok") return ExistsOnDisk ? "已下载" : "文件已删除";
                 if (Status == "cancel") return "已取消";
                 return "失败" + (Error.Length > 0 ? "：" + Error : "");
@@ -78,6 +84,37 @@ namespace Installer
 
         /// <summary>记录有变化（新增 / 进度 / 结束 / 删除）。列表窗口订阅它刷新。</summary>
         public static event Action Changed;
+
+        /// <summary>
+        /// 每条下载的暂停 / 取消开关：下载线程在每个读循环里查它。
+        /// 这里只负责把开关递到线程手上，状态什么时候变由线程自己停下来后调 Pause / Cancel —— 那样记下的进度才是真的。
+        /// </summary>
+        private static readonly Dictionary<string, WsNet.DlCtl> ctls = new Dictionary<string, WsNet.DlCtl>(StringComparer.Ordinal);
+
+        public static WsNet.DlCtl Ctl(string id)
+        {
+            Ensure();
+            string k = id ?? "";
+            lock (gate)
+            {
+                WsNet.DlCtl c;
+                if (ctls.TryGetValue(k, out c)) return c;
+                c = new WsNet.DlCtl(k);
+                ctls[k] = c;
+                return c;
+            }
+        }
+
+        public static void RequestPause(string id) { WsNet.DlCtl c = FindCtl(id); if (c != null) c.Pause = true; }
+        public static void RequestCancel(string id) { WsNet.DlCtl c = FindCtl(id); if (c != null) c.Cancel = true; }
+        public static bool PauseRequested(string id) { WsNet.DlCtl c = FindCtl(id); return c != null && c.Pause; }
+
+        private static WsNet.DlCtl FindCtl(string id)
+        {
+            lock (gate) { WsNet.DlCtl c; return ctls.TryGetValue(id ?? "", out c) ? c : null; }
+        }
+
+        private static void DropCtl(string id) { lock (gate) { ctls.Remove(id ?? ""); } }
 
         public static string StorePath { get { return Path.Combine(Core.LogDir, "workshop-downloads.tsv"); } }
 
@@ -132,8 +169,8 @@ namespace Installer
             d.Time = DateTime.Now;
             lock (gate)
             {
-                // 同一个 ID 又在下了：把旧的运行中记录顶掉，别同时挂两条
-                items.RemoveAll(delegate(WsDownload x) { return x.Running && x.Id == d.Id; });
+                // 同一个 ID 又在下了：把旧的运行中 / 暂停中的记录顶掉，别同时挂两条
+                items.RemoveAll(delegate(WsDownload x) { return (x.Running || x.Status == "paused") && x.Id == d.Id; });
                 items.Insert(0, d);
             }
             Fire();
@@ -185,12 +222,33 @@ namespace Installer
             {
                 foreach (WsDownload d in items)
                 {
-                    if (!d.Running || d.Id != id) continue;
+                    if (d.Id != id || d.Status == "cancel") continue;
+                    if (!d.Running && d.Status != "paused") continue;
                     d.Status = "cancel";
                     d.Time = DateTime.Now;
                     break;
                 }
             }
+            DropCtl(id);
+            Save();
+            Fire();
+        }
+
+        /// <summary>下载线程收到暂停后调这个：状态改「已暂停」，进度和分片都留着，等「继续」接着下。</summary>
+        public static void Pause(string id)
+        {
+            Ensure();
+            lock (gate)
+            {
+                foreach (WsDownload d in items)
+                {
+                    if (!d.Running || d.Id != id) continue;
+                    d.Status = "paused";
+                    d.Time = DateTime.Now;
+                    break;
+                }
+            }
+            DropCtl(id);
             Save();
             Fire();
         }

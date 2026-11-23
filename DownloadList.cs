@@ -29,6 +29,8 @@ namespace Installer
         private readonly FlatButton btnDefault = new FlatButton();
         private readonly FlatButton btnOpenDir = new FlatButton();
         private readonly FlatButton btnAgain = new FlatButton();
+        private readonly FlatButton btnPause = new FlatButton();     // 暂停 / 继续
+        private readonly FlatButton btnCancel = new FlatButton();    // 取消：停任务 + 删没下完的临时文件
         private readonly FlatButton btnShop = new FlatButton();   // 回到我们自己的工坊页看这个 MOD
         private readonly MainForm owner;
         private readonly FlatButton btnLocate = new FlatButton();
@@ -47,7 +49,7 @@ namespace Installer
             Text = Lang.S("工坊 · 下载管理");
             Theme.UseDpi(this);
             ClientSize = Dpi.Sz(780, 560);
-            MinimumSize = Dpi.Sz(640, 420);
+            MinimumSize = Dpi.Sz(720, 420);      // 底栏多了「暂停 / 取消」，640 宽时按钮会挤在一起
             Font = Theme.UI;
             BackColor = Theme.Bg;
             StartPosition = FormStartPosition.CenterParent;
@@ -124,6 +126,14 @@ namespace Installer
             btnAgain.Text = Lang.S("重新下载");
             btnAgain.Click += delegate { Redownload(); };
             Controls.Add(btnAgain);
+
+            btnPause.Text = Lang.S("暂停");
+            btnPause.Click += delegate { PauseOrResume(); };
+            Controls.Add(btnPause);
+
+            btnCancel.Text = Lang.S("取消下载");
+            btnCancel.Click += delegate { CancelTask(); };
+            Controls.Add(btnCancel);
 
             btnShop.Text = Lang.S("在工坊查看");
             btnShop.Click += delegate { OpenInWorkshop(); };
@@ -211,10 +221,14 @@ namespace Installer
 
             // 底部：左边三颗操作，右边清空 + 关闭，中间留给状态文字
             int by = H - S(66);
-            btnAgain.SetBounds(m, by, S(100), S(32));
-            btnShop.SetBounds(m + S(108), by, S(112), S(32));
-            btnLocate.SetBounds(m + S(228), by, S(120), S(32));
-            btnDelete.SetBounds(m + S(356), by, S(116), S(32));
+            // 「暂停 / 取消」紧挨「重新下载」：这三颗都对当前选中的那一条生效，放一排才不用来回找
+            int bx2 = m;
+            btnAgain.SetBounds(bx2, by, S(96), S(32)); bx2 += S(96) + S(6);
+            btnPause.SetBounds(bx2, by, S(88), S(32)); bx2 += S(88) + S(6);
+            btnCancel.SetBounds(bx2, by, S(88), S(32)); bx2 += S(88) + S(6);
+            btnShop.SetBounds(bx2, by, S(96), S(32)); bx2 += S(96) + S(6);
+            btnLocate.SetBounds(bx2, by, S(104), S(32)); bx2 += S(104) + S(6);
+            btnDelete.SetBounds(bx2, by, S(96), S(32));
 
             btnClose.SetBounds(W - m - S(76), by, S(76), S(32));
 
@@ -464,7 +478,11 @@ namespace Installer
         private void UpdateButtons()
         {
             WsDownload d = Selected();
-            bool has = d != null && !d.Running;
+            bool active = d != null && (d.Running || d.Paused);
+            btnPause.Enabled = active;
+            btnPause.Text = d != null && d.Paused ? Lang.S("继续") : Lang.S("暂停");
+            btnCancel.Enabled = active;
+            bool has = d != null && !d.Running && !d.Paused;
             btnAgain.Enabled = has && d.Url.Length > 0;
             btnShop.Enabled = d != null && d.Id.Length > 0 && owner != null;
             btnLocate.Enabled = d != null && (d.ExistsOnDisk || d.Dir.Length > 0);
@@ -611,7 +629,54 @@ namespace Installer
 
         private void Redownload()
         {
+            StartDownload(Selected(), true);
+        }
+
+        /// <summary>暂停 / 继续：暂停只是不再往下拉，分片留在盘上；继续从断点接着下，不从头来。</summary>
+        private void PauseOrResume()
+        {
             WsDownload d = Selected();
+            if (d == null) return;
+            if (d.Paused) { StartDownload(d, false); return; }
+            if (!d.Running) return;
+            WorkshopDownloads.RequestPause(d.Id);
+            SetMsg(Lang.S("正在暂停…"));
+        }
+
+        /// <summary>取消：停掉任务，并删掉已经下下来的临时文件（库里的成品不动）。</summary>
+        private void CancelTask()
+        {
+            WsDownload d = Selected();
+            if (d == null) return;
+            if (!d.Running && !d.Paused) return;
+            bool running = d.Running;
+            WorkshopDownloads.RequestCancel(d.Id);
+            if (running)
+            {
+                SetMsg(Lang.S("正在取消…"));
+                return;
+            }
+            // 暂停中的那条没有线程在跑：这里直接收尾，否则它永远停在「已暂停」
+            try { Workshop.CleanPartial(DestFor(d)); } catch { }
+            WorkshopDownloads.Cancel(d.Id);
+            SetMsg(Lang.S("已取消：没下完的临时文件已删除"));
+        }
+
+        /// <summary>这条记录的目标文件路径（取消 / 继续时据此找 .part 和分片目录）。</summary>
+        private string DestFor(WsDownload d)
+        {
+            string dir = d.Dir;
+            try { if (dir.Length == 0) dir = Workshop.DestDir(); } catch { }
+            string title = d.Title.Length > 0 ? d.Title : ("workshop_" + d.Id);
+            return Path.Combine(dir, Workshop.SafeFileName(title, d.Id));
+        }
+
+        /// <summary>
+        /// 起一条下载（重新下载 / 暂停后继续共用）。
+        /// fresh=false 表示接着上次的分片下：不清临时文件、不提示覆盖，进度从断点起。
+        /// </summary>
+        private void StartDownload(WsDownload d, bool fresh)
+        {
             if (d == null) return;
             if (d.Url.Length == 0)
             {
@@ -622,41 +687,46 @@ namespace Installer
             try { dir = Workshop.DestDir(); }
             catch (Exception ex) { SetMsg(ex.Message); return; }
 
-            string name = Workshop.SafeFileName(d.Title.Length > 0 ? d.Title : ("workshop_" + d.Id), d.Id);
+            string id = d.Id, title = d.Title, url = d.Url;
+            string name = Workshop.SafeFileName(title.Length > 0 ? title : ("workshop_" + id), id);
             string dest = Path.Combine(dir, name);
-            if (File.Exists(dest) && MessageBox.Show(this,
+            if (fresh && File.Exists(dest) && MessageBox.Show(this,
                 "同名文件已经在了：\r\n" + dest + "\r\n\r\n覆盖它？",
                 "重新下载", MessageBoxButtons.OKCancel, MessageBoxIcon.Question,
                 MessageBoxDefaultButton.Button2) != DialogResult.OK) return;
+            // 从头下：把上次留下的断点和分片清掉，否则「重新下载」会偷偷变成「接着下」
+            if (fresh) { try { Workshop.CleanPartial(dest); } catch { } }
 
-            WorkshopDownloads.Begin(d.Id, d.Title, d.Url, dir);
-            SetMsg("重新下载：" + name);
+            WorkshopDownloads.Begin(id, title, url, dir);
+            WsNet.DlCtl ctl = WorkshopDownloads.Ctl(id);
+            SetMsg((fresh ? "重新下载：" : "接着下载：") + name);
             btnAgain.Enabled = false;
 
             WsItem it = new WsItem();
-            it.Id = d.Id;
-            it.Title = d.Title;
-            it.Url = d.Url;
+            it.Id = id;
+            it.Title = title;
+            it.Url = url;
 
             Thread t = new Thread(delegate()
             {
                 try
                 {
+                    string saved2, note2;
                     Workshop.Download(it, dest, delegate(long got, long total)
                     {
-                        WorkshopDownloads.Progress(d.Id, got, total);
-                    });
-                    if (Workshop.LastSavedPath.Length > 0) dest = Workshop.LastSavedPath;
-                    if (Workshop.LastDownloadNote.Length > 0) SetMsg(Workshop.LastDownloadNote);
+                        WorkshopDownloads.Progress(id, got, total);
+                    }, out saved2, out note2, ctl);
+                    if (!string.IsNullOrEmpty(saved2)) dest = saved2;
+                    if (!string.IsNullOrEmpty(note2)) SetMsg(note2);
                     string rn = Workshop.RenameToAddonTitle(dest);
                     if (rn != null) dest = Path.Combine(dir, rn);
                     Workshop.SavePreview(it, dest);
                     long savedSz2 = 0;
                     try { savedSz2 = new FileInfo(dest).Length; } catch { }
-                    Workshop.RememberDownload(d.Id, Path.GetFileName(dest), it.Updated, savedSz2);
+                    Workshop.RememberDownload(id, Path.GetFileName(dest), it.Updated, savedSz2);
                     long size = 0;
                     try { size = new FileInfo(dest).Length; } catch { }
-                    WorkshopDownloads.Finish(d.Id, true, dest, size, "");
+                    WorkshopDownloads.Finish(id, true, dest, size, "");
                     string gotName = Path.GetFileName(dest);
                     try
                     {
@@ -667,12 +737,26 @@ namespace Installer
                             }));
                     }
                     catch { }
-                    Core.Log("OK", "工坊：重新下载完成 " + d.Id + " → " + dest);
+                    Core.Log("OK", "工坊：下载完成 " + id + " → " + dest);
+                }
+                catch (WsNet.DlAbort ab)
+                {
+                    if (ab.Canceled)
+                    {
+                        try { Workshop.CleanPartial(dest); } catch { }
+                        WorkshopDownloads.Cancel(id);
+                        Core.Log("WARN", "工坊：用户取消下载 " + id);
+                    }
+                    else
+                    {
+                        WorkshopDownloads.Pause(id);
+                        Core.Log("INFO", "工坊：用户暂停下载 " + id);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    WorkshopDownloads.Finish(d.Id, false, dest, 0, ex.Message);
-                    Core.Log("FAIL", "工坊：重新下载失败 " + d.Id + "：" + ex.Message);
+                    WorkshopDownloads.Finish(id, false, dest, 0, ex.Message);
+                    Core.Log("FAIL", "工坊：下载失败 " + id + "：" + ex.Message);
                 }
             });
             t.IsBackground = true;

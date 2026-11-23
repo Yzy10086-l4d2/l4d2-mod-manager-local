@@ -1001,11 +1001,13 @@ namespace Installer
                     if (src != null)
                         foreach (WsItem one in src)
                             if (one != null && !string.IsNullOrEmpty(one.Id)) depItems.Add(one);
-                    RebuildDepList();
+                    // 先定「这一栏显不显示」再重排：ApplyLayout 按 btnDeps.Visible 决定
+                    // 「在浏览器打开」放哪。顺序反了它就停在旧位置，被配套按钮压住（用户 2026-11-23 反馈）。
                     btnDeps.Visible = depItems.Count > 0;
                     btnDeps.Text = it.IsCollection
                         ? Lang.F("下载合集（{0}）", depItems.Count)
                         : Lang.F("配套 MOD（{0}）", depItems.Count);
+                    RebuildDepList();          // 里面会 ApplyLayout()
                 });
 
                 Image img = WsThumb.Load(it.Preview, it.Id, pw * 2, ph * 2);   // 放大上限翻倍，小图也能铺满，Zoom 负责等比
@@ -1242,16 +1244,23 @@ namespace Installer
                         {
                             if (one == null || one.IsCollection || one.Url.Length == 0)
                             { System.Threading.Interlocked.Increment(ref fail); return; }
+                            string dest = "";
                             try
                             {
-                                string dest = Path.Combine(dir, Workshop.SafeFileName(one.Title, one.Id));
+                                dest = Path.Combine(dir, Workshop.SafeFileName(one.Title, one.Id));
                                 string saved2, note2;
-                                Workshop.Download(one, dest, null, out saved2, out note2);
+                                Workshop.Download(one, dest, null, out saved2, out note2, WorkshopDownloads.Ctl(one.Id));
                                 if (!string.IsNullOrEmpty(saved2)) dest = saved2;
                                 Workshop.SavePreview(one, dest);
                                 Workshop.RenameToAddonTitle(dest);
                                 if (File.Exists(dest)) lock (gate) gotNames.Add(Path.GetFileName(dest));
                                 System.Threading.Interlocked.Increment(ref ok);
+                            }
+                            catch (WsNet.DlAbort ab)
+                            {
+                                // 批量里的一条被暂停 / 取消：只停这一条，别的照常下完
+                                if (ab.Canceled) { try { Workshop.CleanPartial(dest); } catch { } WorkshopDownloads.Cancel(one.Id); }
+                                else WorkshopDownloads.Pause(one.Id);
                             }
                             catch { System.Threading.Interlocked.Increment(ref fail); }
                         });
@@ -1326,11 +1335,12 @@ namespace Installer
                 List<string> gotNames = new List<string>();
                 foreach (Workshop.UpdateInfo u in todo)
                 {
+                    string dest = Path.Combine(dir, u.Rec.File);
                     try
                     {
-                        string dest = Path.Combine(dir, u.Rec.File);
-                        Workshop.Download(u.Item, dest, null);
-                        if (Workshop.LastSavedPath.Length > 0) dest = Workshop.LastSavedPath;
+                        string saved3, note3;
+                        Workshop.Download(u.Item, dest, null, out saved3, out note3, WorkshopDownloads.Ctl(u.Item.Id));
+                        if (!string.IsNullOrEmpty(saved3)) dest = saved3;
                         Workshop.RenameToAddonTitle(dest);
                         Workshop.SavePreview(u.Item, dest);
                         long sz = 0;
@@ -1338,6 +1348,11 @@ namespace Installer
                         Workshop.RememberDownload(u.Item.Id, Path.GetFileName(dest), u.Item.Updated, sz);
                         if (File.Exists(dest)) gotNames.Add(Path.GetFileName(dest));
                         ok++;
+                    }
+                    catch (WsNet.DlAbort ab)
+                    {
+                        if (ab.Canceled) { try { Workshop.CleanPartial(dest); } catch { } WorkshopDownloads.Cancel(u.Item.Id); }
+                        else WorkshopDownloads.Pause(u.Item.Id);
                     }
                     catch { fail++; }
                 }
@@ -1447,9 +1462,10 @@ namespace Installer
 
             Thread t = new Thread(delegate()
             {
+                string dest = Path.Combine(dir, Workshop.SafeFileName(it.Title, it.Id));
+                string saved = "", note = "";
                 try
                 {
-                    string dest = Path.Combine(dir, Workshop.SafeFileName(it.Title, it.Id));
                     Workshop.Download(it, dest, delegate(long got, long total)
                     {
                         int pct = total > 0 ? (int)Math.Min(100, got * 100 / total) : 0;
@@ -1462,10 +1478,9 @@ namespace Installer
                             lblState.Text = "正在下载 " + pct + "%  ·  " + Core.Human(got) + " / " + Core.Human(total);
                             try { if (pct >= 0 && pct <= 100) barLoad.Value = pct; } catch { }
                         });
-                    });
+                    }, out saved, out note, WorkshopDownloads.Ctl(it.Id));
                     // 容器不是 vpk 时 Download 会改扩展名，以实际落盘路径为准
-                    if (Workshop.LastSavedPath.Length > 0) dest = Workshop.LastSavedPath;
-                    string note = Workshop.LastDownloadNote;
+                    if (!string.IsNullOrEmpty(saved)) dest = saved;
                     string rn = Workshop.RenameToAddonTitle(dest);
                     if (rn != null) dest = Path.Combine(dir, rn);
                     Workshop.SavePreview(it, dest);                    // 库里的封面靠它（包里没有 addonimage 也能看）
@@ -1491,6 +1506,30 @@ namespace Installer
                         if (withDeps) DownloadDeps(true);
                     });
                     Core.Log("OK", "画廊：下载 " + it.Id + " → " + dest);
+                }
+                catch (WsNet.DlAbort ab)
+                {
+                    // 用户在「下载管理」点了暂停 / 取消：临时文件已经在引擎里留着（取消的另清），
+                    // 这条记录这里只改状态，别当成下载失败。
+                    bool canceled = ab.Canceled;
+                    if (canceled)
+                    {
+                        try { Workshop.CleanPartial(dest); } catch { }
+                        WorkshopDownloads.Cancel(it.Id);
+                    }
+                    else WorkshopDownloads.Pause(it.Id);
+                    Ui(delegate()
+                    {
+                        btnGet.Enabled = true;
+                        if (detailItem != null && string.Equals(detailItem.Id, it.Id, StringComparison.Ordinal))
+                        {
+                            EndDownBar();
+                            lblState.Text = canceled
+                                ? Lang.S("已取消下载（没下完的临时文件已删除）")
+                                : Lang.S("已暂停（到「下载管理」点继续，会接着下）");
+                        }
+                    });
+                    Core.Log(canceled ? "WARN" : "INFO", (canceled ? "画廊：用户取消下载 " : "画廊：用户暂停下载 ") + it.Id);
                 }
                 catch (Exception ex)
                 {
