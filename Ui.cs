@@ -181,6 +181,7 @@ namespace Installer
         private UpdateInfo pendingUpdate;
         private Label lblNotice;                    // 状态行右段：常驻提示（新版 / 离线 / 未识别数），不被临时消息覆盖
         private Label lblSchemeDiff;                // 方案行右侧：这套方案和当前勾选差几处（套用前先看得到）
+        private OverviewForm overviewWindow;        // 方案总览的独立窗口
         private FlatButton btnScheme;               // 方案按钮（替代系统下拉）
         private Panel pnlScheme;                    // 方案弹层：每套一行，带覆盖数 / 正在用 / 有改动
         private System.Windows.Forms.Timer schemeWatch;   // 点空白处自动收起弹层（Panel 拿不到全局鼠标，轮询一次按下状态最省事）
@@ -517,7 +518,14 @@ namespace Installer
             // 总览 / 方案树：同一份数据的两种看法，按钮上写的是「点了会去哪种」
             btnView = new FlatButton(); btnView.Soft = true; btnView.Text = Lang.S("方案管理");
             btnView.SetBounds(viewX, 16, viewW, Theme.H);
-            btnView.Click += delegate { ToggleView(); };
+            btnView.Click += delegate
+            {
+                // 方案总览改成独立窗口：以前是盖在主界面上的整块看板，用户嫌「糊在原窗口上」。
+                if (overviewWindow != null && !overviewWindow.IsDisposed) { overviewWindow.Activate(); return; }
+                overviewWindow = new OverviewForm(this);
+                overviewWindow.FormClosed += delegate { overviewWindow = null; };
+                overviewWindow.Show(this);
+            };
             tips.SetToolTip(btnView, Lang.S("方案总览：这套里每个位置装的是哪个 MOD，一眼看完。\r\n左边点大类，右边列这个类的位置和已装的 MOD；没装的灰着，库里没有的空心点。\r\n点开关直接开/关，点名字就地换 MOD，拖大类改顺序；点一行回方案树改那个位置。再点一下回到方案树。"));
             Controls.Add(btnView);
 
@@ -2453,7 +2461,8 @@ namespace Installer
             SetStatus("正在重扫…");
             scanning = true;                    // 期间所有读库入口都靠这个闸门挡（见 QuietSyncAddonList / DoRefreshGame）
             StartScanWatch();
-            ShowLoading("正在重扫库…", "新下的 MOD 正在入库，几秒就好", false);
+            // 不再用顶部那条走动进度带：它压在右栏顶上，用户会以为「状态栏跑到上面去了」。
+            // 重扫的进度交给底部状态行 + 扫库心跳，界面保持原样。
             System.Threading.Thread th = new System.Threading.Thread(delegate()
             {
                 string err = null;
@@ -2462,7 +2471,6 @@ namespace Installer
                 SafeBeginInvoke(delegate()
                 {
                     scanning = false;
-                    HideLoading();
                     SetBusy(false);
                     SetStatus("就绪");
                     try
