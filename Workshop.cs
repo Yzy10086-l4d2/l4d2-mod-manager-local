@@ -696,6 +696,114 @@ namespace Installer
             return Path.Combine(Path.GetTempPath(), "l4d2dl-" + (h & 0xFFFFFFFFUL).ToString("x8"));
         }
 
+        // ---------------- 下载赛马：同一段字节量几条线路，谁快走谁 ----------------
+
+        /// <summary>一条候选线路：直连 / 系统代理 / Akamai 前置域名（https 或 HTTP 80）。</summary>
+        internal sealed class DlRoute
+        {
+            public IWebProxy Proxy;
+            public string Front;
+            public bool UseHttp;
+            public long Speed;              // 实测字节/秒；0 = 不通
+            public string Name;
+        }
+
+        /// <summary>换线信号：能下但太慢（不是失败）。上层据此重新赛马，把 part 留着续传。</summary>
+        internal const long SlowSignal = -2;
+
+        static readonly Dictionary<string, List<DlRoute>> raceCache = new Dictionary<string, List<DlRoute>>(StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string, long> raceAt = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// 下载赛马：拿一段真实字节（32KB）把候选线路各量一遍，按实测速度从高到低排。
+        /// 结果按 host 缓存 90 秒 —— 一批 MOD 连着下时不必每件都重新量。
+        /// </summary>
+        internal static List<DlRoute> RaceRoutes(string url, string ua, string host, long totalHint)
+        {
+            if (string.IsNullOrEmpty(host)) return null;
+            lock (gate)
+            {
+                List<DlRoute> hit;
+                long at;
+                if (raceCache.TryGetValue(host, out hit) && raceAt.TryGetValue(host, out at)
+                    && Environment.TickCount - at < 90000 && hit != null && hit.Count > 0)
+                    return hit;
+            }
+            List<DlRoute> cands = new List<DlRoute>();
+            IWebProxy px = SystemProxy();
+            if (px != null) cands.Add(new DlRoute { Proxy = px, Name = "系统代理" });
+            cands.Add(new DlRoute { Name = "直连" });
+            if (CanFrontHost(host))
+            {
+                // 前置域名只探前三个 + 对应 HTTP 80：太多条会把启动时间拖长（并行跑，总时长≈最慢那条）
+                int n = Math.Min(FrontDomains.Length, 3);
+                for (int i = 0; i < n; i++)
+                    cands.Add(new DlRoute { Front = FrontDomains[i], Name = "前置 " + FrontDomains[i] });
+                for (int i = 0; i < n; i++)
+                    cands.Add(new DlRoute { Front = FrontDomains[i], UseHttp = true, Name = "前置80 " + FrontDomains[i] });
+            }
+            const long probeLen = 32 * 1024;
+            System.Threading.Tasks.Parallel.For(0, cands.Count, delegate(int i)
+            {
+                cands[i].Speed = ProbeSpeed(url, ua, host, cands[i], probeLen);
+            });
+            cands.RemoveAll(delegate(DlRoute c) { return c.Speed <= 0; });
+            cands.Sort(delegate(DlRoute a, DlRoute b) { return b.Speed.CompareTo(a.Speed); });
+            if (cands.Count == 0) return null;
+            lock (gate) { raceCache[host] = cands; raceAt[host] = Environment.TickCount; }
+            try { Core.Log("INFO", "下载赛马 " + host + "：" + cands[0].Name + " " + (cands[0].Speed / 1024) + "KB/s（候选 " + cands.Count + " 条）"); } catch { }
+            return cands;
+        }
+
+        /// <summary>量一条线路的实际吞吐：请求开头 32KB，读满或超时就按已读字节算速度。</summary>
+        static long ProbeSpeed(string url, string ua, string host, DlRoute c, long probeLen)
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            try
+            {
+                Uri u = new Uri(url);
+                UriBuilder ub = new UriBuilder(u);
+                if (c.Front != null) ub.Host = c.Front;
+                if (c.UseHttp) { ub.Scheme = "http"; ub.Port = 80; }
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(ub.Uri.AbsoluteUri);
+                if (c.Front != null) req.Host = host;
+                req.UserAgent = ua;
+                req.Timeout = 1800;
+                req.ReadWriteTimeout = 1800;
+                try { req.Proxy = c.Proxy; } catch { }
+                req.AddRange(0, probeLen - 1);
+                long got = 0;
+                using (HttpWebResponse r = (HttpWebResponse)req.GetResponse())
+                {
+                    if (r.StatusCode != HttpStatusCode.PartialContent && r.StatusCode != HttpStatusCode.OK) return 0;
+                    using (Stream s = r.GetResponseStream())
+                    {
+                        byte[] buf = new byte[16384];
+                        int n;
+                        while (got < probeLen && (n = s.Read(buf, 0, buf.Length)) > 0) got += n;
+                    }
+                }
+                long ms = Math.Max(1, sw.ElapsedMilliseconds);
+                return got * 1000 / ms;
+            }
+            catch { return 0; }
+        }
+
+        /// <summary>分片用哪个域名：优先用赛马量出来较快的，没量过就用固定池。</summary>
+        static string[] FrontOrder(string host)
+        {
+            List<DlRoute> rs = null;
+            lock (gate) { List<DlRoute> hit; if (raceCache.TryGetValue(host ?? "", out hit)) rs = hit; }
+            if (rs == null || rs.Count == 0) return UgcMirrors;
+            List<string> fronts = new List<string>();
+            foreach (DlRoute r in rs)
+            {
+                if (r.Front == null || r.UseHttp) continue;
+                if (fronts.IndexOf(r.Front) < 0) fronts.Add(r.Front);
+            }
+            return fronts.Count > 0 ? fronts.ToArray() : UgcMirrors;
+        }
+
         /// <summary>大文件下载：大于 2MB 的文件默认走 8 路跨节点并发分段下载（速度翻 6~8 倍且自动绕开 SNI 阻断）；小文件或断点续传走单连接阶梯。</summary>
         public static long DownloadTo(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress)
         {
@@ -728,26 +836,63 @@ namespace Installer
             try { u = new Uri(url); } catch { }
             string host = u == null ? null : u.Host;
 
-            // 单连接阶梯：先走已知最快路线 → Akamai 前置域名（绕开 cdn.steamusercontent.com 的 SNI 阻断）→ 直连 → 系统代理
+            // 下载也赛马：先拿 32KB 真实字节把几条候选线路各量一遍，谁快先走谁。
+            // 跑到一半变慢（SlowSignal）就重开一次秒表，只有明显更快（≥1.3 倍）才换，免得来回跳。
+            // 小文件（<2MB）不赛马：2 秒的探针比文件本身还久。
+            List<DlRoute> raced = null;
+            if (host != null && (totalHint <= 0 || totalHint >= 2L * 1024 * 1024 || File.Exists(partPath)))
+            {
+                try { raced = RaceRoutes(url, ua, host, totalHint); } catch { }
+            }
+            if (raced != null && raced.Count > 0)
+            {
+                int switches = 0, idx = 0;
+                while (idx < raced.Count)
+                {
+                    if (ctl != null) ctl.Tick();
+                    DlRoute r = raced[idx++];
+                    long rg = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, r.Proxy, r.Front, r.UseHttp, ctl);
+                    if (rg > 0)
+                    {
+                        LearnRoute(host, r.Proxy != null ? NetRoute.Proxy : (r.Front != null ? NetRoute.Dns : NetRoute.Direct), 0);
+                        return rg;
+                    }
+                    if (rg != SlowSignal) continue;            // 普通失败：换下一条候选
+                    switches++;
+                    if (switches > 2) break;                   // 最多换两次
+                    List<DlRoute> again = null;
+                    try { again = RaceRoutes(url, ua, host, totalHint); } catch { }
+                    if (again == null || again.Count == 0) break;
+                    DlRoute best = null;
+                    foreach (DlRoute cand in again)
+                        if (cand.Speed > r.Speed * 13 / 10) { best = cand; break; }
+                    if (best == null) break;                   // 没有明显更快的：别折腾
+                    try { Core.Log("INFO", "下载：换到更快线路 " + best.Name + "（" + (best.Speed / 1024) + "KB/s）"); } catch { }
+                    raced = again; idx = 0;
+                }
+                return -1;
+            }
+
+            // 候选一条都没量通：退回老的单连接阶梯（已知最快 → 前置 → 直连 → 代理）
             NetRoute pref = Preferred(host);
             IWebProxy px = SystemProxy();
             long got = -1;
             if (pref == NetRoute.Proxy && px != null)
             {
-                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px, null, ctl);
+                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px, null, false, ctl);
                 if (got > 0) return got;
                 Invalidate(host);
             }
             if (CanFrontHost(host))
             {
-                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null, FrontDomain, ctl);
+                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null, FrontDomain, false, ctl);
                 if (got > 0) { LearnRoute(host, NetRoute.Dns, 0); return got; }
             }
-            got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null, null, ctl);
+            got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, null, null, false, ctl);
             if (got > 0) { LearnRoute(host, NetRoute.Direct, 0); return got; }
             if (px != null && pref != NetRoute.Proxy)
             {
-                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px, null, ctl);
+                got = TryDownload(url, ua, timeoutMs, partPath, totalHint, progress, false, px, null, false, ctl);
                 if (got > 0) { LearnRoute(host, NetRoute.Proxy, 0); try { Core.Log("INFO", "下载：直连不通，改走系统代理成功"); } catch { } return got; }
             }
             return -1;
@@ -767,7 +912,6 @@ namespace Installer
             Uri u = null;
             try { u = new Uri(url); } catch { return 0; }
             if (u == null || string.IsNullOrEmpty(partPath)) return 0;
-            if (File.Exists(partPath)) return 0;                     // 有单连接断点就不并发，交给单连接续传
             long total = totalHint;
             if (!ProbeRange(url, ua, u, out total) || total < 2L * 1024 * 1024) return 0;
 
@@ -788,6 +932,12 @@ namespace Installer
                 froms[i] = i * chunk;
                 tos[i] = (i == parts - 1) ? (total - 1) : (froms[i] + chunk - 1);
             }
+
+            // 有单连接留下的 .part 就别浪费：把已经下下来的那段字节切进分片文件，接着并发下。
+            // （以前这里直接交给单连接，结果「接着下」的大文件变成单线程 —— 用户 2026-11-23 要求改掉）
+            try { SeedFromPart(partPath, files, froms, tos); } catch { }
+            // 分片也走赛马：先量一遍线路，快的前置域名优先分到分片
+            try { RaceRoutes(url, ua, u.Host, total); } catch { }
 
             long done = SumParts(files, froms, tos);
             partialBytes = done;
@@ -851,6 +1001,40 @@ namespace Installer
             return -1;
         }
 
+        /// <summary>把单连接断点 .part 里已有的字节按段切进分片文件（只补空段，不覆盖已有进度）。</summary>
+        static void SeedFromPart(string partPath, string[] files, long[] froms, long[] tos)
+        {
+            if (!File.Exists(partPath)) return;
+            long have = LenOf(partPath);
+            if (have <= 0) return;
+            byte[] buf = new byte[131072];
+            using (FileStream src = new FileStream(partPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                for (int i = 0; i < files.Length; i++)
+                {
+                    long start = froms[i];
+                    if (start >= have) break;
+                    long span = tos[i] - start + 1;
+                    long want = Math.Min(span, have - start);
+                    long already = LenOf(files[i]);
+                    if (already < 0) already = 0;
+                    if (already >= want) continue;               // 这段已经有更多进度，别覆盖
+                    using (FileStream dst = new FileStream(files[i], FileMode.Append, FileAccess.Write, FileShare.None, 131072))
+                    {
+                        src.Position = start + already;
+                        long left = want - already;
+                        while (left > 0)
+                        {
+                            int n = src.Read(buf, 0, (int)Math.Min(buf.Length, left));
+                            if (n <= 0) break;
+                            dst.Write(buf, 0, n);
+                            left -= n;
+                        }
+                    }
+                }
+            }
+        }
+
         /// <summary>各分片已下字节合计（超过本段长度的按本段算，防半截垃圾撑大进度）。</summary>
         static long SumParts(string[] files, long[] froms, long[] tos)
         {
@@ -909,7 +1093,8 @@ namespace Installer
                 if (have < 0) have = 0;
                 if (have > span) { DelIfExists(path); have = 0; }    // 比本段还大：旧垃圾，重来
                 if (have == span) return null;
-                string front = canFront ? UgcMirrors[(slot + attempt) % UgcMirrors.Length] : null;
+                string[] order = FrontOrder(host);
+                string front = canFront ? order[(slot + attempt) % order.Length] : null;
                 // HTTP 80 在 Akamai 上免 TLS 握手且不被 SNI 掐，大文件分片优先走 HTTP + 跨节点前置，失败再退 HTTPS
                 bool useHttp = canFront && attempt < 2;
                 string err = GetRange(url, ua, timeoutMs, path, from + have, to, host, front, useHttp, report, ctl);
@@ -1003,7 +1188,7 @@ namespace Installer
             try { return new FileInfo(p).Length; } catch { return -1; }
         }
 
-        static long TryDownload(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, bool allowPin, IWebProxy proxy, string frontHost, DlCtl ctl)
+        static long TryDownload(string url, string ua, int timeoutMs, string partPath, long totalHint, Action<long, long> progress, bool allowPin, IWebProxy proxy, string frontHost, bool useHttp, DlCtl ctl)
         {
             Uri u = null;
             try { u = new Uri(url); } catch { }
@@ -1015,6 +1200,7 @@ namespace Installer
                 {
                     UriBuilder ub = new UriBuilder(u);
                     ub.Host = frontHost;
+                    if (useHttp) { ub.Scheme = "http"; ub.Port = 80; }
                     pinnedUrl = ub.Uri.AbsoluteUri;
                 }
                 else if (allowPin && u != null)
@@ -1056,6 +1242,8 @@ namespace Installer
                         int n;
                         Stopwatch dlClock = Stopwatch.StartNew();
                         long lastByteAt = 0, capMs = Math.Max(180000L, (total > 0 ? total : 0) / 30000L * 1000L);
+                        long sampleAt = 0, sampleBytes = got;
+                        int slowSamples = 0;
                         while ((n = src.Read(buf, 0, buf.Length)) > 0)
                         {
                             fs.Write(buf, 0, n);
@@ -1063,7 +1251,30 @@ namespace Installer
                             lastByteAt = dlClock.ElapsedMilliseconds;
                             if (progress != null) progress(got, total);
                             if (ctl != null) ctl.Tick();      // 暂停 / 取消：立刻停手，part 留着续传
-                            if (dlClock.ElapsedMilliseconds > capMs) throw new IOException("下载超时（超过 " + (capMs / 1000) + " 秒）");
+                            // 慢速换线：能下但慢得离谱（连续 10 秒低于 50KB/s）就别干耗到总时限，
+                            // 把 part 留着回上层重新赛马，换到更快的线路接着下（用户 2026-11-23 要求）。
+                            long t = dlClock.ElapsedMilliseconds;
+                            if (t - sampleAt >= 5000)
+                            {
+                                long spd = (got - sampleBytes) * 1000L / Math.Max(1L, t - sampleAt);
+                                if (spd < 50000) slowSamples++; else slowSamples = 0;
+                                sampleAt = t;
+                                sampleBytes = got;
+                                if (slowSamples >= (total > 0 ? 2 : 4))
+                                {
+                                    // 但别把"慢线但快下完了"的小文件硬掐掉：按当前速度估算还要多久，
+                                    // 剩不到 150 秒就老实下完（换线重来反而更慢）。
+                                    long remain = total > 0 ? Math.Max(0, total - got) : 0;
+                                    long etaSec = total > 0 ? remain / Math.Max(1L, spd) : 999999;
+                                    if (etaSec >= 150)
+                                    {
+                                        fs.Flush();
+                                        return SlowSignal;
+                                    }
+                                    slowSamples = 0;
+                                }
+                            }
+                            if (t > capMs) throw new IOException("下载超时（超过 " + (capMs / 1000) + " 秒）");
                         }
                         if (dlClock.ElapsedMilliseconds - lastByteAt > 25000)
                             throw new IOException("下载停摆（25 秒没有新数据）");

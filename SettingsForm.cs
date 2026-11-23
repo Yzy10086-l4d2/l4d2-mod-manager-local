@@ -22,7 +22,6 @@ namespace Installer
         private ComboBox cboGame;
         private Label lblKeyState;
         private CheckBox chkSteam, chkGb;
-        private CheckBox chkMultiConn;      // 实验：单文件双连接下载
         private TextBox txtApiKey;
         private FlatButton btnGameBrowse, btnGameFind, btnSave;
         private FlatButton btnImport;
@@ -318,14 +317,6 @@ namespace Installer
 
             RowNote(s, Lang.S("第三方站点，非 Steam 生态；L4D2 约 1800 个 MOD。默认关闭，Steam 不通时可当兜底"), 292, 54, 250);
 
-            // 实验开关：单文件开两条连接。默认关 —— 实测在线路抖动时可能更慢，效果因网络而异。
-            chkMultiConn = new CheckBox();
-            chkMultiConn.Text = Lang.S("单文件双连接下载（实验）");
-            chkMultiConn.SetBounds(292, 84, 250, 22);
-            chkMultiConn.Font = Theme.UI;
-            chkMultiConn.Checked = Core.Cfg.MultiConnDownload;
-            s.Controls.Add(chkMultiConn);
-            RowNote(s, Lang.S("同一文件切成两段同时下；服务器不支持或任一段失败会自动退回单连接。效果看线路，不灵就关掉"), 292, 108, 250);
         }
 
         /// <summary>
@@ -360,7 +351,6 @@ namespace Installer
             catch { lblKeyState.Text = ""; }
         }
 
-        internal bool WantMultiConn { get { return chkMultiConn != null && chkMultiConn.Checked; } }
         internal bool WantSteamEnabled { get { return chkSteam != null && chkSteam.Checked; } }
         internal bool WantGbEnabled { get { return chkGb != null && chkGb.Checked; } }
         internal string WantApiKey { get { return txtApiKey == null ? "" : txtApiKey.Text.Trim(); } }
@@ -762,13 +752,6 @@ namespace Installer
                     Core.Cfg.ReduceMotion = newMotion;
                     Core.SaveConfig();
                     Core.Log("INFO", newMotion ? "设置：已关闭轻量动效" : "设置：已开启轻量动效");
-                }
-
-                if (f.WantMultiConn != Core.Cfg.MultiConnDownload)
-                {
-                    Core.Cfg.MultiConnDownload = f.WantMultiConn;
-                    Core.SaveConfig();
-                    Core.Log("INFO", "设置：单文件双连接下载 " + (Core.Cfg.MultiConnDownload ? "开" : "关"));
                 }
 
                 // MOD 名称：显示名是渲染时现取的，所以改完只重建视图，不重扫库

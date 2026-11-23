@@ -1235,35 +1235,31 @@ namespace Installer
                 try
                 {
                     List<WsItem> items = Workshop.Fetch(ids);
-                    // 两路并行：单条下载受服务器/带宽限制，串行时第二件要等第一件写完。
-                    // 不再读 Workshop.LastSavedPath（那是共享静态，并发会串味），结果走 out 参数。
-                    object gate = new object();
-                    System.Threading.Tasks.Parallel.ForEach(items,
-                        new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = 2 },
-                        delegate(WsItem one)
+                    // 一个一个下：同时开两路会互相抢带宽、进度也看不出是谁的（用户 2026-11-23 要求）
+                    // 结果走 out 参数，不再读 Workshop.LastSavedPath（共享静态，多任务会串味）
+                    foreach (WsItem one in items)
+                    {
+                        if (one == null || one.IsCollection || one.Url.Length == 0) { fail++; continue; }
+                        string dest = "";
+                        try
                         {
-                            if (one == null || one.IsCollection || one.Url.Length == 0)
-                            { System.Threading.Interlocked.Increment(ref fail); return; }
-                            string dest = "";
-                            try
-                            {
-                                dest = Path.Combine(dir, Workshop.SafeFileName(one.Title, one.Id));
-                                string saved2, note2;
-                                Workshop.Download(one, dest, null, out saved2, out note2, WorkshopDownloads.Ctl(one.Id));
-                                if (!string.IsNullOrEmpty(saved2)) dest = saved2;
-                                Workshop.SavePreview(one, dest);
-                                Workshop.RenameToAddonTitle(dest);
-                                if (File.Exists(dest)) lock (gate) gotNames.Add(Path.GetFileName(dest));
-                                System.Threading.Interlocked.Increment(ref ok);
-                            }
-                            catch (WsNet.DlAbort ab)
-                            {
-                                // 批量里的一条被暂停 / 取消：只停这一条，别的照常下完
-                                if (ab.Canceled) { try { Workshop.CleanPartial(dest); } catch { } WorkshopDownloads.Cancel(one.Id); }
-                                else WorkshopDownloads.Pause(one.Id);
-                            }
-                            catch { System.Threading.Interlocked.Increment(ref fail); }
-                        });
+                            dest = Path.Combine(dir, Workshop.SafeFileName(one.Title, one.Id));
+                            string saved2, note2;
+                            Workshop.Download(one, dest, null, out saved2, out note2, WorkshopDownloads.Ctl(one.Id));
+                            if (!string.IsNullOrEmpty(saved2)) dest = saved2;
+                            Workshop.SavePreview(one, dest);
+                            Workshop.RenameToAddonTitle(dest);
+                            if (File.Exists(dest)) gotNames.Add(Path.GetFileName(dest));
+                            ok++;
+                        }
+                        catch (WsNet.DlAbort ab)
+                        {
+                            // 批量里的一条被暂停 / 取消：只停这一条，后面的照常接着下
+                            if (ab.Canceled) { try { Workshop.CleanPartial(dest); } catch { } WorkshopDownloads.Cancel(one.Id); }
+                            else WorkshopDownloads.Pause(one.Id);
+                        }
+                        catch { fail++; }
+                    }
                 }
                 catch { }
                 int okF = ok, failF = fail;
