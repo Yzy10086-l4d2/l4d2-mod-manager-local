@@ -4118,6 +4118,13 @@ namespace Installer
             int tw = Math.Max(64, Dpi.S(104)), th = Math.Max(36, Dpi.S(58));
             string key = q;
             string keyTag = tag;
+            // 中文标题的 MOD 不少：英文词搜回来的是一半。位置名是中文、且和查询词不同时，
+            // 再拿中文名搜一遍合并 —— 两次结果按 id 去重，英文那批排在前面。
+            string altWord = "";
+            string slotName = Current == null ? "" : (Current.Name ?? "");
+            if (key.Length > 0 && slotName.Length > 0 && Lang.HasCjk(slotName)
+                && !string.Equals(slotName, key, StringComparison.OrdinalIgnoreCase))
+                altWord = slotName;
             System.Threading.Tasks.Task.Run(delegate
             {
                 List<WsItem> got = null;
@@ -4130,7 +4137,28 @@ namespace Installer
                 System.Threading.Thread steamTh = null;
                 if (!steamDead)
                 {
-                    steamTh = new System.Threading.Thread(delegate() { try { steamGot = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { } });
+                    steamTh = new System.Threading.Thread(delegate()
+                    {
+                        try { steamGot = Workshop.SearchItems(key, "trend", pg, keyTag); } catch { }
+                        if (altWord.Length == 0) return;
+                        try
+                        {
+                            List<WsItem> more = Workshop.SearchItems(altWord, "trend", pg, keyTag);
+                            if (more == null || more.Count == 0) return;
+                            if (steamGot == null) { steamGot = more; return; }
+                            HashSet<string> have = new HashSet<string>(StringComparer.Ordinal);
+                            foreach (WsItem x in steamGot) if (x != null) have.Add(x.Id ?? "");
+                            foreach (WsItem x in more)
+                            {
+                                if (x == null) continue;
+                                string id = x.Id ?? "";
+                                if (have.Contains(id)) continue;
+                                have.Add(id);
+                                steamGot.Add(x);
+                            }
+                        }
+                        catch { }
+                    });
                     steamTh.IsBackground = true;
                     steamTh.Start();
                     // 填了 API key 且 API 活、或网页主站活：给足 3.5 秒（首次 TLS + 拉 30 条约 1~2 秒）；

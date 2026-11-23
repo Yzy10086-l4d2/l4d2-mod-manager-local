@@ -2130,11 +2130,69 @@ namespace Installer
                 case "二代连喷": return "combat shotgun";
                 // 狙击 / 手枪 / 特殊武器
                 case "鸟狙": return "hunting rifle";
+                case "15发木狙": return "hunting rifle";
+                case "30发军用狙": return "military sniper";
                 case "手枪": return "pistol";
                 case "马格南": return "magnum";
                 case "榴弹发射器": return "grenade launcher";
-                // 近战总称
+                // 近战总称 + 各件
                 case "近战武器": return "melee";
+                case "消防斧": return "fire axe";
+                case "武士刀": return "katana";
+                case "砍刀": return "machete";
+                case "撬棍": return "crowbar";
+                case "电锯": return "chainsaw";
+                case "平底锅": return "frying pan";
+                case "棒球棍": return "baseball bat";
+                case "板球拍": return "cricket bat";
+                case "高尔夫球杆": return "golf club";
+                case "电吉他": return "electric guitar";
+                case "警棍": return "nightstick";
+                case "干草叉": return "pitchfork";
+                case "铁锹": return "shovel";
+                case "小刀": return "knife";
+                // 投掷物
+                case "燃烧瓶": return "molotov";
+                case "土制炸弹": return "pipe bomb";
+                case "胆汁": return "vomit jar";
+                // 弹药升级
+                case "燃烧弹药包": return "incendiary ammo";
+                case "爆破弹药包": return "explosive ammo";
+                case "激光瞄准": return "laser sight";
+                // 人物
+                case "比尔": return "bill";
+                case "佐伊": return "zoey";
+                case "路易斯": return "louis";
+                case "弗朗西斯": return "francis";
+                case "教练": return "coach";
+                case "埃利斯": return "ellis";
+                case "尼克": return "nick";
+                case "罗谢尔": return "rochelle";
+                case "幸存者": return "survivor";
+                // 药品
+                case "医疗包": return "medkit";
+                case "电击器": return "defibrillator";
+                case "肾上腺素": return "adrenaline";
+                case "止痛药": return "pain pills";
+                // 小僵尸
+                case "普通感染者": return "common infected";
+                case "防暴警察": return "riot";
+                case "CEDA": return "ceda";
+                case "小丑": return "clown";
+                case "泥人": return "mudmen";
+                case "道路工": return "worker";
+                case "堕落幸存者": return "fallen survivor";
+                case "吉米": return "jimmy";
+                // 可搬道具
+                case "氧气瓶": return "oxygen tank";
+                case "煤气罐": return "gas can";
+                case "油桶": return "barrel";
+                case "燃料桶": return "fuel barrel";
+                case "烟花盒": return "fireworks";
+                case "地精": return "gnome";
+                case "可乐": return "cola";
+                // 杂项
+                case "弹道": return "tracer";
                 default: return null;
             }
         }
