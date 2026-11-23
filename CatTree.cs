@@ -1593,22 +1593,35 @@ namespace Installer
                 if (solePile) continue;
 
                 // 小分类（枪械 → 步枪 → AK-47）。slots 已按小分类排好，这里顺着切段。
-                // 一大类底下只有一个分组时不画那行标题 ——「特感 → 特感 → Tank」这种重复层没意义。
-                int subCount = 0;
-                string prevSub = null;
-                foreach (Slot s in inCat) if (s.Sub != prevSub) { prevSub = s.Sub; subCount++; }
-                bool showSub = subCount > 1;
+                // 两层过滤都是同一件事：别叠空壳。
+                //   ① 一大类底下只有一个分组 → 不画分组标题（「特感 → 特感 → Tank」没意义）；
+                //   ② 某个分组底下只有一个位置 → 也不画（「人物 → 八人包 → 幸存者」三行说的是同一件事，
+                //      用户 2026-11-24 要求去掉这一层）。
+                Dictionary<string, int> perSub = new Dictionary<string, int>(StringComparer.Ordinal);
+                foreach (Slot s in inCat)
+                {
+                    string kSub = s.Sub ?? "";
+                    int cSub;
+                    perSub.TryGetValue(kSub, out cSub);
+                    perSub[kSub] = cSub + 1;
+                }
+                bool showSub = perSub.Count > 1;
                 string lastSub = null;
                 foreach (Slot s in inCat)
                 {
-                    if (showSub && s.Sub != lastSub)
+                    string sk = s.Sub ?? "";
+                    bool onePos = perSub[sk] <= 1;      // 这个分组底下只有一个位置：省掉那行标题
+                    if (showSub && sk != lastSub)
                     {
-                        lastSub = s.Sub;
-                        TreeRow sh = new TreeRow();
-                        sh.IsSub = true; sh.Cat = cat; sh.Sub = s.Sub;
-                        rows.Add(sh);
+                        lastSub = sk;
+                        if (!onePos)
+                        {
+                            TreeRow sh = new TreeRow();
+                            sh.IsSub = true; sh.Cat = cat; sh.Sub = s.Sub;
+                            rows.Add(sh);
+                        }
                     }
-                    if (showSub && folded.Contains(SubKey(cat, s.Sub))) continue;        // 这一段整段收起
+                    if (showSub && !onePos && folded.Contains(SubKey(cat, s.Sub))) continue;   // 这一段整段收起
                     TreeRow r = new TreeRow();
                     r.Slot = s; r.Cat = cat; r.Sub = s.Sub;
                     rows.Add(r);
