@@ -66,25 +66,22 @@ namespace Installer
             if (u.Tag.Length == 0) return null;
             u.Version = Ver(u.Tag);
 
-            // assets 是对象数组，每个资产自己带 name / size / digest / browser_download_url。
-            // 不引 JSON 库：只按「含 browser_download_url 的对象」切块，块内再取值。
-            MatchCollection blocks = Regex.Matches(json, "\\{[^{}]*\"browser_download_url\"[^{}]*\\}");
-            foreach (Match m in blocks)
+            // assets 的每个对象里还嵌着 uploader 子对象，按「大括号配对」切块是切不出来的（实测踩到）。
+            // 改成：认每个 browser_download_url，回头看它前面 2KB 里的 name / size / digest ——
+            // GitHub 的字段顺序固定是 name → size → digest → browser_download_url。
+            MatchCollection links = Regex.Matches(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"");
+            foreach (Match m in links)
             {
-                string b = m.Value;
-                string url = Rx(b, "\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"");
-                string name = Rx(b, "\"name\"\\s*:\\s*\"([^\"]+)\"");
-                if (url.Length == 0) continue;
-                if (name.Length > 0 && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                {
-                    u.Url = url;
-                    string sz = Rx(b, "\"size\"\\s*:\\s*(\\d+)");
-                    long n;
-                    if (long.TryParse(sz, out n)) u.Size = n;
-                    string dg = Rx(b, "\"digest\"\\s*:\\s*\"sha256:([0-9a-fA-F]+)\"");
-                    u.Sha = dg.ToLowerInvariant();
-                    break;
-                }
+                string url = m.Groups[1].Value;
+                int start = Math.Max(0, m.Index - 2000);
+                string win = json.Substring(start, m.Index - start);
+                string name = Last(win, "\"name\"\\s*:\\s*\"([^\"]+)\"");
+                if (name.Length == 0 || !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
+                u.Url = url;
+                long n;
+                if (long.TryParse(Last(win, "\"size\"\\s*:\\s*(\\d+)"), out n)) u.Size = n;
+                u.Sha = Last(win, "\"digest\"\\s*:\\s*\"sha256:([0-9a-fA-F]+)\"").ToLowerInvariant();
+                break;
             }
             if (u.Url.Length == 0) return null;      // 有 Release 但没传 exe：当作没有可更新的
             return u;
@@ -249,6 +246,14 @@ namespace Installer
         {
             Match m = Regex.Match(s ?? "", pat);
             return m.Success ? m.Groups[1].Value : "";
+        }
+
+        /// <summary>同一段文本里取**最后一个**命中（窗口里最后的 name 才是这个资产的）。</summary>
+        private static string Last(string s, string pat)
+        {
+            Match found = null;
+            foreach (Match m in Regex.Matches(s ?? "", pat)) found = m;
+            return found == null ? "" : found.Groups[1].Value;
         }
 
         private static string Unescape(string s)
