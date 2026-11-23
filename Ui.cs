@@ -681,7 +681,7 @@ namespace Installer
             gm.Controls.Add(pnlScheme);
             cboProfile.SelectedIndexChanged += delegate { ProfileSelectionChanged(); };
             tips.SetToolTip(cboProfile, Lang.S("只选择方案，不会立刻改当前勾选；确认后点「套用」。"));
-            btnSaveProfile = new FlatButton(); btnSaveProfile.Text = Lang.S("存为方案"); btnSaveProfile.SetBounds(262, 28, 84, Theme.H); btnSaveProfile.Click += delegate { SaveProfile(); }; gm.Controls.Add(btnSaveProfile);
+            btnSaveProfile = new FlatButton(); btnSaveProfile.Text = Lang.S("另存"); btnSaveProfile.SetBounds(262, 28, 84, Theme.H); btnSaveProfile.Click += delegate { SaveProfile(); }; gm.Controls.Add(btnSaveProfile);
             btnApplyProfile = new FlatButton(); btnApplyProfile.Text = Lang.S("套用"); btnApplyProfile.SetBounds(354, 28, 58, Theme.H); btnApplyProfile.Click += delegate { ApplyProfile(); }; gm.Controls.Add(btnApplyProfile);
             tips.SetToolTip(btnApplyProfile, Lang.S("把选中的方案套用到当前勾选；如果会覆盖现有选择，会先确认。"));
             btnUnmatched = new FlatButton();
@@ -763,7 +763,7 @@ namespace Installer
             // 本地版这个按钮不「安装」任何文件：它把游戏里每个位置的开关换成当前勾选的那套。
             // 叫「开始安装」会让人以为要复制文件，语义对不上。
             // 按钮的动作是「把游戏换成某个方案」，不是「装文件」：没选方案就没得替换。
-            btnInstall = new FlatButton(); btnInstall.Text = Lang.S("替换此方案"); btnInstall.Primary = true;
+            btnInstall = new FlatButton(); btnInstall.Text = Lang.S("安装这套方案"); btnInstall.Primary = true;
             btnInstall.AccessibleName = "把游戏里的开关替换成当前勾选的这套";
             btnInstall.Font = new Font(Theme.UI, FontStyle.Bold);
             btnInstall.SetBounds(installX, 16, installW, Theme.H);   // 方案 B：主操作上顶栏
