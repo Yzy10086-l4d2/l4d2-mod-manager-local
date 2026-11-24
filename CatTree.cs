@@ -3993,15 +3993,27 @@ namespace Installer
                 if (!show) recPanel.Visible = false;
                 else
                 {
-                    int whole = lv.Height;
-                    // 2026-11-24（用户）：推荐改成两行卡。卡格是 58 图 + 18 标题 + 8 间距 = 84，
-                    // 两行要 2*84 + 一点余量；候选列不够高时自动退回一行，不硬撑。
-                    int recH = whole >= Dpi.S(320) ? Dpi.S(196) : Dpi.S(152);
-                    if (whole - recH < Dpi.S(150)) recH = Math.Min(Dpi.S(152), Math.Max(Dpi.S(120), whole / 3));
-                    if (whole - recH < Dpi.S(90)) { recPanel.Visible = false; }
+                    // 基准高度必须从「列的总高」算，不能读 lv.Height：
+                    // lv 的高度是上一次排版后减掉推荐区的结果，拿它当输入会越排越小（每排一次缩一截）。
+                    int whole = Math.Max(Dpi.S(120), bottom - (top + headH));
+                    // 2026-11-24（用户第二次提）：推荐区要把列底那块空地吃掉。
+                    // 做法：候选列表只按自己的条目数收高（内容少就矮），剩下的整块给推荐；
+                    // 推荐按整行卡切（58 图 + 18 标题 + 8 间距 = 84，跟 RecGrid 同一套），
+                    // 多出来的零头留在面板底部当内边距，不会切出半行卡。
+                    const int pitch = 84;
+                    int listWant = lv.Items.Count * Dpi.S(Theme.RowH) + Dpi.S(headH) + Dpi.S(10);
+                    int listMin = Dpi.S(140);
+                    int listMax = Math.Max(listMin, whole - Dpi.S(24) - 2 * Dpi.S(pitch) - Dpi.S(6));
+                    int candH = Math.Min(Math.Max(listMin, listWant), listMax);
+                    int recAvail = whole - candH - Dpi.S(6);
+                    int rows = (recAvail - Dpi.S(24)) / Dpi.S(pitch);
+                    if (rows > 6) rows = 6;          // 再高也不铺满整屏，否则一条候选要配一墙推荐
+                    if (rows < 1) rows = 1;
+                    int recH = Dpi.S(24) + rows * Dpi.S(pitch);
+                    if (recAvail < Dpi.S(90)) { recPanel.Visible = false; }
                     else
                     {
-                        lv.Height = whole - recH - Dpi.S(6);
+                        lv.Height = candH;
                         recPanel.SetBounds(lv.Left, lv.Top + lv.Height + Dpi.S(6), lv.Width, recH);
                         recPanel.Visible = true;
                         int sw = Dpi.S(64);
