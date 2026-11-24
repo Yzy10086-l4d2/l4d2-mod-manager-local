@@ -1448,13 +1448,53 @@ namespace Installer
                     using (SolidBrush ph = new SolidBrush(Theme.SurfaceAlt)) g2.FillRectangle(ph, tr);
                 }
 
+                // 名称 + 副行：副行就是原来「改了什么」那一列（模型·HUD·音效 / 组合装 2 件）
                 int tx = tr.Right + Dpi.S(10);
-                Rectangle tr2 = new Rectangle(tx, e.Bounds.Top, Math.Max(Dpi.S(20), e.Bounds.Right - tx - Dpi.S(6)), e.Bounds.Height);
+                int tw2 = Math.Max(Dpi.S(20), e.Bounds.Right - tx - Dpi.S(6));
+                string sub0 = (e.Item.SubItems.Count > 1) ? e.Item.SubItems[1].Text : "";
                 Color ink = on ? Theme.Ink : Theme.Ink2;
                 Font f = on ? Theme.UIBold : Theme.UI;
-                TextRenderer.DrawText(g2, e.Item.Text, f, tr2, ink,
-                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter
-                    | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                if (string.IsNullOrEmpty(sub0))
+                {
+                    TextRenderer.DrawText(g2, e.Item.Text, f,
+                        new Rectangle(tx, e.Bounds.Top, tw2, e.Bounds.Height), ink,
+                        TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+                        | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                }
+                else
+                {
+                    TextRenderer.DrawText(g2, e.Item.Text, f,
+                        new Rectangle(tx, e.Bounds.Top + Dpi.S(7), tw2, Dpi.S(20)), ink,
+                        TextFormatFlags.Left | TextFormatFlags.Bottom
+                        | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                    Color subInk = (e.Item.SubItems[1].ForeColor != Color.Empty && e.Item.SubItems[1].ForeColor != Theme.Ink2)
+                        ? e.Item.SubItems[1].ForeColor : Theme.Ink3;
+                    TextRenderer.DrawText(g2, sub0, Theme.UISmall,
+                        new Rectangle(tx, e.Bounds.Top + Dpi.S(27), tw2, Dpi.S(16)), subInk,
+                        TextFormatFlags.Left | TextFormatFlags.Top
+                        | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                }
+                return;
+            }
+
+            // 开关那一列画成药丸：比「开启 / 关闭」两个字直观
+            if (e.ColumnIndex == 4)
+            {
+                bool swOn = (e.Item.SubItems.Count > 4) && e.Item.SubItems[4].Text.StartsWith("开");
+                int sw2 = Dpi.S(34), sh2 = Dpi.S(20);
+                Rectangle pill = new Rectangle(e.Bounds.Left + Dpi.S(2),
+                    e.Bounds.Top + (e.Bounds.Height - sh2) / 2, sw2, sh2);
+                using (GraphicsPath gp = Theme.Round(pill, sh2 / 2))
+                {
+                    using (SolidBrush pb = new SolidBrush(swOn
+                        ? Color.FromArgb(46, 92, 66) : Theme.SurfaceAlt)) g2.FillPath(pb, gp);
+                    using (Pen pp = new Pen(swOn ? Color.FromArgb(72, 150, 104) : Theme.Line)) g2.DrawPath(pp, gp);
+                }
+                int kw = sh2 - Dpi.S(6);
+                Rectangle knob = new Rectangle(swOn ? pill.Right - kw - Dpi.S(3) : pill.Left + Dpi.S(3),
+                    pill.Top + Dpi.S(3), kw, kw);
+                using (GraphicsPath kp = Theme.Round(knob, kw / 2))
+                using (SolidBrush kb = new SolidBrush(swOn ? Theme.Ok : Theme.Ink3)) g2.FillPath(kb, kp);
                 return;
             }
 
@@ -4635,7 +4675,7 @@ namespace Installer
             int kindW, sizeW, instW, swW;
             if (w >= Dpi.S(410))
             {
-                kindW = Dpi.S(100); sizeW = Dpi.S(74); instW = Dpi.S(84); swW = Dpi.S(62);
+                kindW = 0; sizeW = Dpi.S(74); instW = Dpi.S(84); swW = Dpi.S(62);   // 「改了什么」并进名字下的副行
             }
             else
             {
@@ -4761,7 +4801,9 @@ namespace Installer
                 TextFormatFlags f = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding
                                   | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
                 f |= c.TextAlign == HorizontalAlignment.Right ? TextFormatFlags.Right : TextFormatFlags.Left;
-                Rectangle r = new Rectangle(x + 4, 1, Math.Max(8, w - 8), Height - 2);
+                // 第一列左边有缩略图，表头文字要跟着让开，不然「MOD」两个字会压在图上
+                int lead = (i == 0) ? Dpi.S(66) : 0;
+                Rectangle r = new Rectangle(x + 4 + lead, 1, Math.Max(8, w - 8 - lead), Height - 2);
                 TextRenderer.DrawText(g, c.Text, Font, r, Theme.Ink3, f);
                 x += w;
             }

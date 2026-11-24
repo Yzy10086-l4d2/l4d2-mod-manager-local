@@ -185,7 +185,8 @@ namespace Installer
         // 启动时查到的新版本（设置页直接读它，不用再查一次）
         private UpdateInfo pendingUpdate;
         private Label lblNotice;                    // 状态行右段：常驻提示（新版 / 离线 / 未识别数），不被临时消息覆盖
-        private Label lblSchemeDiff;                // 方案行右侧：这套方案和当前勾选差几处（套用前先看得到）
+        private Label lblSchemeDiff;
+        private Label lblSearchCap;                 // 顶栏搜索框左边那两个字                // 方案行右侧：这套方案和当前勾选差几处（套用前先看得到）
         private OverviewForm overviewWindow;        // 方案总览的独立窗口
         private FlatButton btnScheme;               // 方案按钮（替代系统下拉）
         private Panel pnlScheme;                    // 方案弹层：每套一行，带覆盖数 / 正在用 / 有改动
@@ -710,7 +711,7 @@ namespace Installer
             btnScheme.SetBounds(50, 30, 168, Theme.H);
             btnScheme.Click += delegate { ToggleSchemeMenu(); };
             tips.SetToolTip(btnScheme, "切换方案：弹层里每套都写着覆盖了几个位置、几个 MOD，\r\n带 ● 的是正在用的，带 * 的是和当前勾选不一致的。");
-            gm.Controls.Add(btnScheme);
+            Controls.Add(btnScheme);
 
             pnlScheme = new Panel();
             pnlScheme.SetBounds(50, 58, 300, 200);
@@ -722,15 +723,15 @@ namespace Installer
                     ep.Graphics.DrawRectangle(p, 0, 0, pnlScheme.Width - 1, pnlScheme.Height - 1);
             };
             pnlScheme.Visible = false;
-            gm.Controls.Add(pnlScheme);
+            Controls.Add(pnlScheme);
             cboProfile.SelectedIndexChanged += delegate { ProfileSelectionChanged(); };
             tips.SetToolTip(cboProfile, Lang.S("只选择方案，不会立刻改当前勾选；确认后点「套用」。"));
-            btnSaveProfile = new FlatButton(); btnSaveProfile.Text = Lang.S("另存"); btnSaveProfile.SetBounds(226, 30, 64, Theme.H); btnSaveProfile.Click += delegate { SaveProfile(); }; gm.Controls.Add(btnSaveProfile);
-            btnApplyProfile = new FlatButton(); btnApplyProfile.Text = Lang.S("套用"); btnApplyProfile.SetBounds(296, 30, 52, Theme.H); btnApplyProfile.Click += delegate { ApplyProfile(); }; gm.Controls.Add(btnApplyProfile);
+            btnSaveProfile = new FlatButton(); btnSaveProfile.Text = Lang.S("另存"); btnSaveProfile.SetBounds(12, 30, 64, Theme.H); btnSaveProfile.Click += delegate { SaveProfile(); }; gm.Controls.Add(btnSaveProfile);
+            btnApplyProfile = new FlatButton(); btnApplyProfile.Text = Lang.S("套用"); btnApplyProfile.SetBounds(84, 30, 52, Theme.H); btnApplyProfile.Click += delegate { ApplyProfile(); }; gm.Controls.Add(btnApplyProfile);
             tips.SetToolTip(btnApplyProfile, Lang.S("把选中的方案套用到当前勾选；如果会覆盖现有选择，会先确认。"));
             btnUnmatched = new FlatButton();
             btnUnmatched.Text = Lang.S("未识别 0 个");
-            btnUnmatched.SetBounds(356, 30, 104, Theme.H);
+            btnUnmatched.SetBounds(144, 30, 104, Theme.H);
             btnUnmatched.Click += delegate { if (treeView != null) treeView.SelectUnmatched(); };
             tips.SetToolTip(btnUnmatched, Lang.S("程序没认出位置的 MOD 都收在这里，点开可以手动指定分类。\r\n这些不再出现在左边的树里。"));
             gm.Controls.Add(btnUnmatched);
@@ -750,14 +751,15 @@ namespace Installer
 
             // 搜索并进方案行：以前「方案」「搜索」各占一行，加上顶栏和卡片标题，
             // 树上面堆了四层横条。合成一行后树整整多出 48px 高度。
-            Label l9 = new Label(); l9.Text = Lang.S("搜索"); l9.SetBounds(472, 36, 34, 20); Theme.Dress(l9); gm.Controls.Add(l9);
+            Label l9 = lblSearchCap = new Label(); l9.Text = Lang.S("搜索"); l9.SetBounds(472, 36, 34, 20); Theme.Dress(l9); Controls.Add(l9);
             int searchW = Math.Max(160, rightW - 12 - 56 - 8 - 510);
-            txtSearch = new TextBox(); txtSearch.SetBounds(510, 34, searchW, 24); txtSearch.AccessibleName = "搜索 MOD"; Theme.Dress(txtSearch); txtSearch.TextChanged += delegate { searchTimer.Stop(); searchTimer.Start(); }; gm.Controls.Add(txtSearch);
+            txtSearch = new TextBox(); txtSearch.SetBounds(510, 34, searchW, 24); txtSearch.AccessibleName = "搜索 MOD"; Theme.Dress(txtSearch); txtSearch.TextChanged += delegate { searchTimer.Stop(); searchTimer.Start(); }; Controls.Add(txtSearch);
             tips.SetToolTip(txtSearch, Lang.S("搜名字 / 替换了什么 / 位置名。Ctrl+F 快速聚焦，Esc 清空并返回方案树。\r\n停止输入 250 ms 自动筛；点搜索结果可跳回它在树里的位置。"));
             btnClearSearch = new FlatButton(); btnClearSearch.Text = Lang.S("清空"); btnClearSearch.SetBounds(rightW - 68, 34, 56, 24);
             btnClearSearch.AccessibleName = "清空搜索并返回方案树";
             btnClearSearch.Click += delegate { txtSearch.Clear(); RefreshMods(); txtSearch.Focus(); };
             tips.SetToolTip(btnClearSearch, Lang.S("清空搜索并返回方案树（Esc）"));
+            Controls.Add(btnClearSearch);
             gm.Controls.Add(btnClearSearch);
 
             // 方案分布：这句话和卡片标题上的「已选 N」重复，界面上不再占一行（数据照旧算，日志里能看）
@@ -3824,7 +3826,8 @@ namespace Installer
             }
         }
 
-        private int lastFindX = -1;      // 顶栏按钮组左边界（设计值），标题区排版要用
+        private int lastFindX = -1;
+        private int lastSchemeLeft = -1;   // 顶栏「方案 ▾」左边界（设计值），标题区宽度到它为止      // 顶栏按钮组左边界（设计值），标题区排版要用
 
         /// <summary>
         /// 顶栏标题区一行：标题 / 当前游戏目录 / 重复提示，三者抢同一条横带。
@@ -3832,13 +3835,10 @@ namespace Installer
         /// </summary>
         private void PlaceBrandRow()
         {
-            if (lblBrand == null || lblBrandSub == null || lastFindX <= 0) return;
-            int right = Dpi.S(lastFindX) - Dpi.S(16);
-            bool showC = lblConflict != null && lblConflict.Visible;
-            int cw = Dpi.S(282);
-            if (lblConflict != null) lblConflict.SetBounds(right - cw, Dpi.S(31), cw, Dpi.S(18));
-            int subRight = showC ? right - cw - Dpi.S(8) : right;
-            int w = Math.Max(Dpi.S(120), subRight - Dpi.S(Theme.M));
+            if (lblBrand == null || lblBrandSub == null) return;
+            // 标题区只到「方案 ▾」左边为止 —— 方案和搜索上顶栏后，这里不再管它们
+            int right = lastSchemeLeft > 0 ? Dpi.S(lastSchemeLeft - 14) : Dpi.S(lastFindX - 16);
+            int w = Math.Max(Dpi.S(120), right - Dpi.S(Theme.M));
             lblBrand.Width = w;
             if (lblBrandVer != null)
             {
@@ -4110,7 +4110,7 @@ namespace Installer
             txtSearch.Left = Dpi.S(510);
             txtSearch.Width = Dpi.S(Math.Max(160, rightW - 12 - 56 - 8 - 510));
             btnClearSearch.Left = Dpi.S(rightW - 68);
-            if (btnUnmatched != null) btnUnmatched.Left = Dpi.S(356);
+            if (btnUnmatched != null) btnUnmatched.Left = Dpi.S(144);
             if (lblSchemeDiff != null) lblSchemeDiff.Left = Dpi.S(rightW - 376);
 
             // 顶部：品牌区（标题 + 当前游戏目录）· 工具 · 主操作
@@ -4129,6 +4129,21 @@ namespace Installer
             int wsX = viewX - groupGap - wsW;
             int findX = wsX - topGap - findW;
             // 标题区吃掉按钮组左边剩下的全部宽度；有重复提示时再让出它那 232px
+            // 方案选择器 + 搜索上顶栏：卡片那行只留 另存 / 套用 / 未识别，层级从三层降到两层
+            {
+                int searchW2 = Math.Max(Dpi.S(180), Math.Min(Dpi.S(240), W / 6));
+                int clearW2 = Dpi.S(52);
+                int searchRight = Dpi.S(findX) - Dpi.S(14);
+                int searchLeft = searchRight - clearW2 - Dpi.S(6) - searchW2;
+                int schemeW2 = Dpi.S(150);
+                int schemeLeft = searchLeft - Dpi.S(44);
+                lastSchemeLeft = schemeLeft;
+                if (btnScheme != null) btnScheme.SetBounds(schemeLeft, Dpi.S(16), schemeW2, Theme.H);
+                if (lblSearchCap != null) lblSearchCap.SetBounds(searchLeft - Dpi.S(40), Dpi.S(22), Dpi.S(34), Dpi.S(18));
+                if (txtSearch != null) txtSearch.SetBounds(searchLeft, Dpi.S(18), searchW2, Dpi.S(26));
+                if (btnClearSearch != null) btnClearSearch.SetBounds(searchRight - clearW2, Dpi.S(19), clearW2, Dpi.S(24));
+                if (pnlScheme != null) pnlScheme.SetBounds(schemeLeft, Dpi.S(52), Math.Max(Dpi.S(260), schemeW2), Dpi.S(200));
+            }
             lastFindX = findX;
             PlaceBrandRow();
             btnLaunch.Left = Dpi.S(findX);
@@ -4146,6 +4161,13 @@ namespace Installer
             btnRestore.Width = Dpi.S(96);
             lblStatus.Width = Dpi.S(W - 2 * Theme.M - 250);
             if (lblNotice != null) { lblNotice.Left = Dpi.S(W - Theme.M - 240); lblNotice.Top = lblStatus.Top; }
+            // 重复嫌疑提示 → 卡片第二行右端（方案/搜索上顶栏后，这行右半边正好空着）
+            if (lblConflict != null)
+            {
+                lblConflict.SetBounds(Dpi.S(W - Theme.M - 330), Dpi.S(56 + 34), Dpi.S(316), Dpi.S(18));
+                lblConflict.TextAlign = ContentAlignment.MiddleRight;
+                lblConflict.BringToFront();
+            }
             // 进度条 / 停止按钮 / 校验条 都从还原按钮右边起步（三者互斥显示，共用同一块）
             {
                 int preLeft = Theme.M + 96 + Theme.G;

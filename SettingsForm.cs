@@ -968,7 +968,10 @@ namespace Installer
             string shown = root;
             if (shown.Length > 62)
                 shown = shown.Substring(0, 16) + "…" + shown.Substring(shown.Length - 42);
-            lblBrandSub.Text = Lang.S("游戏目录 · ") + shown;
+            // 版本号跟在路径后面：系统标题栏撤掉后，界面上得有地方能看到现在跑的是哪一版
+                        Version v0 = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            string verText = v0.Major + "." + v0.Minor + (v0.Build > 0 ? "." + v0.Build : "");
+            lblBrandSub.Text = Lang.S("游戏目录 · ") + shown + Lang.S("　·　v") + verText;
             if (tips != null) tips.SetToolTip(lblBrandSub, root + "\r\n" + Lang.S("点一下进设置改。"));
         }
 
