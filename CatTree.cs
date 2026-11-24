@@ -953,6 +953,9 @@ namespace Installer
         private readonly ListView lv;
         private readonly ListView lvExtra;                 // 下半：可叠加的扩展
         private readonly Label lblTitle, lblCur, lblFoot;
+        // 详情栏底部两颗操作（2026-11-24 设计稿 v1）：只对「划过/选中的那条」生效
+        private FlatButton btnDOpen, btnDShop;
+        private ModGroup peekGroup;                 // 预览/详情当前指向的那一组
         private readonly Label lblExtraTitle;
         private readonly FlatButton btnPick;
         private readonly ToolTip tipExtra;                 // 「可叠加的扩展」小标题的悬停说明
@@ -1086,6 +1089,32 @@ namespace Installer
 
             peek = new CoverPeek();
             Controls.Add(peek);
+
+            btnDOpen = new FlatButton();
+            btnDOpen.Font = Theme.UISmall;     // 默认描边样式：Soft 的胶囊底和详情栏底色太接近，看不出是按钮
+            btnDOpen.Text = Lang.S("打开文件位置");
+            btnDOpen.Visible = false;
+            btnDOpen.Click += delegate
+            {
+                ModItem p = LeadItemOf(peekGroup);
+                if (p == null) return;
+                string target = !string.IsNullOrEmpty(p.Container) ? p.Container : p.FullPath;
+                if (string.IsNullOrEmpty(target)) return;
+                try { System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + target + "\""); } catch { }
+            };
+            Controls.Add(btnDOpen);
+
+            btnDShop = new FlatButton();
+            btnDShop.Font = Theme.UISmall;
+            btnDShop.Text = Lang.S("在工坊查看");
+            btnDShop.Visible = false;
+            btnDShop.Click += delegate
+            {
+                ModItem p = LeadItemOf(peekGroup);
+                if (p == null || string.IsNullOrEmpty(p.WorkshopId)) return;
+                try { System.Diagnostics.Process.Start("https://steamcommunity.com/sharedfiles/filedetails/?id=" + p.WorkshopId); } catch { }
+            };
+            Controls.Add(btnDShop);
 
             // 右栏顶上那行「详情 · 鼠标划过一行看哪条」已删（2026-11-24 用户）：
             // 它是说明书不是信息，占着预览图上面的位置；鼠标划过换详情本身是自明的。
@@ -1306,9 +1335,7 @@ namespace Installer
             };
             v.HideSelection = false;
             ImageList pad = new ImageList();
-            // 这一行决定 ListView 的行高。字体是按 point 放大的，行高还写死 28 的话，
-            // 125% / 150% 下字会顶到上下一行的边界上（前面那一行字的下半截被裁掉）。
-            // 32 = 控件高，列表行和按钮行落在同一条节奏上。
+            // 这一行决定 ListView 的行高。字体是按 point 放大的，行高写死会出现上下相邻行互相顶边。
             pad.ImageSize = new Size(1, Math.Max(16, Dpi.S(Theme.RowH)));
             pad.ColorDepth = ColorDepth.Depth32Bit;
             v.SmallImageList = pad;
@@ -1319,6 +1346,15 @@ namespace Installer
             v.Columns.Add(Lang.S("已装"), 84);                        // 游戏 addons 里有没有这一份
             v.Columns.Add(Lang.S("开关 ⇄"), 62);                        // addonlist 里是 1 还是 0（点一下能翻，⇄ 是这个意思）
             return v;
+        }
+
+        /// <summary>一组里「真正那一份」：优先已在游戏里/已装的，否则取第一片。</summary>
+        private static ModItem LeadItemOf(ModGroup g)
+        {
+            if (g == null) return null;
+            foreach (ModItem p in g.Parts)
+                if (p.FromGame || p.Installed) return p;
+            return g.Parts.Count > 0 ? g.Parts[0] : null;
         }
 
         /// <summary>两列状态：3=已装（在不在游戏里）、4=开关（1/0，可点）。同一条判定给分类列表也用了。</summary>
@@ -3414,6 +3450,7 @@ namespace Installer
                 if (p.FromGame || p.Installed) { lead = p; break; }
             if (lead == null && g.Parts.Count > 0) lead = g.Parts[0];
 
+            peekGroup = g;
             string imgPath = null;
             if (lead != null && string.IsNullOrEmpty(lead.Container) && lead.FullPath != null)
             {
@@ -3897,8 +3934,18 @@ namespace Installer
                 if (detailW > 0)
                 {
                     int dx = x + candW + Theme.G;
-                    // 预览图从卡片最上沿开始，一直顶到最下面：中间那行说明文字删了，空间全给它
-                    peek.SetBounds(dx, 2, Math.Max(Dpi.S(220), detailW), Math.Max(Dpi.S(240), H - 4));
+                    // 预览图从卡片最上沿开始；底部留 32px 给「打开文件位置 / 在工坊查看」
+                    int actH3 = Dpi.S(32), gap3 = Dpi.S(6);
+                    int dW = Math.Max(Dpi.S(220), detailW);
+                    int by3 = H - Dpi.S(2) - actH3;
+                    peek.SetBounds(dx, 2, dW, Math.Max(Dpi.S(240), by3 - Dpi.S(6)));
+                    int half = (dW - gap3) / 2;
+                    btnDOpen.SetBounds(dx, by3, half, actH3);
+                    btnDShop.SetBounds(dx + half + gap3, by3, half, actH3);
+                    btnDOpen.Visible = btnDShop.Visible = lv != null && lv.Visible;
+                    ModItem leadNow = LeadItemOf(peekGroup);
+                    btnDShop.Enabled = leadNow != null && !string.IsNullOrEmpty(leadNow.WorkshopId);
+                    btnDOpen.Enabled = leadNow != null && (!string.IsNullOrEmpty(leadNow.Container) || !string.IsNullOrEmpty(leadNow.FullPath));
                     if (splitB != null)
                     {
                         splitB.Visible = true;
@@ -3907,6 +3954,7 @@ namespace Installer
                 }
                 else
                 {
+                    if (btnDOpen != null) { btnDOpen.Visible = false; btnDShop.Visible = false; }
                     // 详情栏收起后，分栏条贴到最右边并保持可见 —— 以前这里是 Visible=false，
                     // 用户把详情拖没之后就再也找不到「拉回来」的把手了（2026-11-24 用户反馈）。
                     if (splitB != null)
