@@ -1332,20 +1332,124 @@ namespace Installer
             v.MouseMove += delegate(object s3, MouseEventArgs e3)
             {
                 if (v.GetItemAt(e3.X, e3.Y) == null) { tipRow.Hide(v); tipShownAt = -1; }
+                // 自绘行要自己记悬停：不然鼠标划过没有任何反馈
+                ListViewItem hit = v.GetItemAt(e3.X, e3.Y);
+                int want = hit == null ? -1 : hit.Index;
+                if (want != candHoverRow) { candHoverRow = want; v.Invalidate(); }
             };
+            v.MouseLeave += delegate { if (candHoverRow != -1) { candHoverRow = -1; v.Invalidate(); } };
             v.HideSelection = false;
             ImageList pad = new ImageList();
-            // 这一行决定 ListView 的行高。字体是按 point 放大的，行高写死会出现上下相邻行互相顶边。
-            pad.ImageSize = new Size(1, Math.Max(16, Dpi.S(Theme.RowH)));
+            // 行高 50：够放 56x31 的缩略图 + 上下各 9px 呼吸。字体按 point 放大，
+            // 行高写死会出现上下相邻行互相顶边，所以还是走 ImageList 这一档。
+            pad.ImageSize = new Size(1, Dpi.S(50));
             pad.ColorDepth = ColorDepth.Depth32Bit;
             v.SmallImageList = pad;
-            v.StateImageList = Dots();
+            // 自绘行：缩略图、加粗名称、选中左竖条都由自己画（ListView 的 ImageList 不画图，前面试过回滚了）
+            v.OwnerDraw = true;
+            v.DrawColumnHeader += delegate { };                    // 表头是自绘的 ColHead，这里不用管
+            v.DrawItem += delegate { };                            // 整个行的底色在 DrawSubItem 里一格一格铺
+            v.DrawSubItem += CandDrawSubItem;
             v.Columns.Add(firstCol, 380);
             v.Columns.Add(Lang.S("改了什么"), 100);
             v.Columns.Add(Lang.S("大小"), 74).TextAlign = HorizontalAlignment.Right;
             v.Columns.Add(Lang.S("已装"), 84);                        // 游戏 addons 里有没有这一份
             v.Columns.Add(Lang.S("开关 ⇄"), 62);                        // addonlist 里是 1 还是 0（点一下能翻，⇄ 是这个意思）
             return v;
+        }
+
+        // ---------------------------------------------------------------- 候选行自绘
+
+        private int candHoverRow = -1;
+        private readonly Dictionary<string, Image> thumbImg =
+            new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>候选项的 56×31 缩略图（16:9）（封面缓存 640×360 居中裁切）。同一张只解码一次。</summary>
+        private Image ThumbFor(ModGroup g)
+        {
+            ModItem lead = LeadItemOf(g);
+            if (lead == null || string.IsNullOrEmpty(lead.FullPath)) return null;
+            string path;
+            try { path = Cover.For(lead.FullPath); } catch { return null; }
+            if (string.IsNullOrEmpty(path)) return null;
+            Image img;
+            if (thumbImg.TryGetValue(path, out img)) return img;
+            if (thumbImg.Count > 160) return null;
+            try
+            {
+                if (!System.IO.File.Exists(path)) return null;
+                byte[] raw = System.IO.File.ReadAllBytes(path);
+                using (System.IO.MemoryStream ms = new System.IO.MemoryStream(raw))
+                using (Image src = Image.FromStream(ms))
+                {
+                    int tw = Dpi.S(56), th = Dpi.S(31);
+                    Bitmap b = new Bitmap(tw, th);
+                    using (Graphics gg = Graphics.FromImage(b))
+                    {
+                        gg.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
+                        gg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                        float sc = Math.Max((float)tw / src.Width, (float)th / src.Height);
+                        int dw = (int)Math.Ceiling(src.Width * sc), dh = (int)Math.Ceiling(src.Height * sc);
+                        gg.DrawImage(src, new Rectangle((tw - dw) / 2, (th - dh) / 2, dw, dh));
+                    }
+                    thumbImg[path] = b;
+                    return b;
+                }
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// 一格一格画候选行。名称列左边是 48×27 缩略图，已勾选的行左边压一条 2px 主色竖条。
+        /// </summary>
+        private void CandDrawSubItem(object sender, DrawListViewSubItemEventArgs e)
+        {
+            ListView lvv = sender as ListView;
+            if (lvv == null || e.Item == null) return;
+            Graphics g2 = e.Graphics;
+            bool sel = e.Item.Selected;
+            Color bg = sel ? Theme.TreeSel
+                     : (e.ItemIndex == candHoverRow ? Theme.TreeHover : Theme.Surface);
+            using (SolidBrush b = new SolidBrush(bg)) g2.FillRectangle(b, e.Bounds);
+
+            bool on = e.Item.StateImageIndex == 1;
+            if (e.ColumnIndex == 0)
+            {
+                if (on)
+                    using (SolidBrush ac = new SolidBrush(Theme.Accent))
+                        g2.FillRectangle(ac, e.Bounds.Left, e.Bounds.Top + 6, Dpi.S(2), e.Bounds.Height - 12);
+
+                int th = Dpi.S(31), tw = Dpi.S(56);
+                Rectangle tr = new Rectangle(e.Bounds.Left + Dpi.S(8), e.Bounds.Top + (e.Bounds.Height - th) / 2, tw, th);
+                Image im = (e.Item.Tag is ModGroup) ? ThumbFor((ModGroup)e.Item.Tag) : null;
+                if (im != null)
+                    g2.DrawImage(im, tr);
+                else
+                {
+                    // 没封面就留一块极淡的底，不画边框：画了框会像"加载失败"
+                    using (SolidBrush ph = new SolidBrush(Theme.SurfaceAlt)) g2.FillRectangle(ph, tr);
+                }
+
+                int tx = tr.Right + Dpi.S(10);
+                Rectangle tr2 = new Rectangle(tx, e.Bounds.Top, Math.Max(Dpi.S(20), e.Bounds.Right - tx - Dpi.S(6)), e.Bounds.Height);
+                Color ink = on ? Theme.Ink : Theme.Ink2;
+                Font f = on ? Theme.UIBold : Theme.UI;
+                TextRenderer.DrawText(g2, e.Item.Text, f, tr2, ink,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+                    | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                return;
+            }
+
+            // 其余列：沿用每列自己的字色/字号，只把对齐和截断补齐
+            ListViewItem.ListViewSubItem sub = e.SubItem;
+            Color sc2 = (sub != null && sub.ForeColor != Color.Empty) ? sub.ForeColor
+                     : (e.ColumnIndex == 4 ? Theme.Ink3 : Theme.Ink2);
+            Font sf = (sub != null) ? sub.Font : Theme.UI;
+            TextFormatFlags fl = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
+            fl |= (e.ColumnIndex == 2) ? TextFormatFlags.Right : TextFormatFlags.Left;
+            Rectangle cell = e.Bounds;
+            cell.Inflate(-Dpi.S(4), 0);
+            TextRenderer.DrawText(g2, e.SubItem == null ? "" : e.SubItem.Text, sf, cell, sc2, fl);
         }
 
         /// <summary>一组里「真正那一份」：优先已在游戏里/已装的，否则取第一片。</summary>
