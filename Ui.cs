@@ -41,7 +41,7 @@ namespace Installer
         private LoadingPane lblLoading;          // 读取/重扫期间的加载占位（启动报步骤 / 重扫报细条），平时藏着
         private CatTree treeView;                // 方案树：按「能替换的东西」看，一个位置只留一个 MOD
         private Label lblStatus, lblConflict;
-        private Label lblBrand, lblBrandSub;     // 顶栏标题区：产品名 + 当前游戏目录（点进设置）
+        private Label lblBrand, lblBrandSub, lblBrandVer;     // 顶栏标题区：产品名 + 当前游戏目录（点进设置）
         private string statusBase = "", wsSuffix = "";   // 状态行正文 + 「工坊：离线」这类的常驻后缀
         // 底栏总高（设计值）：按钮行 36 + 间距 12 + 状态栏 20 + 触底 8。
         // 原来是 116，按钮下面空出 68px，「下巴」明显偏厚；收到 76 之后按钮行和状态栏只隔 12px。
@@ -104,12 +104,16 @@ namespace Installer
             int w0 = Math.Min(Dpi.S(1440), Math.Max(Dpi.S(1120), wa.Width - Dpi.S(100)));
             int h0 = Math.Min(Dpi.S(940), Math.Max(Dpi.S(740), wa.Height - Dpi.S(80)));
             ClientSize = new Size(Math.Min(w0, wa.Width - Dpi.S(20)), Math.Min(h0, wa.Height - Dpi.S(20)));
+            // 无边框窗口：系统标题栏在深色界面里永远是一块浅色、还比顶栏高，
+            // 所以整窗自己画。拖拽/贴边/缩放/最大化都由下面的 WndProc 接管。
+            FormBorderStyle = FormBorderStyle.None;
             Font = Theme.UI;
             DoubleBuffered = true;
             SetStyle(ControlStyles.ResizeRedraw, true);   // 顶栏/底栏那两条线要跟着尺寸重画
             KeyPreview = true;
             StartPosition = FormStartPosition.CenterScreen;
             BuildUi();
+            BuildCaption();
             Core.Sink = AppendLog;
 
             if (gameRootHint != null && Core.TestGame(gameRootHint)) txtGame.Text = gameRootHint;
@@ -123,6 +127,7 @@ namespace Installer
             Load += delegate
             {
                 Theme.ApplyChrome(this);
+                Native.AddShadow(Handle);          // 无边框窗口默认没投影，补一层 DWM 边距把它要回来
                 // 表头、滚动条这些由系统绘制的部件，句柄一建好就要打招呼，
                 // 拖到 Shown 有些情况下已经画过一帧了
                 Theme.DeepNative(this);
@@ -461,6 +466,18 @@ namespace Installer
             lblBrand.SetBounds(Theme.M, 6, 340, 26);
             Controls.Add(lblBrand);
 
+            // 系统标题栏撤掉之后，版本号改成顶栏里的一行小字（任务栏标题里还是带着的）
+            lblBrandVer = new Label();
+            lblBrandVer.Font = Theme.UISmall;
+            lblBrandVer.ForeColor = Theme.Ink3;
+            lblBrandVer.BackColor = Color.Transparent;
+            lblBrandVer.AutoSize = true;
+            lblBrandVer.Text = "v" + (System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.Major
+                + "." + System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.Minor
+                + (System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.Build > 0
+                    ? "." + System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.Build : ""));
+            Controls.Add(lblBrandVer);
+
             lblBrandSub = new Label();
             lblBrandSub.Font = Theme.UISmall;
             lblBrandSub.ForeColor = Theme.Ink3;
@@ -482,7 +499,8 @@ namespace Installer
             const int topGap = 8;
             // 顶栏分三组：启动项·工坊（对象操作）| 总览·设置·刷新（视图与状态）| 主操作
             const int groupGap = 22;
-            int installX = W - Theme.M - installW;
+            int capX = CapStartX(W);
+            int installX = capX - Dpi.S(18) - installW;
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
             int viewX = settingsX - groupGap - viewW;
@@ -3822,7 +3840,156 @@ namespace Installer
             int subRight = showC ? right - cw - Dpi.S(8) : right;
             int w = Math.Max(Dpi.S(120), subRight - Dpi.S(Theme.M));
             lblBrand.Width = w;
+            if (lblBrandVer != null)
+            {
+                Size ts = TextRenderer.MeasureText(lblBrand.Text, lblBrand.Font);
+                lblBrandVer.Location = new Point(Dpi.S(Theme.M) + ts.Width + Dpi.S(8), Dpi.S(14));
+            }
             lblBrandSub.Width = w;
+        }
+
+        // ---------------------------------------------------------------- 自绘标题栏
+
+        private CaptionButton capMin, capMax, capClose;
+        private const int CapW = 44;          // 单颗按钮宽（≥32 命中区）
+        private const int CapH = 30;
+
+        /// <summary>顶栏右端那三颗窗口键。位置在 ApplyResponsive 里跟着窗口宽度算。</summary>
+        private void BuildCaption()
+        {
+            capMin = new CaptionButton(); capMin.Button = CaptionButton.Kind.Min;
+            capMax = new CaptionButton(); capMax.Button = CaptionButton.Kind.Max;
+            capClose = new CaptionButton(); capClose.Button = CaptionButton.Kind.Close;
+
+            capMin.Click += delegate { WindowState = FormWindowState.Minimized; };
+            capMax.Click += delegate
+            {
+                WindowState = WindowState == FormWindowState.Maximized
+                    ? FormWindowState.Normal : FormWindowState.Maximized;
+                SyncCaptionState();
+            };
+            capClose.Click += delegate { Close(); };
+
+            Controls.Add(capMin); Controls.Add(capMax); Controls.Add(capClose);
+            capMin.BringToFront(); capMax.BringToFront(); capClose.BringToFront();
+
+            // 顶栏空白处和标题文字都可以拖窗口：交给系统做，贴边吸附和双击最大化都是现成的
+            lblBrand.Cursor = Cursors.Default;
+            lblBrand.MouseDown += delegate(object s2, MouseEventArgs e2) { if (e2.Button == MouseButtons.Left) Native.DragMove(Handle); };
+            lblBrand.DoubleClick += delegate { ToggleMax(); };
+            MouseDown += delegate(object s2, MouseEventArgs e2)
+            {
+                if (e2.Button == MouseButtons.Left && e2.Y < Dpi.S(56)) Native.DragMove(Handle);
+            };
+            DoubleClick += delegate { ToggleMax(); };
+            Resize += delegate { SyncCaptionState(); };
+            ApplyResponsive();          // 位置按窗口宽度算：BuildUi 那次还不知道这三颗按钮存在
+            SyncCaptionState();
+        }
+
+        private void ToggleMax()
+        {
+            WindowState = WindowState == FormWindowState.Maximized
+                ? FormWindowState.Normal : FormWindowState.Maximized;
+            SyncCaptionState();
+        }
+
+        /// <summary>窗口键组的左边界（设计值）：贴右 8px，三颗并排。</summary>
+        private int CapStartX(int W) { return W - 8 - CapW * 3; }
+
+        /// <summary>不管尺寸有没有变，都把三颗窗口键摆到顶栏右上角。</summary>
+        private void PlaceCaption(int physW)
+        {
+            if (capMin == null) return;
+            int W = Dpi.Un(physW);
+            int x = Dpi.S(CapStartX(W));
+            int y = Dpi.S((56 - CapH) / 2);
+            int w = Dpi.S(CapW), h = Dpi.S(CapH);
+            capMin.SetBounds(x, y, w, h);
+            capMax.SetBounds(x + w, y, w, h);
+            capClose.SetBounds(x + 2 * w, y, w, h);
+            capMin.BringToFront(); capMax.BringToFront(); capClose.BringToFront();
+        }
+
+        private void SyncCaptionState()
+        {
+            if (capMax == null) return;
+            capMax.Button = WindowState == FormWindowState.Maximized
+                ? CaptionButton.Kind.Restore : CaptionButton.Kind.Max;
+        }
+
+        // WM_NCHITTEST：无边框后四条边要自己认，不然窗口拉不动
+        private const int WM_NCHITTEST = 0x0084;
+        private const int WM_GETMINMAXINFO = 0x0024;
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct POINTAPI { public int X, Y; }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct MINMAXINFO
+        {
+            public POINTAPI ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptMaxTrackSize;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct RECTAPI { public int Left, Top, Right, Bottom; }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct MONITORINFO
+        {
+            public int cbSize; public RECTAPI rcMonitor, rcWork; public int dwFlags;
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromWindow(IntPtr hwnd, int flags);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool GetMonitorInfo(IntPtr mon, ref MONITORINFO mi);
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_NCHITTEST && WindowState == FormWindowState.Normal)
+            {
+                // lParam 是屏幕坐标（低 16 位 x、高 16 位 y，带符号）
+                int sx = unchecked((short)(long)m.LParam);
+                int sy = unchecked((short)((long)m.LParam >> 16));
+                Point p = PointToClient(new Point(sx, sy));
+                int b = Dpi.S(6);
+                bool l = p.X <= b, r = p.X >= ClientSize.Width - b;
+                bool t = p.Y <= b, bo = p.Y >= ClientSize.Height - b;
+                int hit = 0;
+                if (t && l) hit = 13;             // HTTOPLEFT
+                else if (t && r) hit = 14;         // HTTOPRIGHT
+                else if (bo && l) hit = 16;        // HTBOTTOMLEFT
+                else if (bo && r) hit = 17;        // HTBOTTOMRIGHT
+                else if (l) hit = 10;              // HTLEFT
+                else if (r) hit = 11;              // HTRIGHT
+                else if (t) hit = 12;              // HTTOP
+                else if (bo) hit = 15;             // HTBOTTOM
+                if (hit != 0) { m.Result = (IntPtr)hit; return; }
+            }
+            else if (m.Msg == WM_GETMINMAXINFO)
+            {
+                // 无边框窗口最大化默认会盖住任务栏：按显示器工作区给尺寸
+                try
+                {
+                    MINMAXINFO mmi = (MINMAXINFO)System.Runtime.InteropServices.Marshal.PtrToStructure(
+                        m.LParam, typeof(MINMAXINFO));
+                    IntPtr mon = MonitorFromWindow(Handle, 2 /*MONITOR_DEFAULTTONEAREST*/);
+                    MONITORINFO mi = new MONITORINFO();
+                    mi.cbSize = System.Runtime.InteropServices.Marshal.SizeOf(typeof(MONITORINFO));
+                    if (GetMonitorInfo(mon, ref mi))
+                    {
+                        mmi.ptMaxPosition.X = mi.rcWork.Left - mi.rcMonitor.Left;
+                        mmi.ptMaxPosition.Y = mi.rcWork.Top - mi.rcMonitor.Top;
+                        mmi.ptMaxSize.X = mi.rcWork.Right - mi.rcWork.Left;
+                        mmi.ptMaxSize.Y = mi.rcWork.Bottom - mi.rcWork.Top;
+                        System.Runtime.InteropServices.Marshal.StructureToPtr(mmi, m.LParam, true);
+                    }
+                }
+                catch { }
+            }
+            base.WndProc(ref m);
         }
 
         private void ApplyResponsive()
@@ -3832,6 +3999,7 @@ namespace Installer
             // 尺寸判定「没变」就整段跳过，而锚点已经先把按钮挪到了旧位置 ——
             // 结果底下空出一大块、按钮还贴着窗口外面（2026-11-19 实测 1431×737 整排掉下去）。
             PinBottomRow(physH);
+            PlaceCaption(physW);       // 三颗窗口键只跟宽度有关，不能放在尺寸早退之后
             Core.Log("INFO", "GEOM 客户区 " + physW + "x" + physH + " 缩放 " + Dpi.Factor
                 + " | gMod " + (gMod == null ? "null" : ("top=" + gMod.Top + " h=" + gMod.Height + " bottom=" + (gMod.Top + gMod.Height)))
                 + " | 状态行 top=" + (lblStatus == null ? -1 : lblStatus.Top)
@@ -3930,7 +4098,7 @@ namespace Installer
                 // 底部动作区同理：Anchor 只在「距底多远」这一维上跟，自检里连着改几档尺寸时
                 // 会一路漂（窗口缩回 900 却还停在 200% 的位置），所以每次按设计值钉死。
                 btnInstall.Top = Dpi.S(16);
-                btnInstall.Left = Dpi.S(W - Theme.M - 124);
+                btnInstall.Left = Dpi.S(CapStartX(W) - 18 - 124);   // 让开右上角三颗窗口键
                 btnRestore.Top = Dpi.S(H - BottomBarH);
                 bar.Top = Dpi.S(H - 26);
                 btnCancel.Top = Dpi.S(H - 34);
@@ -3954,7 +4122,7 @@ namespace Installer
             const int groupGap = 22;
             const int installW = 124;
             const int refreshW = 52;
-            int installX = W - Theme.M - installW;
+            int installX = CapStartX(W) - 18 - installW;      // 让开右上角三颗窗口键
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
             int viewX = settingsX - groupGap - viewW;

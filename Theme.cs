@@ -1545,6 +1545,38 @@ namespace Installer
             catch { }
         }
 
+        /// <summary>把「按在窗口上拖」交给系统做：贴边吸附、双击最大化、多屏都给得准。</summary>
+        public static void DragMove(IntPtr hwnd)
+        {
+            try
+            {
+                ReleaseCapture();
+                SendMessage(hwnd, 0x00A1 /*WM_NCLBUTTONDOWN*/, (IntPtr)2 /*HTCAPTION*/, IntPtr.Zero);
+            }
+            catch { }
+        }
+
+        /// <summary>无边框窗口默认没有投影，补一层 DWM 的玻璃边距把阴影要回来。</summary>
+        public static void AddShadow(IntPtr hwnd)
+        {
+            try
+            {
+                MARGINS mg = new MARGINS();
+                mg.cxLeftWidth = 1; mg.cxRightWidth = 1; mg.cyTopHeight = 1; mg.cyBottomHeight = 1;
+                DwmExtendFrameIntoClientArea(hwnd, ref mg);
+            }
+            catch { }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MARGINS { public int cxLeftWidth, cxRightWidth, cyTopHeight, cyBottomHeight; }
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS m);
+
+        [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
         public static void RoundCorners(IntPtr hwnd)
         {
             try
@@ -1772,6 +1804,80 @@ namespace Installer
                 }
             }
             catch { }
+        }
+    }
+
+    /// <summary>
+    /// 标题栏上的三个系统键（最小化 / 最大化·还原 / 关闭）。
+    /// 系统自带的在深色界面里永远是一块浅色、还比我们的顶栏高，所以整窗改成无边框、自己画。
+    /// 尺寸和命中区都 ≥ 32×32，鼠标划过有底色，关闭键悬停是系统那个红。
+    /// </summary>
+    internal class CaptionButton : Control
+    {
+        public enum Kind { Min, Max, Restore, Close }
+
+        private Kind kind = Kind.Min;
+        public Kind Button
+        {
+            get { return kind; }
+            set { if (kind == value) return; kind = value; Invalidate(); }
+        }
+
+        private bool hover, down;
+
+        public CaptionButton()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
+                   | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            Cursor = Cursors.Hand;
+            TabStop = false;
+            BackColor = Theme.Surface;
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { hover = false; down = false; Invalidate(); base.OnMouseLeave(e); }
+        protected override void OnMouseDown(MouseEventArgs e) { down = true; Invalidate(); base.OnMouseDown(e); }
+        protected override void OnMouseUp(MouseEventArgs e) { down = false; Invalidate(); base.OnMouseUp(e); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            bool close = kind == Kind.Close;
+            // 平时完全透明：跟着顶栏的底色走，不然三颗按钮会像贴了三块浅色补丁
+            g.Clear(Parent != null ? Parent.BackColor : Theme.Bg);
+            if (hover)
+            {
+                Color bg = close ? Color.FromArgb(196, 43, 28) : Theme.BtnHover;
+                if (down) bg = close ? Color.FromArgb(160, 32, 20) : Theme.BtnDown;
+                using (SolidBrush b = new SolidBrush(bg)) g.FillRectangle(b, ClientRectangle);
+            }
+
+            Color ink = (close && hover) ? Color.White : Theme.Ink2;
+            using (Pen p = new Pen(ink, Math.Max(1f, Dpi.S(1))))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                int s = Dpi.S(10);                       // 图形本体 10×10，居中
+                int cx = (Width - s) / 2, cy = (Height - s) / 2;
+                switch (kind)
+                {
+                    case Kind.Min:
+                        g.DrawLine(p, cx, cy + s - Dpi.S(1), cx + s, cy + s - Dpi.S(1));
+                        break;
+                    case Kind.Max:
+                        g.DrawRectangle(p, cx, cy, s - 1, s - 1);
+                        break;
+                    case Kind.Restore:
+                        g.DrawRectangle(p, cx, cy + Dpi.S(2), s - Dpi.S(3), s - Dpi.S(3));
+                        g.DrawLine(p, cx + Dpi.S(2), cy + Dpi.S(2), cx + Dpi.S(2), cy);
+                        g.DrawLine(p, cx + Dpi.S(2), cy, cx + s - 1, cy);
+                        g.DrawLine(p, cx + s - 1, cy, cx + s - 1, cy + s - Dpi.S(2));
+                        break;
+                    case Kind.Close:
+                        g.DrawLine(p, cx, cy, cx + s - 1, cy + s - 1);
+                        g.DrawLine(p, cx + s - 1, cy, cx, cy + s - 1);
+                        break;
+                }
+            }
         }
     }
 }
