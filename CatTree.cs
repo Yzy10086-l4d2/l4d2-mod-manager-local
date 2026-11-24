@@ -953,6 +953,8 @@ namespace Installer
         private readonly ListView lv;
         private readonly ListView lvExtra;                 // 下半：可叠加的扩展
         private readonly Label lblTitle, lblCur, lblFoot;
+        // 候选只有两三条时，列表底下会剩一大片黑 —— 那块别留白，换成"就这些 + 去工坊找更多"
+        private Label lblCandVoid;
         // 详情栏底部两颗操作（2026-11-24 设计稿 v1）：只对「划过/选中的那条」生效
         private FlatButton btnDOpen, btnDShop;
         private ModGroup peekGroup;                 // 预览/详情当前指向的那一组
@@ -1086,6 +1088,22 @@ namespace Installer
             splitB = MakeSplit();
             Controls.Add(splitA);
             Controls.Add(splitB);
+
+            lblCandVoid = new Label();
+            lblCandVoid.Font = Theme.UISmall;
+            lblCandVoid.ForeColor = Theme.Ink3;
+            lblCandVoid.BackColor = Color.Transparent;
+            lblCandVoid.AutoSize = false;
+            lblCandVoid.TextAlign = ContentAlignment.MiddleCenter;
+            lblCandVoid.AutoEllipsis = true;
+            lblCandVoid.Cursor = Cursors.Hand;
+            lblCandVoid.Visible = false;
+            lblCandVoid.Click += delegate
+            {
+                if (Current == null || mf == null) return;
+                mf.OpenWorkshopFor(Current.Name);
+            };
+            Controls.Add(lblCandVoid);
 
             peek = new CoverPeek();
             Controls.Add(peek);
@@ -4187,6 +4205,25 @@ namespace Installer
                             recGrid.Visible = true;
                         }
                     }
+                }
+            }
+
+            // 列表只有几条时，底下那一大片换成一句说明 + 工坊入口，别留纯黑
+            if (lblCandVoid != null)
+            {
+                int rows = lv == null ? 0 : lv.Items.Count;
+                int rowH = Dpi.S(50);
+                if (rows > 0 && lv.Visible) { try { rowH = lv.GetItemRect(0).Height; } catch { } }
+                int usedH = rows * rowH;
+                int freeH = (lv == null ? 0 : lv.Height) - usedH;
+                bool showVoid = lv != null && lv.Visible && rows > 0 && Current != null && freeH > Dpi.S(64);
+                lblCandVoid.Visible = showVoid;
+                if (showVoid)
+                {
+                    lblCandVoid.Text = Lang.F("这个位置只有 {0} 个 MOD", rows)
+                        + Lang.S("　·　去工坊找更多 →");
+                    lblCandVoid.SetBounds(lv.Left + Dpi.S(8), lv.Top + usedH + Dpi.S(10),
+                        Math.Max(Dpi.S(160), lv.Width - Dpi.S(16)), Dpi.S(22));
                 }
             }
 
