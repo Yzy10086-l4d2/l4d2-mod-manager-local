@@ -170,6 +170,44 @@ namespace Installer
                     p.AddRectangle(new RectangleF(6.9f, 6.9f, 2.2f, 2.2f));
                     return p;
 
+                // ---- 顶栏工具图标（2026-11-24 设计稿 v1）：和分类图标同一套实心剪影
+                case "ui-bolt":          // 启动项
+                    p.AddPolygon(new PointF[] {
+                        new PointF(9.8f, 0.8f), new PointF(3.6f, 9.4f), new PointF(7.5f, 9.4f),
+                        new PointF(6.4f, 15.2f), new PointF(12.6f, 6.6f), new PointF(8.7f, 6.6f) });
+                    return p;
+
+                case "ui-shop":          // 工坊：下箭头 + 托盘
+                    p.AddPolygon(new PointF[] {
+                        new PointF(6.5f, 1.6f), new PointF(9.5f, 1.6f), new PointF(9.5f, 6.8f),
+                        new PointF(12.2f, 6.8f), new PointF(8.0f, 11.4f), new PointF(3.8f, 6.8f),
+                        new PointF(6.5f, 6.8f) });
+                    p.AddRectangle(new RectangleF(2.2f, 12.4f, 11.6f, 2.0f));
+                    return p;
+
+                case "ui-grid":          // 总览：四宫格
+                    p.AddRectangle(new RectangleF(2.0f, 2.0f, 5.3f, 5.3f));
+                    p.AddRectangle(new RectangleF(8.7f, 2.0f, 5.3f, 5.3f));
+                    p.AddRectangle(new RectangleF(2.0f, 8.7f, 5.3f, 5.3f));
+                    p.AddRectangle(new RectangleF(8.7f, 8.7f, 5.3f, 5.3f));
+                    return p;
+
+                case "ui-tune":          // 设置：两条滑轨 + 两个把手（三条会读成"菜单"，这里只要两粗一细）
+                    p.AddRectangle(new RectangleF(2.2f, 4.4f, 11.6f, 2.0f));
+                    p.AddRectangle(new RectangleF(2.2f, 9.6f, 11.6f, 2.0f));
+                    p.AddRectangle(new RectangleF(3.6f, 2.8f, 3.4f, 5.2f));
+                    p.AddRectangle(new RectangleF(9.0f, 8.0f, 3.4f, 5.2f));
+                    return p;
+
+                case "ui-refresh":       // 刷新：圆环 + 缺口箭头（Alternate 挖空）
+                    p.Dispose();
+                    p = New(FillMode.Alternate);
+                    p.AddEllipse(2.6f, 2.6f, 10.8f, 10.8f);
+                    p.AddEllipse(5.0f, 5.0f, 6.0f, 6.0f);
+                    p.AddPolygon(new PointF[] {
+                        new PointF(10.2f, 0.6f), new PointF(14.4f, 4.8f), new PointF(10.2f, 4.8f) });
+                    return p;
+
                 case "misc":
                     // 工具箱：箱体 + 提手（提手用 Alternate 挖空）+ 中间搭扣。
                     // 原来画的是两个叠着的方块，17px 下看不出是什么，用户也点出来「没含义」。

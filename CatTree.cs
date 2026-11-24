@@ -3425,23 +3425,25 @@ namespace Installer
                     applyingMulti = false;
                 }
                 lblTitle.Text = s.Name;
+                // 面包屑（2026-11-24 设计稿 v1）：先说清"我在树的哪一层"，再说这个位置的状态
+                string crumb = s.Cat + (string.IsNullOrEmpty(s.Sub) || s.Sub == s.Cat ? "" : "›" + s.Sub) + " · ";
                 if (s.Empty)
                 {
                     // 空位：不是「忘了选」，是这个位置压根还没有包 —— 话说清楚，别让人以为坏了
-                    lblCur.Text = Lang.S("这个位置还没有 MOD · 游戏里就是原版");
+                    lblCur.Text = crumb + Lang.S("这个位置还没有 MOD · 游戏里就是原版");
                 }
                 else if (s.Cat == "平台")
                 {
-                    lblCur.Text = n == 0
+                    lblCur.Text = crumb + (n == 0
                         ? "平台可以同时开好几个 · 共 " + s.Items.Count + " 个"
-                        : "已开 " + n + " 个平台 · 多个平台能一起用（它们是底座，不抢位置）";
+                        : "已开 " + n + " 个平台 · 多个平台能一起用（它们是底座，不抢位置）");
                 }
                 else if (s.Pile)
                 {
                     // 一堆：能同时开好几个，「叠了 N 件」这种话在这里是正常的，不是警告
-                    lblCur.Text = n == 0
+                    lblCur.Text = crumb + (n == 0
                         ? "这一堆还没勾 · 共 " + s.Items.Count + " 个，能同时开好几个"
-                        : "这一堆已勾 " + n + " 个 · 会一起装，冲不冲突自己确认";
+                        : "这一堆已勾 " + n + " 个 · 会一起装，冲不冲突自己确认");
                 }
                 else
                 {
@@ -3452,10 +3454,10 @@ namespace Installer
                     foreach (ModGroup g in s.Items)
                         foreach (ModItem p in g.Parts)
                             if ((p.Installed || p.FromGame) && p.AddonOn) { live.Add(g); break; }
-                    if (live.Count == 0) lblCur.Text = Lang.S("游戏里还是原版（这个位置没有开着的 MOD）");
+                    if (live.Count == 0) lblCur.Text = crumb + Lang.S("游戏里还是原版（这个位置没有开着的 MOD）");
                     else if (live.Count == 1)
                     {
-                        string txt = Lang.F("当前：{0}", live[0].Show);
+                        string txt = crumb + Lang.F("当前：{0}", live[0].Show);
                         ModGroup pick = ChosenOf(s);
                         if (pick != null && pick != live[0]) txt += "　（已选：" + pick.Show + "，未启用）";
                         lblCur.Text = txt;
@@ -3463,7 +3465,7 @@ namespace Installer
                     else
                     {
                         System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                        sb.Append("同一位置开着 ").Append(live.Count).Append(" 个：");
+                        sb.Append(crumb).Append("同一位置开着 ").Append(live.Count).Append(" 个：");
                         for (int i = 0; i < live.Count && i < 3; i++)
                             sb.Append(i > 0 ? "、" : "").Append(live[i].Show);
                         // 开了「允许多选」的位置是有意叠着的，别报警；没开的才提醒会互相覆盖

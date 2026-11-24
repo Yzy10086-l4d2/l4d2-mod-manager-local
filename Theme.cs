@@ -949,6 +949,14 @@ namespace Installer
             set { if (plain == value) return; plain = value; Invalidate(); }
         }
 
+        private string icon = "";
+        /// <summary>按钮左侧的剪影图标键名（Glyph 那套）。空 = 纯文字，沿用原来的居中排版。</summary>
+        public string Icon
+        {
+            get { return icon; }
+            set { string v = value ?? ""; if (icon == v) return; icon = v; Invalidate(); }
+        }
+
         private bool soft;
         /// <summary>浅灰胶囊按钮：iOS 的 gray tinted 次要操作。不用描边也能看出这是按钮。</summary>
         public bool Soft
@@ -997,6 +1005,29 @@ namespace Installer
             SetFace(TargetFace());
             Invalidate();
             base.OnEnabledChanged(e);
+        }
+
+        /// <summary>画按钮内容：没有图标就居中文字；有图标就「图标 + 6px 间距 + 文字」整体居中。</summary>
+        private void PaintLabel(Graphics g, Rectangle r, Color ink)
+        {
+            if (string.IsNullOrEmpty(icon))
+            {
+                TextRenderer.DrawText(g, Text, Font, r, ink,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
+                    | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+                return;
+            }
+            int iw = Dpi.S(15);
+            int gap = Dpi.S(6);
+            Size ts = TextRenderer.MeasureText(Text, Font);
+            int total = iw + gap + ts.Width;
+            int x = r.Left + Math.Max(Dpi.S(2), (r.Width - total) / 2);
+            Glyph.Draw(g, icon, new Rectangle(x, r.Top + (r.Height - iw) / 2, iw, iw), ink);
+            int tx = x + iw + gap;
+            Rectangle tr = new Rectangle(tx, r.Top, Math.Max(Dpi.S(8), r.Right - tx - Dpi.S(2)), r.Height);
+            TextRenderer.DrawText(g, Text, Font, tr, ink,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+                | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
         }
 
         private Color TargetFace()
@@ -1102,9 +1133,7 @@ namespace Installer
                     }
                 }
                 Color pink = Enabled ? Theme.Ink : Theme.Ink3;
-                TextRenderer.DrawText(g, Text, Font, r, pink,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
-                    | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+                PaintLabel(g, r, pink);
                 if (Focused && ShowFocusCues)
                     ControlPaint.DrawFocusRectangle(g, new Rectangle(3, 3, Width - 7, Height - 7), pink, pbg);
                 return;
@@ -1116,9 +1145,7 @@ namespace Installer
                 using (Pen pen = new Pen(edge)) g.DrawPath(pen, p);
             }
 
-            TextRenderer.DrawText(g, Text, Font, r, ink,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
-                | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+            PaintLabel(g, r, ink);
 
             if (Focused && ShowFocusCues)
                 ControlPaint.DrawFocusRectangle(g, new Rectangle(3, 3, Width - 7, Height - 7), ink, face);
