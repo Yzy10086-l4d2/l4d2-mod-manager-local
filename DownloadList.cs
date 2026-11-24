@@ -320,6 +320,7 @@ namespace Installer
                 if (keep.Length > 0 && d.Id == keep && keepIdx < 0) keepIdx = i;
             }
             lv.EndUpdate();
+            lv.Invalidate();          // 自绘模式：批量换过条目必须显式重绘，否则留下上一次的像素
             if (keepIdx >= 0)
             {
                 lv.Items[keepIdx].Selected = true;

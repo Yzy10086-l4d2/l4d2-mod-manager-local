@@ -494,13 +494,13 @@ namespace Installer
             txtGame.DropDownStyle = ComboBoxStyle.DropDown; Theme.Dress(txtGame); Controls.Add(txtGame);
             txtGame.Visible = false;
             txtGame.TextChanged += delegate { QueuePrecheck(); };
-            btnLaunch = new FlatButton(); btnLaunch.Soft = true; btnLaunch.Text = Lang.S("启动项"); btnLaunch.SetBounds(findX, 16, findW, Theme.H);
+            btnLaunch = new FlatButton(); btnLaunch.Plain = true; btnLaunch.Text = Lang.S("启动项"); btnLaunch.SetBounds(findX, 16, findW, Theme.H);
             btnLaunch.AccessibleName = "启动项组合";
             btnLaunch.Click += delegate { using (LaunchCatalogForm f = new LaunchCatalogForm()) f.ShowDialog(this); };
             tips.SetToolTip(btnLaunch, "自己组合启动项：勾要用的开关，一键复制组合，去 Steam 里粘。\r\n找游戏目录仍在「设置」里（自动找 / 浏览…）。");
             Controls.Add(btnLaunch);
             // 工坊导入：入口放顶栏而不是藏在设置里 —— 这是「往库里加东西」的主路径之一
-            btnWorkshop = new FlatButton(); btnWorkshop.Text = Lang.S("工坊");
+            btnWorkshop = new FlatButton(); btnWorkshop.Plain = true; btnWorkshop.Text = Lang.S("工坊");
             btnWorkshop.SetBounds(wsX, 16, wsW, Theme.H);
             btnWorkshop.AccessibleName = "从创意工坊导入";
             btnWorkshop.Click += delegate { OpenWorkshop(); };
@@ -508,7 +508,7 @@ namespace Installer
                 + "L4D2 的物品都是单个 vpk，能直接下，不需要 Steam 登录。");
             Controls.Add(btnWorkshop);
 
-            btnSettings = new FlatButton(); btnSettings.Text = Lang.S("设置");
+            btnSettings = new FlatButton(); btnSettings.Plain = true; btnSettings.Text = Lang.S("设置");
             btnSettings.SetBounds(settingsX, 16, settingsW, Theme.H);
             btnSettings.AccessibleName = "打开设置";
             btnSettings.Click += delegate
@@ -537,7 +537,7 @@ namespace Installer
             Controls.Add(btnSettings);
 
             // 总览 / 方案树：同一份数据的两种看法，按钮上写的是「点了会去哪种」
-            btnView = new FlatButton(); btnView.Soft = true; btnView.Text = Lang.S("总览");
+            btnView = new FlatButton(); btnView.Plain = true; btnView.Text = Lang.S("总览");
             btnView.SetBounds(viewX, 16, viewW, Theme.H);
             btnView.Click += delegate
             {
@@ -818,7 +818,7 @@ namespace Installer
 
             // 快捷刷新 = 「刷新游戏现状」那个动作，常驻顶栏主操作那一排（2026-11-21 用户定：放右上看得到）。
             // 一套逻辑两个入口，不另写一份：重扫库 + 重读 addonlist + 勾选对齐游戏现状。
-            btnRefreshLib = new FlatButton(); btnRefreshLib.Soft = true;
+            btnRefreshLib = new FlatButton(); btnRefreshLib.Plain = true;
             btnRefreshLib.Text = Lang.S("刷新");
             btnRefreshLib.SetBounds(refreshX, 16, refreshW, Theme.H);
             btnRefreshLib.AccessibleName = "刷新游戏现状";

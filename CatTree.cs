@@ -3990,25 +3990,48 @@ namespace Installer
                     // 推荐按整行卡切（58 图 + 18 标题 + 8 间距 = 84，跟 RecGrid 同一套），
                     // 多出来的零头留在面板底部当内边距，不会切出半行卡。
                     const int pitch = 84;
-                    int listWant = lv.Items.Count * Dpi.S(Theme.RowH) + Dpi.S(headH) + Dpi.S(10);
-                    int listMin = Dpi.S(140);
-                    int listMax = Math.Max(listMin, whole - Dpi.S(24) - 2 * Dpi.S(pitch) - Dpi.S(6));
-                    int candH = Math.Min(Math.Max(listMin, listWant), listMax);
-                    int recAvail = whole - candH - Dpi.S(6);
-                    int rows = (recAvail - Dpi.S(24)) / Dpi.S(pitch);
-                    if (rows > 6) rows = 6;          // 再高也不铺满整屏，否则一条候选要配一墙推荐
-                    if (rows < 1) rows = 1;
-                    int recH = Dpi.S(24) + rows * Dpi.S(pitch);
-                    if (recAvail < Dpi.S(90)) { recPanel.Visible = false; }
+                    // 空/失败态：收成一条 40px 的行（状态 + 立即重试），高度全部还给候选列表。
+                    // 以前那儿是一张「工坊网页连不上」的大空卡，占了半个列表的坑。
+                    bool compact = recGrid != null && recGrid.IsEmpty;
+                    int candH, recH;
+                    if (compact)
+                    {
+                        recH = Dpi.S(40);
+                        candH = Math.Max(Dpi.S(140), whole - recH - Dpi.S(6));
+                    }
+                    else
+                    {
+                        int listWant = lv.Items.Count * Dpi.S(Theme.RowH) + Dpi.S(headH) + Dpi.S(10);
+                        int listMin = Dpi.S(140);
+                        int listMax = Math.Max(listMin, whole - Dpi.S(24) - 2 * Dpi.S(pitch) - Dpi.S(6));
+                        candH = Math.Min(Math.Max(listMin, listWant), listMax);
+                        int recAvail = whole - candH - Dpi.S(6);
+                        int rows = (recAvail - Dpi.S(24)) / Dpi.S(pitch);
+                        if (rows > 6) rows = 6;      // 再高也不铺满整屏，否则一条候选要配一墙推荐
+                        if (rows < 1) rows = 1;
+                        recH = Dpi.S(24) + rows * Dpi.S(pitch);
+                    }
+                    if (whole - recH < Dpi.S(60)) { recPanel.Visible = false; }   // 列太矮就整块让给候选
                     else
                     {
                         lv.Height = candH;
                         recPanel.SetBounds(lv.Left, lv.Top + lv.Height + Dpi.S(6), lv.Width, recH);
                         recPanel.Visible = true;
-                        int sw = Dpi.S(64);
-                        btnRecShuffle.SetBounds(Math.Max(Dpi.S(4), recPanel.Width - sw - Dpi.S(4)), 0, sw, Dpi.S(18));
-                        recTitle.SetBounds(Dpi.S(4), 0, Math.Max(60, recPanel.Width - sw - Dpi.S(12)), Dpi.S(16));
-                        recGrid.SetBounds(Dpi.S(2), Dpi.S(21), Math.Max(60, recPanel.Width - 4), Math.Max(40, recH - Dpi.S(24)));
+                        int sw = Dpi.S(compact ? 76 : 64);
+                        if (compact)
+                        {
+                            recTitle.SetBounds(Dpi.S(4), Dpi.S(11), Math.Max(60, recPanel.Width - sw - Dpi.S(16)), Dpi.S(18));
+                            btnRecShuffle.SetBounds(Math.Max(Dpi.S(4), recPanel.Width - sw - Dpi.S(4)), Dpi.S(8), sw, Dpi.S(24));
+                            recGrid.SetBounds(Dpi.S(2), Dpi.S(40), Math.Max(60, recPanel.Width - 4), Dpi.S(1));
+                            recGrid.Visible = false;
+                        }
+                        else
+                        {
+                            btnRecShuffle.SetBounds(Math.Max(Dpi.S(4), recPanel.Width - sw - Dpi.S(4)), 0, sw, Dpi.S(18));
+                            recTitle.SetBounds(Dpi.S(4), 0, Math.Max(60, recPanel.Width - sw - Dpi.S(12)), Dpi.S(16));
+                            recGrid.SetBounds(Dpi.S(2), Dpi.S(21), Math.Max(60, recPanel.Width - 4), Math.Max(40, recH - Dpi.S(24)));
+                            recGrid.Visible = true;
+                        }
                     }
                 }
             }
@@ -4247,6 +4270,10 @@ namespace Installer
                                 ? Lang.S("工坊推荐：连不上，") + waitSec + Lang.S(" 秒后自动重试")
                                 : Lang.S("工坊推荐：连不上");
                             recGrid.ShowEmpty(why, willRetry ? Lang.S("也可以点这里马上重试") : Lang.S("点这里重试"));
+                            recTitle.Text = willRetry
+                                ? Lang.S("工坊连不上 · ") + waitSec + Lang.S(" 秒后自动重试")
+                                : Lang.S("工坊连不上") + " · " + why;
+                            if (btnRecShuffle != null) btnRecShuffle.Text = Lang.S("立即重试");
                             if (mf != null) mf.NoteWorkshopOffline(WsNet.IsOffline);
                             LayoutSelf();
                             if (willRetry)
@@ -4363,6 +4390,7 @@ namespace Installer
             bool noKey = !Workshop.HasApiKey;
             // 标题显示**位置名**（用户认得的那个词），不显示查询词 —— 查询词是内部东西，改了也不该露到界面上
             string shownName = (Current != null && !string.IsNullOrEmpty(Current.Name)) ? Lang.S(Current.Name) : q;
+            if (btnRecShuffle != null) btnRecShuffle.Text = Lang.S("换一换");
             recTitle.Text = (fromGb ? Lang.S("GameBanana 推荐 · ") : Lang.S("工坊推荐 · ")) + shownName
                 + (noKey ? Lang.S("　（未填 Steam API key：搜不了全站，去「设置 → 怎么拿 key」）") : "");
             if (mf != null && !fromGb) mf.NoteWorkshopOffline(false);   // 走 GameBanana 时 Steam 其实还挂着
@@ -7006,6 +7034,8 @@ namespace Installer
         public event Action CopyDiag;              // 卡片右下角「复制诊断」：用户粘给我们看
 
         private string emptyText = "", emptyHint = "";
+        /// <summary>现在是空态/失败态（没卡片可画）。排版时据此收成一条细行，别占整块高度。</summary>
+        public bool IsEmpty { get { return !skeleton && items.Count == 0 && emptyText.Length > 0; } }
         private bool emptyHot, copyHot;
 
         private int G { get { return Dpi.S(8); } }

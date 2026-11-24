@@ -48,9 +48,11 @@ namespace Installer
             Ink = C(28, 32, 36),
             Ink2 = C(90, 98, 107),
             Ink3 = C(102, 112, 122),
-            Primary = C(28, 32, 36),
-            PrimaryHover = C(48, 54, 61),
-            PrimaryDown = C(12, 15, 18),
+            // 主按钮＝品牌红（白字 5.4:1）。以前是近黑实心，和「设置」「刷新」这类次要按钮
+            // 只差一个深浅，主操作淹没在顶栏里（2026-11-24 设计稿 v1 定的方向）。
+            Primary = C(192, 57, 43),
+            PrimaryHover = C(208, 68, 52),
+            PrimaryDown = C(160, 45, 33),
             PrimaryInk = C(255, 255, 255),
             Mark = C(28, 32, 36),
             Accent = C(179, 38, 30),
@@ -93,10 +95,11 @@ namespace Installer
             Ink2 = C(167, 174, 184),
             Ink3 = C(150, 158, 169),      // 对卡片 5.97:1；对选中行底(TreeSel) 4.61:1、对胶囊 5.04:1
                                           // （原来 139,147,158 在选中行只有 4.02、胶囊 4.39，不到 AA 的 4.5）
-            Primary = C(236, 238, 241),
-            PrimaryHover = C(255, 255, 255),
-            PrimaryDown = C(203, 208, 214),
-            PrimaryInk = C(18, 20, 23),
+            // 深底上的主按钮用饱和度更高的红，白字 5.9:1；悬停提亮、按下压深
+            Primary = C(197, 58, 42),
+            PrimaryHover = C(216, 72, 53),
+            PrimaryDown = C(168, 46, 33),
+            PrimaryInk = C(255, 255, 255),
             Mark = C(236, 238, 241),
             Accent = C(240, 112, 106),    // 深底上把红提亮，小字也读得清
             AccentHover = C(248, 132, 126),
