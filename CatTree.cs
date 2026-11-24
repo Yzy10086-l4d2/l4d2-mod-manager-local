@@ -961,7 +961,6 @@ namespace Installer
         private SwitchBox chkMulti;                        // 「允许多选」：这个位置可以同时开好几个 MOD（模式类选项，用开关）
         private bool applyingMulti;                        // 程序自己改勾选时别触发联动
         private CoverPeek peek;                            // 封面预览：两列时是候选区上方的横条，三列时是右侧详情栏
-        private Label lblDetail;                           // 三列布局时右栏的小标题
         private int peekIdx = -2;                          // 当前预览的是第几行（-2 = 还没算过，-1 = 没悬停）
         private Panel splitA, splitB;                     // 两处分栏拖条（树|候选、候选|详情）
         private int treeWpx, detailWpx;                   // 拖过分栏就用这里记着（0 = 按默认比例自动算）
@@ -1088,13 +1087,8 @@ namespace Installer
             peek = new CoverPeek();
             Controls.Add(peek);
 
-            lblDetail = new Label();
-            lblDetail.Text = Lang.S("详情 · 鼠标划过一行看哪条");
-            lblDetail.Font = Theme.UISmall;
-            lblDetail.ForeColor = Theme.Ink3;
-            lblDetail.BackColor = Color.Transparent;
-            lblDetail.Visible = false;
-            Controls.Add(lblDetail);
+            // 右栏顶上那行「详情 · 鼠标划过一行看哪条」已删（2026-11-24 用户）：
+            // 它是说明书不是信息，占着预览图上面的位置；鼠标划过换详情本身是自明的。
             lv.MouseMove += delegate(object s2, MouseEventArgs e2)
             {
                 if (peek == null || !peek.Visible) return;
@@ -3903,12 +3897,8 @@ namespace Installer
                 if (detailW > 0)
                 {
                     int dx = x + candW + Theme.G;
-                    if (lblDetail != null)
-                    {
-                        lblDetail.SetBounds(dx, 12, Math.Max(80, detailW), 18);
-                        lblDetail.Visible = lv != null && lv.Visible;
-                    }
-                    peek.SetBounds(dx, 34, Math.Max(Dpi.S(220), detailW), Math.Max(Dpi.S(240), H - 40));
+                    // 预览图从卡片最上沿开始，一直顶到最下面：中间那行说明文字删了，空间全给它
+                    peek.SetBounds(dx, 2, Math.Max(Dpi.S(220), detailW), Math.Max(Dpi.S(240), H - 4));
                     if (splitB != null)
                     {
                         splitB.Visible = true;
@@ -3917,7 +3907,6 @@ namespace Installer
                 }
                 else
                 {
-                    if (lblDetail != null) lblDetail.Visible = false;
                     // 详情栏收起后，分栏条贴到最右边并保持可见 —— 以前这里是 Visible=false，
                     // 用户把详情拖没之后就再也找不到「拉回来」的把手了（2026-11-24 用户反馈）。
                     if (splitB != null)

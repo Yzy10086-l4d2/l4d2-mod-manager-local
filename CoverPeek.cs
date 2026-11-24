@@ -216,13 +216,14 @@ namespace Installer
                 using (Pen p = new Pen(Theme.LineSoft)) g.DrawPath(p, bg);
             }
 
-            int iw = Math.Max(Dpi.S(40), Width - pad * 2);
+            int iw = Math.Max(Dpi.S(40), Width);
             int ih = iw * 9 / 16;
-            // 图最多占 45%，并且有绝对上限：窗口拉到 1100 高时，55% 会吃掉大半个详情栏，
-            // 标题和「改了什么」被挤到屏幕外（用户反馈「详情看不出啥」）。
-            int maxH = Math.Min(Dpi.S(212), Math.Max(Dpi.S(40), Height * 45 / 100));
+            // 图跟详情栏齐宽（2026-11-24 用户）：以前左右各留 10px、高度再卡 212，
+            // 于是「栏比图宽、图比栏矮」，两边都留白。现在栏多宽图就多宽，
+            // 只有栏特别矮的时候才按高度收窄（那会儿宽度优先会让正文没地方）。
+            int maxH = Math.Min(Dpi.S(300), Math.Max(Dpi.S(60), Height * 45 / 100));
             if (ih > maxH) { ih = maxH; iw = ih * 16 / 9; }
-            Rectangle thumb = new Rectangle((Width - iw) / 2, pad, iw, ih);
+            Rectangle thumb = new Rectangle((Width - iw) / 2, 0, iw, ih);
 
             using (GraphicsPath clip = Round(thumb, Dpi.S(6)))
             {
@@ -253,9 +254,10 @@ namespace Installer
             }
             using (Pen p = new Pen(Theme.LineSoft)) { using (GraphicsPath cp = Round(thumb, Dpi.S(6))) g.DrawPath(p, cp); }
 
-            int tx = pad;
-            int tw = Width - pad * 2;
-            int y = thumb.Bottom + Dpi.S(10);
+            // 文字块也跟图对齐（以前文字内缩 10px、图内缩 10px，现在两个都贴栏边）
+            int tx = 0;
+            int tw = Width;
+            int y = thumb.Bottom + Dpi.S(12);
             if (title.Length == 0)
             {
                 TextRenderer.DrawText(g, hint, Theme.UI, new Rectangle(tx, y, tw, Height - y - pad),
