@@ -141,8 +141,8 @@ namespace Installer
                     // cover：等比铺满，多出来的裁掉
                     float s = Math.Max((float)thumb.Width / img.Width, (float)thumb.Height / img.Height);
                     int dw = (int)Math.Ceiling(img.Width * s), dh = (int)Math.Ceiling(img.Height * s);
-                    g.DrawImage(img, new Rectangle(thumb.X + (thumb.Width - dw) / 2,
-                                                   thumb.Y + (thumb.Height - dh) / 2, dw, dh));
+                    // 顶部对齐：封面多为人物/枪械，居中裁会把头/枪口切掉（用户反馈「预览图顶部被遮挡」）
+                    g.DrawImage(img, new Rectangle(thumb.X + (thumb.Width - dw) / 2, thumb.Y, dw, dh));
                 }
                 else
                 {

@@ -1408,7 +1408,7 @@ namespace Installer
                         gg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
                         float sc = Math.Max((float)tw / src.Width, (float)th / src.Height);
                         int dw = (int)Math.Ceiling(src.Width * sc), dh = (int)Math.Ceiling(src.Height * sc);
-                        gg.DrawImage(src, new Rectangle((tw - dw) / 2, (th - dh) / 2, dw, dh));
+                        gg.DrawImage(src, new Rectangle((tw - dw) / 2, 0, dw, dh));   // 顶对齐，别把人物头切掉
                     }
                     thumbImg[path] = b;
                     return b;
@@ -4115,7 +4115,9 @@ namespace Installer
             int peekH = Dpi.S(100);
             int peekTop = 60;
             if (detailW == 0) top = peekTop + peekH + Theme.S;
-            int bottom = by - Theme.S;                     // 列表底边，与动作行之间留一个步长
+            // 列表/推荐区一直铺到窗口底边内 8px：底部动作行早在 v0.6.37 就搬进详情栏了，
+            // 这里再让出 40px，候选区底下会空出一条黑带（2026-11-26 用户指出的「推荐页没贴到底」）
+            int bottom = H - Theme.S;
             const int headH = 0;      // 契约 v1：候选区不要表头，靠行内两行字说清哪列是什么
 
             // 右半分栏：够宽时「候选」和「可叠加的扩展」并排。

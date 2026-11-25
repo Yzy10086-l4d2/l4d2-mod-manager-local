@@ -847,7 +847,7 @@ namespace Installer
             gm.Controls.Add(lblScheme);
 
             int cw = rightW - 24;
-            int ch = (modH - 38) - 8 - 74;
+            int ch = (modH - 38) - 8 - 8;   // 卡片内只剩上下 8px 内边距（底部动作行早搬走了）
 
             // 方案树就放在这块矩形里
             viewHost = new Panel();
@@ -4187,11 +4187,11 @@ namespace Installer
                 // 卡片一路铺到窗口底边（只留 8px 边距）：以前底下还要腾出 28px 给状态行，
                 // 那一条空带就是用户说的「难看的下巴」。现在状态那行搬进卡片里当最后一行。
                 int modH = H - 56 - StatusRowH - 8;
-                gMod.Top = Dpi.S(56 + 38);
-                gMod.Height = Dpi.S(modH - 38);
+                gMod.Top = Dpi.S(56 + 38 + Theme.S);   // 和上面那条横栏留一道缝：共线时预览区看着像被横栏压住
+                gMod.Height = Dpi.S(modH - 38 - Theme.S);
                 viewHost.Top = Dpi.S(8);
                 // 卡片内部：标题 22 + 方案/搜索行 + 树 + 最后一行状态
-                viewHost.Height = Dpi.S(Math.Max(80, (modH - 38) - 8 - 26));
+                viewHost.Height = Dpi.S(Math.Max(80, (modH - 38) - 8 - 8));
                 // 左栏纵向：安装选项搬进设置后，顶上那张卡没了 —— 切换按钮和「游戏现状」直接贴顶，
                 // 把原来空出来的半屏交给现状卡（它自己会按高度铺分类分布）。
                 // 状态行现在贴在卡片底部（top=H-34），左栏日志必须停在它上面：原来按 -24 算，
