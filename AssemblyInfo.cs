@@ -5,5 +5,5 @@
 [assembly: AssemblyProduct("L4D2 MOD 管理工具 · 本地版")]
 [assembly: AssemblyCompany("L4D2 扩展平台")]
 [assembly: AssemblyCopyright("")]
-[assembly: AssemblyVersion("0.6.42.0")]
-[assembly: AssemblyFileVersion("0.6.42.0")]
+[assembly: AssemblyVersion("0.6.43.0")]
+[assembly: AssemblyFileVersion("0.6.43.0")]

@@ -4321,7 +4321,8 @@ namespace Installer
             // 重复嫌疑提示 → 卡片第二行右端（方案/搜索上顶栏后，这行右半边正好空着）
             if (lblConflict != null)
             {
-                lblConflict.SetBounds(Dpi.S(W - Theme.M - 330), Dpi.S(56 + 34), Dpi.S(316), Dpi.S(18));
+                // 放进上下文条那一行（56…94），别压在下面详情栏的预览图上
+                lblConflict.SetBounds(Dpi.S(W - Theme.M - 330), Dpi.S(56 + 10), Dpi.S(316), Dpi.S(18));
                 lblConflict.TextAlign = ContentAlignment.MiddleRight;
                 lblConflict.BringToFront();
             }
