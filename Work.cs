@@ -907,7 +907,7 @@ namespace Installer
             }
             if (string.IsNullOrEmpty(libRoot) || !Directory.Exists(libRoot))
                 return "找不到游戏 addons 目录，删除已取消";
-            SafePath.Check safe = SafePath.Validate(libRoot, m.FullPath);
+            Core.PathCheck safe = Core.ValidateUnder(libRoot, m.FullPath);
             if (!safe.Ok)
             {
                 Core.Log("WARN", "拒绝删除：" + safe.Why);
@@ -2311,15 +2311,15 @@ namespace Installer
                 SafeCheck(ref bad, Core.IsUnder(dir, Path.Combine(dir, "left4dead2\\addons\\x.vpk")), "子路径判定在目录内");
                 SafeCheck(ref bad, !Core.IsUnder(dir, Path.Combine(dir, "..\\x.vpk")), ".. 往上跳判定在目录外");
 
-                // 8b) SEC-03：SafePath —— 越界、非法名、前缀相同的兄弟目录，一律拒绝
+                // 8b) SEC-03：受保护路径 —— 越界、非法名、前缀相同的兄弟目录，一律拒绝
                 string sr = Path.Combine(dir, "saferoot");
                 Directory.CreateDirectory(Path.Combine(sr, "left4dead2\\addons"));
                 Directory.CreateDirectory(Path.Combine(dir, "saferoot2"));
                 File.WriteAllBytes(Path.Combine(dir, "saferoot2", "x.vpk"), data);
 
-                SafePath.Check sc = SafePath.Resolve(sr, "left4dead2\\addons\\a.vpk");
+                Core.PathCheck sc = Core.ResolveUnder(sr, "left4dead2\\addons\\a.vpk");
                 SafeCheck(ref bad, sc.Ok && sc.Full.EndsWith("a.vpk", StringComparison.OrdinalIgnoreCase),
-                    "SafePath：根内正常子路径放行" + (sc.Ok ? "" : "（" + sc.Why + "）"));
+                    "路径校验：根内正常子路径放行" + (sc.Ok ? "" : "（" + sc.Why + "）"));
 
                 string[] badRel = new string[] { "..\\escape.vpk", "..\\..\\x.vpk", "C:\\Windows\\x.vpk",
                                                  "\\\\srv\\share\\x.vpk", "\\\\.\\C:\\x.vpk", "",
@@ -2328,14 +2328,14 @@ namespace Installer
                                                  "left4dead2\\\\double.vpk" };
                 foreach (string rel in badRel)
                 {
-                    SafePath.Check bc = SafePath.Resolve(sr, rel);
-                    SafeCheck(ref bad, !bc.Ok, "SafePath：拒绝「" + rel + "」" + (bc.Ok ? "（却放行了）" : ""));
+                    Core.PathCheck bc = Core.ResolveUnder(sr, rel);
+                    SafeCheck(ref bad, !bc.Ok, "路径校验：拒绝「" + rel + "」" + (bc.Ok ? "（却放行了）" : ""));
                 }
-                SafeCheck(ref bad, !SafePath.Resolve(sr, "..\\saferoot2\\x.vpk").Ok, "SafePath：saferoot2 不算在 saferoot 里");
-                SafeCheck(ref bad, SafePath.Validate(sr, Path.Combine(sr, "left4dead2\\addons\\a.vpk")).Ok,
-                    "SafePath：已存在的根内目标放行");
-                SafeCheck(ref bad, !SafePath.Validate(sr, Path.Combine(dir, "saferoot2", "x.vpk")).Ok,
-                    "SafePath：已存在的根外目标拒绝");
+                SafeCheck(ref bad, !Core.ResolveUnder(sr, "..\\saferoot2\\x.vpk").Ok, "路径校验：saferoot2 不算在 saferoot 里");
+                SafeCheck(ref bad, Core.ValidateUnder(sr, Path.Combine(sr, "left4dead2\\addons\\a.vpk")).Ok,
+                    "路径校验：已存在的根内目标放行");
+                SafeCheck(ref bad, !Core.ValidateUnder(sr, Path.Combine(dir, "saferoot2", "x.vpk")).Ok,
+                    "路径校验：已存在的根外目标拒绝");
 
                 // 8c) SEC-03：删除入口只认游戏 addons —— 库里照删，库外的必须拒且文件还在
                 string fakeGame = Path.Combine(dir, "fakegame");
@@ -2383,18 +2383,18 @@ namespace Installer
                     bool madeIn = MakeJunction(juncIn, Path.Combine(lroot, "left4dead2\\addons"));
                     if (madeOut)
                     {
-                        SafePath.Check lo = SafePath.Resolve(lroot, "left4dead2\\linkout\\x.vpk");
-                        SafeCheck(ref bad, !lo.Ok, "SafePath：根内联接点指向根外，写入被拒");
-                        SafePath.Check lv = SafePath.Validate(lroot, keep);
-                        SafeCheck(ref bad, !lv.Ok, "SafePath：根外文件给了完整路径也拒");
+                        Core.PathCheck lo = Core.ResolveUnder(lroot, "left4dead2\\linkout\\x.vpk");
+                        SafeCheck(ref bad, !lo.Ok, "路径校验：根内联接点指向根外，写入被拒");
+                        Core.PathCheck lv = Core.ValidateUnder(lroot, keep);
+                        SafeCheck(ref bad, !lv.Ok, "路径校验：根外文件给了完整路径也拒");
                         SafeCheck(ref bad, string.Equals(Core.HashOf(keep), keepHash, StringComparison.OrdinalIgnoreCase),
-                            "SafePath：外部文件没被碰过");
+                            "路径校验：外部文件没被碰过");
                     }
                     else Console.WriteLine("SKIP  这卷造不出联接点（不是 NTFS？），链接那两条没验");
                     if (madeIn)
                     {
-                        SafePath.Check li = SafePath.Resolve(lroot, "left4dead2\\addons\\linkin\\x.vpk");
-                        SafeCheck(ref bad, !li.Ok, "SafePath：链接指向根内也算穿过链接，拒绝");
+                        Core.PathCheck li = Core.ResolveUnder(lroot, "left4dead2\\addons\\linkin\\x.vpk");
+                        SafeCheck(ref bad, !li.Ok, "路径校验：链接指向根内也算穿过链接，拒绝");
                     }
                 }
                 finally { try { Directory.Delete(lt, true); } catch { } }
@@ -2501,7 +2501,7 @@ namespace Installer
                     if (!p.WaitForExit(10000)) { try { p.Kill(); } catch { } return false; }
                     if (p.ExitCode != 0) return false;
                 }
-                return Directory.Exists(link) && SafePath.IsLink(link);
+                return Directory.Exists(link) && Core.IsLink(link);
             }
             catch { return false; }
         }
