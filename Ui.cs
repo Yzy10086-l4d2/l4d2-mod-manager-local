@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -484,6 +484,7 @@ namespace Installer
             lblBrand.Font = Theme.UIBold;           // 13.5px 粗体
             lblBrand.ForeColor = Theme.Ink;
             lblBrand.BackColor = Color.Transparent;
+            lblBrand.AutoEllipsis = true;      // 窄窗口下宁可省略，也不要硬裁一半
             lblBrand.SetBounds(Theme.M + 42, 8, 340, 20);
             Controls.Add(lblBrand);
 
@@ -3972,13 +3973,18 @@ namespace Installer
         {
             if (lblBrand == null || lblBrandSub == null) return;
             // 标题区只到「方案 ▾」左边为止 —— 方案和搜索上顶栏后，这里不再管它们
-            int right = lastSchemeLeft > 0 ? Dpi.S(lastSchemeLeft - 14) : Dpi.S(lastFindX - 16);
+            // lastSchemeLeft / lastFindX 存的是**已经缩放过的物理像素**，这里不能再套 Dpi.S
+            // —— 以前套了两层，125% 以上标题会被放大一倍，直接压到「方案 ▾」上。
+            int right = lastSchemeLeft > 0 ? lastSchemeLeft - Dpi.S(14) : lastFindX - Dpi.S(16);
             int badge = Dpi.S(32);
             int textX = Dpi.S(Theme.M) + badge + Dpi.S(10);
-            int w = Math.Max(Dpi.S(120), right - textX);
+            // 保底 120 会把标题顶到「方案 ▾」上（1120 实测压字）：宽度按实际可用算，
+            // 不够就把第二行收掉 —— 标题省略一半，比两行都被切成片好读。
+            int w = Math.Max(0, right - textX);
             if (lblBrandMark != null) lblBrandMark.SetBounds(Dpi.S(Theme.M), Dpi.S(12), badge, badge);
             lblBrand.SetBounds(textX, Dpi.S(8), w, Dpi.S(20));
             lblBrandSub.SetBounds(textX, Dpi.S(29), w, Dpi.S(16));
+            lblBrandSub.Visible = w >= Dpi.S(120);
         }
 
         /// <summary>顶栏徽标：32×32 圆角红底 + 白字「MOD」。用 Label 自绘，不新增控件类。</summary>
@@ -4284,11 +4290,16 @@ namespace Installer
             // 标题区吃掉按钮组左边剩下的全部宽度；有重复提示时再让出它那 232px
             // 方案选择器 + 搜索上顶栏：卡片那行只留 另存 / 套用 / 未识别，层级从三层降到两层
             {
-                int searchW2 = Math.Max(Dpi.S(220), Math.Min(Dpi.S(300), W / 4));
                 int clearW2 = Dpi.S(52);
                 int searchRight = Dpi.S(findX) - Dpi.S(14);
-                int searchLeft = searchRight - clearW2 - Dpi.S(6) - searchW2;
                 int schemeW2 = Dpi.S(150);
+                // 以前搜索框写死 W/4：1440 下正好，1120 下把品牌区挤成 46px，标题压在「方案 ▾」上。
+                // 改成从右边倒推，先给品牌区留 136（徽标 + 一行标题），剩下的才是搜索框。
+                int brandMin = Dpi.S(136);
+                int searchW2 = searchRight - clearW2 - Dpi.S(6) - Dpi.S(14) - schemeW2 - Dpi.S(14)
+                             - (Dpi.S(Theme.M) + Dpi.S(32) + Dpi.S(10) + brandMin);
+                searchW2 = Math.Max(Dpi.S(150), Math.Min(Dpi.S(300), searchW2));
+                int searchLeft = searchRight - clearW2 - Dpi.S(6) - searchW2;
                 // 方案按钮宽 150，这里只退 44 的话会压进搜索框（实测「当前选择」和输入框重叠 100+px）；
                 // 改成退整个按钮宽 + 14px 间距
                 int schemeLeft = searchLeft - schemeW2 - Dpi.S(14);
@@ -4389,6 +4400,14 @@ namespace Installer
                     // 改成了 32px 纯图标，固定阈值会把正常间距误判成重叠。
                     int gapNeed = top[i - 1].Width + Dpi.S(2);
                     if (top[i].Left <= top[i - 1].Left + gapNeed) { bad++; Core.Log("FAIL", tag + "顶部按钮叠在一起：" + top[i].Text); }
+                }
+                // 品牌区（徽标 + 标题两行）不许压到「方案 ▾」上。
+                // 2026-11-26 1120 宽实测：标题右边界越过方案按钮 60px，标题被切成「L4D2 MOD 管理」。
+                if (lblBrand.Left + lblBrand.Width > btnScheme.Left)
+                {
+                    bad++;
+                    Core.Log("FAIL", tag + "品牌标题压住「方案 ▾」：标题右 " + (lblBrand.Left + lblBrand.Width)
+                        + "px / 方案左 " + btnScheme.Left + "px");
                 }
 
                 // 两栏：右栏整体落在窗口里，且不压到左栏
