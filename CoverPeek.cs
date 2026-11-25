@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
@@ -245,9 +245,8 @@ namespace Installer
             }
             else
             {
-                using (SolidBrush b = new SolidBrush(Theme.IsDark
-                           ? Color.FromArgb(46, 50, 58) : Color.FromArgb(232, 236, 242)))
-                    g.FillRectangle(b, thumb);
+                // 占位也用面板色，别比周围亮一档（以前是一块明显发灰的砖）
+                using (SolidBrush b = new SolidBrush(Theme.SurfaceAlt)) g.FillRectangle(b, thumb);
                 string tag = hint.Length > 0 ? hint : "包内无图";
                 using (Font f = new Font(Theme.UISmall.FontFamily, 8.5f))
                 using (SolidBrush b = new SolidBrush(Theme.Ink3))

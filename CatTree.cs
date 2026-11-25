@@ -4084,7 +4084,8 @@ namespace Installer
             }
             // 三层之后每行多缩了一级，树比以前宽一点，否则物品名和「选了哪个」会挤在一起
             // 三列：方案树 / 该类候选 / 悬停详情。树不用占一半，右边两列才是干活的
-            int treeW = treeWpx > 0 ? treeWpx : Math.Min(Dpi.S(340), Math.Max(Dpi.S(240), W * 26 / 100));
+            // 契约 v1 断点：窗口 ≥1360 时树 288；1120–1359 时 260（以前按 26% 算，1440 下给到 340，把候选区挤扁）
+            int treeW = treeWpx > 0 ? treeWpx : (W >= Dpi.S(1360) ? Dpi.S(288) : Dpi.S(260));
             treeW = Math.Min(Math.Max(treeW, Dpi.S(200)), Math.Max(Dpi.S(220), W / 2));
             curTreeW = treeW;
             if (scroll != null) scroll.SetBounds(0, Dpi.S(TreeHeadH), treeW, Math.Max(40, H - Dpi.S(TreeHeadH)));
@@ -4099,7 +4100,8 @@ namespace Installer
             if (rightW >= Dpi.S(680))
             {
                 // 契约 v1 断点：宽窗 372、窄窗 320（以前按 44% 算，1280 宽时给到 570，候选区被挤扁）
-                detailW = detailWpx > 0 ? detailWpx : (rightW >= Dpi.S(1328) ? Dpi.S(372) : Dpi.S(320));
+                // 断点按「整窗设计宽」判，不是按右边那截的宽度判（以前拿 rightW 比 1328，1440 下常常掉到 320 档）
+                detailW = detailWpx > 0 ? detailWpx : (W >= Dpi.S(1360) ? Dpi.S(372) : Dpi.S(320));
                 detailW = Math.Min(detailW, Math.Max(Dpi.S(300), rightW - Dpi.S(360)));
                 if (detailW < Dpi.S(260)) detailW = 0;
             }
@@ -4432,6 +4434,7 @@ namespace Installer
             recBusyGen = gen;
             recPanel.Visible = true;
             recTitle.Text = Lang.S("工坊推荐：正在搜…");
+            recTitle.ForeColor = Theme.Ink2;
             ShowRecSkeleton();
             LayoutSelf();
 
@@ -4546,13 +4549,12 @@ namespace Installer
                             bool willRetry = !recForced && recAutoRetries < 2;
                             int waitSec = willRetry ? (recAutoRetries == 0 ? 4 : 8) : 0;
                             if (willRetry) recAutoRetries++;
-                            recTitle.Text = willRetry
-                                ? Lang.S("工坊推荐：连不上，") + waitSec + Lang.S(" 秒后自动重试")
-                                : Lang.S("工坊推荐：连不上");
+                            // 契约 v1：这一行前面给个圆点（离线=警示色），文案「工坊连不上 · N 秒后自动重试」
                             recGrid.ShowEmpty(why, willRetry ? Lang.S("也可以点这里马上重试") : Lang.S("点这里重试"));
-                            recTitle.Text = willRetry
+                            recTitle.Text = "● " + (willRetry
                                 ? Lang.S("工坊连不上 · ") + waitSec + Lang.S(" 秒后自动重试")
-                                : Lang.S("工坊连不上") + " · " + why;
+                                : Lang.S("工坊连不上") + " · " + why);
+                            recTitle.ForeColor = Theme.Warn;
                             if (btnRecShuffle != null) btnRecShuffle.Text = Lang.S("立即重试");
                             if (mf != null) mf.NoteWorkshopOffline(WsNet.IsOffline);
                             LayoutSelf();
@@ -4654,6 +4656,7 @@ namespace Installer
             {
                 recGrid.ShowEmpty(Lang.S("工坊里没搜到相关 MOD"), Lang.S("换个位置，或点这里重试"));
                 recTitle.Text = Lang.S("工坊推荐：没搜到");
+                recTitle.ForeColor = Theme.Ink2;
                 return;
             }
             recAutoRetries = 0;            // 成功一次就把自动重试计数清零
@@ -4671,8 +4674,9 @@ namespace Installer
             // 标题显示**位置名**（用户认得的那个词），不显示查询词 —— 查询词是内部东西，改了也不该露到界面上
             string shownName = (Current != null && !string.IsNullOrEmpty(Current.Name)) ? Lang.S(Current.Name) : q;
             if (btnRecShuffle != null) btnRecShuffle.Text = Lang.S("换一换");
-            recTitle.Text = (fromGb ? Lang.S("GameBanana 推荐 · ") : Lang.S("工坊推荐 · ")) + shownName
+            recTitle.Text = "● " + (fromGb ? Lang.S("GameBanana 推荐 · ") : Lang.S("工坊推荐 · ")) + shownName
                 + (noKey ? Lang.S("　（未填 Steam API key：搜不了全站，去「设置 → 怎么拿 key」）") : "");
+            recTitle.ForeColor = Theme.Ok;
             if (mf != null && !fromGb) mf.NoteWorkshopOffline(false);   // 走 GameBanana 时 Steam 其实还挂着
         }
 
