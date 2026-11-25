@@ -240,20 +240,24 @@ namespace Installer
             {
                 float s = Math.Max((float)thumb.Width / img.Width, (float)thumb.Height / img.Height);
                 int dw = (int)Math.Ceiling(img.Width * s), dh = (int)Math.Ceiling(img.Height * s);
-                g.DrawImage(img, new Rectangle(thumb.X + (thumb.Width - dw) / 2,
-                                               thumb.Y + (thumb.Height - dh) / 2, dw, dh));
+                // 顶部对齐：和候选区横条、网格缩略图一个口径，别把人物头切掉
+                g.DrawImage(img, new Rectangle(thumb.X + (thumb.Width - dw) / 2, thumb.Y, dw, dh));
             }
             else
             {
                 // 占位也用面板色，别比周围亮一档（以前是一块明显发灰的砖）
                 using (SolidBrush b = new SolidBrush(Theme.SurfaceAlt)) g.FillRectangle(b, thumb);
-                string tag = hint.Length > 0 ? hint : "包内无图";
-                using (Font f = new Font(Theme.UISmall.FontFamily, 8.5f))
-                using (SolidBrush b = new SolidBrush(Theme.Ink3))
+                // 没有标题 = 空位/没有可预览的东西：提示语下面只说一次，缩略图里不再重复
+                string tag = title.Length == 0 ? "" : (hint.Length > 0 ? hint : "包内无图");
+                if (tag.Length > 0)
                 {
-                    SizeF sz = g.MeasureString(tag, f);
-                    g.DrawString(tag, f, b, thumb.X + (thumb.Width - sz.Width) / 2,
-                                 thumb.Y + (thumb.Height - sz.Height) / 2);
+                    using (Font f = new Font(Theme.UISmall.FontFamily, 8.5f))
+                    using (SolidBrush b = new SolidBrush(Theme.Ink3))
+                    {
+                        SizeF sz = g.MeasureString(tag, f);
+                        g.DrawString(tag, f, b, thumb.X + (thumb.Width - sz.Width) / 2,
+                                     thumb.Y + (thumb.Height - sz.Height) / 2);
+                    }
                 }
             }
 
