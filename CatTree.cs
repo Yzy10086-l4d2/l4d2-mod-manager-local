@@ -4730,15 +4730,16 @@ namespace Installer
             int kindW, sizeW, instW, swW;
             if (w >= Dpi.S(410))
             {
-                kindW = 0; sizeW = Dpi.S(74); instW = Dpi.S(84); swW = Dpi.S(62);   // 「改了什么」并进名字下的副行
+                // 大小列 74 时「121.5 MB」会被省略成「121.5 …」（字号 13.5 之后放不下），给到 94
+                kindW = 0; sizeW = Dpi.S(94); instW = Dpi.S(84); swW = Dpi.S(62);   // 「改了什么」并进名字下的副行
             }
             else
             {
                 // 最小窗口下先把信息量最低的“改了什么”收掉，保住名称、大小、已装、开关。
                 // 不横向滚动：这一栏本来就是窄窗口里最容易被裁掉的区域。
                 kindW = 0;
-                if (w >= Dpi.S(340)) { sizeW = Dpi.S(64); instW = Dpi.S(70); swW = Dpi.S(54); }
-                else { sizeW = Dpi.S(56); instW = Dpi.S(60); swW = Dpi.S(46); }
+                if (w >= Dpi.S(340)) { sizeW = Dpi.S(82); instW = Dpi.S(70); swW = Dpi.S(54); }
+                else { sizeW = Dpi.S(74); instW = Dpi.S(60); swW = Dpi.S(46); }
             }
 
             // 本地模式：没有「库」可比，「已装」恒为真 —— 这一列纯属噪音，收成 0 宽、把宽度并给开关列。
