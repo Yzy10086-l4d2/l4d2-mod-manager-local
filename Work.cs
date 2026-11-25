@@ -894,7 +894,26 @@ namespace Installer
             // 工坊订阅的文件属于 Steam：不删、不搬、不改名。要清掉请在工坊里取消订阅。
             if (m.FromWorkshop) return "「" + m.Name + "」是 Steam 创意工坊订阅的内容，程序不删也不搬；去掉它请在创意工坊取消订阅";
             if (m.IsArchive) return "「" + m.Name + "」在压缩包里（" + m.Container + "），本工具不删压缩包";
-            try { File.Delete(m.FullPath); }
+            // 本地版唯一的库就是游戏 addons（调用方给了游戏根就以它为准）。
+            // 路径不在这棵树里 —— 配置写坏、库被链接指到外面 —— 一律不删：
+            // 删错就是删用户的文件，这里没有回收站可退。
+            string gameForLib = addonListRoot;
+            if (string.IsNullOrEmpty(gameForLib) && Core.Cfg != null) gameForLib = Core.Cfg.GameRoot;
+            string libRoot = null;
+            if (!string.IsNullOrEmpty(gameForLib))
+            {
+                try { libRoot = Path.Combine(Path.Combine(gameForLib, "left4dead2"), "addons"); }
+                catch { }
+            }
+            if (string.IsNullOrEmpty(libRoot) || !Directory.Exists(libRoot))
+                return "找不到游戏 addons 目录，删除已取消";
+            SafePath.Check safe = SafePath.Validate(libRoot, m.FullPath);
+            if (!safe.Ok)
+            {
+                Core.Log("WARN", "拒绝删除：" + safe.Why);
+                return "拒绝删除：" + safe.Why;
+            }
+            try { File.Delete(safe.Full); }
             catch (Exception ex)
             {
                 Core.Log("WARN", "删除 " + m.FullPath + " 失败: " + ex.Message);
@@ -2292,6 +2311,94 @@ namespace Installer
                 SafeCheck(ref bad, Core.IsUnder(dir, Path.Combine(dir, "left4dead2\\addons\\x.vpk")), "子路径判定在目录内");
                 SafeCheck(ref bad, !Core.IsUnder(dir, Path.Combine(dir, "..\\x.vpk")), ".. 往上跳判定在目录外");
 
+                // 8b) SEC-03：SafePath —— 越界、非法名、前缀相同的兄弟目录，一律拒绝
+                string sr = Path.Combine(dir, "saferoot");
+                Directory.CreateDirectory(Path.Combine(sr, "left4dead2\\addons"));
+                Directory.CreateDirectory(Path.Combine(dir, "saferoot2"));
+                File.WriteAllBytes(Path.Combine(dir, "saferoot2", "x.vpk"), data);
+
+                SafePath.Check sc = SafePath.Resolve(sr, "left4dead2\\addons\\a.vpk");
+                SafeCheck(ref bad, sc.Ok && sc.Full.EndsWith("a.vpk", StringComparison.OrdinalIgnoreCase),
+                    "SafePath：根内正常子路径放行" + (sc.Ok ? "" : "（" + sc.Why + "）"));
+
+                string[] badRel = new string[] { "..\\escape.vpk", "..\\..\\x.vpk", "C:\\Windows\\x.vpk",
+                                                 "\\\\srv\\share\\x.vpk", "\\\\.\\C:\\x.vpk", "",
+                                                 "left4dead2\\..\\..\\x.vpk", "left4dead2\\NUL.vpk",
+                                                 "left4dead2\\a:b.vpk", "left4dead2\\trail.",
+                                                 "left4dead2\\\\double.vpk" };
+                foreach (string rel in badRel)
+                {
+                    SafePath.Check bc = SafePath.Resolve(sr, rel);
+                    SafeCheck(ref bad, !bc.Ok, "SafePath：拒绝「" + rel + "」" + (bc.Ok ? "（却放行了）" : ""));
+                }
+                SafeCheck(ref bad, !SafePath.Resolve(sr, "..\\saferoot2\\x.vpk").Ok, "SafePath：saferoot2 不算在 saferoot 里");
+                SafeCheck(ref bad, SafePath.Validate(sr, Path.Combine(sr, "left4dead2\\addons\\a.vpk")).Ok,
+                    "SafePath：已存在的根内目标放行");
+                SafeCheck(ref bad, !SafePath.Validate(sr, Path.Combine(dir, "saferoot2", "x.vpk")).Ok,
+                    "SafePath：已存在的根外目标拒绝");
+
+                // 8c) SEC-03：删除入口只认游戏 addons —— 库里照删，库外的必须拒且文件还在
+                string fakeGame = Path.Combine(dir, "fakegame");
+                string fakeAddons = Path.Combine(Path.Combine(fakeGame, "left4dead2"), "addons");
+                Directory.CreateDirectory(fakeAddons);
+                File.WriteAllBytes(Path.Combine(fakeGame, "left4dead2.exe"), new byte[] { 0x4D, 0x5A });
+                string inVpk = Path.Combine(fakeAddons, "in.vpk");
+                string outVpk = Path.Combine(dir, "out.vpk");
+                File.WriteAllBytes(inVpk, data);
+                File.WriteAllBytes(outVpk, data);
+                string savedRoot = Core.Cfg.GameRoot;
+                try
+                {
+                    Core.Cfg.GameRoot = fakeGame;
+                    ModItem inItem = new ModItem();
+                    inItem.Name = "in.vpk";
+                    inItem.FullPath = inVpk;
+                    string e1 = DeleteMod(inItem);
+                    SafeCheck(ref bad, e1 == null && !File.Exists(inVpk), "删除：库内的 vpk 正常删掉" + (e1 == null ? "" : "（" + e1 + "）"));
+
+                    ModItem outItem = new ModItem();
+                    outItem.Name = "out.vpk";
+                    outItem.FullPath = outVpk;
+                    string e2 = DeleteMod(outItem);
+                    SafeCheck(ref bad, e2 != null, "删除：库外的 vpk 被拒" + (e2 == null ? "（却删掉了）" : ""));
+                    SafeCheck(ref bad, File.Exists(outVpk), "删除：被拒的库外文件还在");
+                }
+                finally { Core.Cfg.GameRoot = savedRoot; }
+
+                // 8d) SEC-03：联接点 —— 根内的链接指向根外时，写路径必须拒绝，外部文件一个字节不许动。
+                //     联接点只有 NTFS 支持，所以这组放在系统盘临时目录（D 盘是 exFAT，造不出来就 SKIP）。
+                string lt = Path.Combine(Path.GetTempPath(), "safepath-link-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+                try
+                {
+                    string lroot = Path.Combine(lt, "root");
+                    string lout = Path.Combine(lt, "outside");
+                    Directory.CreateDirectory(Path.Combine(lroot, "left4dead2\\addons"));
+                    Directory.CreateDirectory(lout);
+                    File.WriteAllBytes(Path.Combine(lout, "keep.vpk"), data);
+                    string keep = Path.Combine(lout, "keep.vpk");
+                    string keepHash = Core.HashOf(keep);
+                    string juncOut = Path.Combine(lroot, "left4dead2\\linkout");
+                    string juncIn = Path.Combine(lroot, "left4dead2\\addons\\linkin");
+                    bool madeOut = MakeJunction(juncOut, lout);
+                    bool madeIn = MakeJunction(juncIn, Path.Combine(lroot, "left4dead2\\addons"));
+                    if (madeOut)
+                    {
+                        SafePath.Check lo = SafePath.Resolve(lroot, "left4dead2\\linkout\\x.vpk");
+                        SafeCheck(ref bad, !lo.Ok, "SafePath：根内联接点指向根外，写入被拒");
+                        SafePath.Check lv = SafePath.Validate(lroot, keep);
+                        SafeCheck(ref bad, !lv.Ok, "SafePath：根外文件给了完整路径也拒");
+                        SafeCheck(ref bad, string.Equals(Core.HashOf(keep), keepHash, StringComparison.OrdinalIgnoreCase),
+                            "SafePath：外部文件没被碰过");
+                    }
+                    else Console.WriteLine("SKIP  这卷造不出联接点（不是 NTFS？），链接那两条没验");
+                    if (madeIn)
+                    {
+                        SafePath.Check li = SafePath.Resolve(lroot, "left4dead2\\addons\\linkin\\x.vpk");
+                        SafeCheck(ref bad, !li.Ok, "SafePath：链接指向根内也算穿过链接，拒绝");
+                    }
+                }
+                finally { try { Directory.Delete(lt, true); } catch { } }
+
                 // 9) 包内 addoninfo：游戏 addons 菜单显示的是这里的 addonTitle，和文件名常常不是一回事。
                 //    读取器要是认错了，详情里写的就是别的 MOD 的名字，比没有更糟。
                 string vp1 = Path.Combine(dir, "info-preload.vpk");
@@ -2377,6 +2484,26 @@ namespace Installer
             finally { try { Directory.Delete(dir, true); } catch { } }
             Console.WriteLine("safeself failures = " + bad);
             return bad;
+        }
+
+        /// <summary>自检用：造一个目录联接点（mklink /J 不需要管理员）。卷不支持（exFAT）或造不出来返回 false。</summary>
+        static bool MakeJunction(string link, string target)
+        {
+            try
+            {
+                if (Directory.Exists(link)) Directory.Delete(link, false);
+                System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo("cmd.exe",
+                    "/c mklink /J \"" + link + "\" \"" + target + "\"");
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                using (System.Diagnostics.Process p = System.Diagnostics.Process.Start(psi))
+                {
+                    if (!p.WaitForExit(10000)) { try { p.Kill(); } catch { } return false; }
+                    if (p.ExitCode != 0) return false;
+                }
+                return Directory.Exists(link) && SafePath.IsLink(link);
+            }
+            catch { return false; }
         }
 
         static void SafeCheck(ref int bad, bool ok, string what)
