@@ -4289,7 +4289,9 @@ namespace Installer
                 int searchRight = Dpi.S(findX) - Dpi.S(14);
                 int searchLeft = searchRight - clearW2 - Dpi.S(6) - searchW2;
                 int schemeW2 = Dpi.S(150);
-                int schemeLeft = searchLeft - Dpi.S(44);
+                // 方案按钮宽 150，这里只退 44 的话会压进搜索框（实测「当前选择」和输入框重叠 100+px）；
+                // 改成退整个按钮宽 + 14px 间距
+                int schemeLeft = searchLeft - schemeW2 - Dpi.S(14);
                 lastSchemeLeft = schemeLeft;
                 if (btnScheme != null) btnScheme.SetBounds(schemeLeft, Dpi.S(16), schemeW2, Theme.H);
                 if (lblSearchCap != null) lblSearchCap.SetBounds(searchLeft - Dpi.S(40), Dpi.S(22), Dpi.S(34), Dpi.S(18));
