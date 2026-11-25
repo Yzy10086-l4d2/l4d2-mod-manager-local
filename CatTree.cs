@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -1358,9 +1358,9 @@ namespace Installer
             v.MouseLeave += delegate { if (candHoverRow != -1) { candHoverRow = -1; v.Invalidate(); } };
             v.HideSelection = false;
             ImageList pad = new ImageList();
-            // 行高 50：够放 56x31 的缩略图 + 上下各 9px 呼吸。字体按 point 放大，
+            // 行高 57：契约 v1 的候选行规格（8 上下 + 41 内容），够放 56x32 缩略图 + 两行字
             // 行高写死会出现上下相邻行互相顶边，所以还是走 ImageList 这一档。
-            pad.ImageSize = new Size(1, Dpi.S(50));
+            pad.ImageSize = new Size(1, Dpi.S(57));
             pad.ColorDepth = ColorDepth.Depth32Bit;
             v.SmallImageList = pad;
             // 自绘行：缩略图、加粗名称、选中左竖条都由自己画（ListView 的 ImageList 不画图，前面试过回滚了）
@@ -1444,8 +1444,8 @@ namespace Installer
                     g2.DrawImage(im, tr);
                 else
                 {
-                    // 没封面就留一块极淡的底，不画边框：画了框会像"加载失败"
-                    using (SolidBrush ph = new SolidBrush(Theme.SurfaceAlt)) g2.FillRectangle(ph, tr);
+                    // 没封面就留一块浅一档的底（契约的骨架色），不画边框：画了框会像「加载失败」
+                    using (SolidBrush ph = new SolidBrush(Theme.SkeletonFill)) g2.FillRectangle(ph, tr);
                 }
 
                 // 名称 + 副行：副行就是原来「改了什么」那一列（模型·HUD·音效 / 组合装 2 件）
@@ -3372,6 +3372,22 @@ namespace Installer
             get { return IsBranchSlot(Current) ? Current : null; }
         }
 
+        /// <summary>当前选中位置在树上的路径（大类 › 小类 › 名字），上下文条的面包屑用；没选中返回空串。</summary>
+        internal string CurrentPathText
+        {
+            get
+            {
+                Slot s = Current;
+                if (s == null) return "";
+                string t = s.Cat;
+                if (!string.IsNullOrEmpty(s.Sub) && s.Sub != s.Cat)
+                    t = string.IsNullOrEmpty(t) ? s.Sub : t + " › " + s.Sub;
+                if (!string.IsNullOrEmpty(s.Name))
+                    t = string.IsNullOrEmpty(t) ? s.Name : t + " › " + s.Name;
+                return t;
+            }
+        }
+
         /// <summary>鼠标 x 落在第几列（客户区坐标）。列宽是自适应的，没有横向滚动。</summary>
         private static int ColAt(ListView v, int x)
         {
@@ -3436,6 +3452,8 @@ namespace Installer
 
         private void FillDetail()
         {
+            // 上下文条的面包屑跟着当前选中走：选位置 / 键盘移动 / 换页都过这里，一处刷全
+            if (mf != null) mf.UpdateModCaption();
             PrepareRecommend();
             // 搜索优先：搜了词就只看结果（搜索只剩这一条路可走）
             string kw = mf.SearchText;
@@ -3484,7 +3502,8 @@ namespace Installer
                 }
                 lblTitle.Text = s.Name;
                 // 面包屑（2026-11-24 设计稿 v1）：先说清"我在树的哪一层"，再说这个位置的状态
-                string crumb = s.Cat + (string.IsNullOrEmpty(s.Sub) || s.Sub == s.Cat ? "" : "›" + s.Sub) + " · ";
+                // 契约 v1：面包屑只在上下文条上显示一份，这里不再重复（以前两处都写，看着像两套导航）
+                string crumb = "";
                 if (s.Empty)
                 {
                     // 空位：不是「忘了选」，是这个位置压根还没有包 —— 话说清楚，别让人以为坏了
@@ -3508,14 +3527,16 @@ namespace Installer
                     // 「当前」= 游戏里真正开着的（addonlist=1 且文件已经在 addons 里），
                     // 不是「勾选了哪个」。两者经常不一样：勾着的可能还没装，开着的可能是上次装的。
                     // 以前这行显示勾选，结果出现「当前：X」但 X 那行写着「关闭」的自相矛盾。
+                    // 契约 v1：候选头先说清「这个位置是干嘛的」——替换这一把枪 / 单选还是多选
+                    string role = Lang.S("替换这一把枪") + " · " + Lang.S(IsMulti(s) ? "多选" : "单选") + " · ";
                     List<ModGroup> live = new List<ModGroup>();
                     foreach (ModGroup g in s.Items)
                         foreach (ModItem p in g.Parts)
                             if ((p.Installed || p.FromGame) && p.AddonOn) { live.Add(g); break; }
-                    if (live.Count == 0) lblCur.Text = crumb + Lang.S("游戏里还是原版（这个位置没有开着的 MOD）");
+                    if (live.Count == 0) lblCur.Text = role + Lang.S("游戏里还是原版（这个位置没有开着的 MOD）");
                     else if (live.Count == 1)
                     {
-                        string txt = crumb + Lang.F("当前：{0}", live[0].Show);
+                        string txt = role + Lang.F("当前：{0}", live[0].Show);
                         ModGroup pick = ChosenOf(s);
                         if (pick != null && pick != live[0]) txt += "　（已选：" + pick.Show + "，未启用）";
                         lblCur.Text = txt;
@@ -3523,7 +3544,7 @@ namespace Installer
                     else
                     {
                         System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                        sb.Append(crumb).Append("同一位置开着 ").Append(live.Count).Append(" 个：");
+                        sb.Append(role).Append("同一位置开着 ").Append(live.Count).Append(" 个：");
                         for (int i = 0; i < live.Count && i < 3; i++)
                             sb.Append(i > 0 ? "、" : "").Append(live[i].Show);
                         // 开了「允许多选」的位置是有意叠着的，别报警；没开的才提醒会互相覆盖
@@ -3628,20 +3649,34 @@ namespace Installer
             else if (!string.IsNullOrEmpty(lead.Container)) src = Lang.S("来源：压缩包 ") + System.IO.Path.GetFileName(lead.Container);
             else src = Lang.S("来源：") + System.IO.Path.GetFileName(lead.FullPath ?? "");
 
+            // 详情栏三排胶囊：替换层（位置名）/ 大小 / 状态（\t 分隔，CoverPeek 拆开画）
+            string slotName = "";
+            if (s != null && s.Items.Contains(g)) slotName = s.Name;
+            if (string.IsNullOrEmpty(slotName)) slotName = lead == null ? "" : (lead.Subject ?? "").Trim();
+            if (string.IsNullOrEmpty(slotName)) slotName = g.Cat;
+            string state = lead == null ? "" : (lead.AddonOn ? Lang.S("已启用") : Lang.S("已关闭"));
+            string chips = slotName + "\t" + Core.Human(g.Size) + "\t" + state;
+
+            // 键值两列：标签\t值，一条一行；没有标签的行是说明文字（排在键值对下面，辅助色）
             string info = "";
             if (lead != null)
             {
-                if (!string.IsNullOrEmpty(lead.Subject)) info += Lang.S("改了什么：") + lead.Subject + "\n\n";
-                if (!string.IsNullOrEmpty(lead.AddonTitle)) info += Lang.S("游戏里叫：") + lead.AddonTitle + "\n\n";
-                if (!string.IsNullOrEmpty(lead.AddonAuthor)) info += Lang.S("作者：") + lead.AddonAuthor + "\n\n";
-                info += (lead.AddonOn ? Lang.S("状态：已启用") : Lang.S("状态：已关闭"));
-                if (lead.FromWorkshop) info += "\n\n" + Lang.S("这是 Steam 创意工坊订阅的内容，程序不删也不搬；去掉它请在创意工坊取消订阅");
-                else if (lead.FromGame) info += "\n\n" + Lang.S("这份就在游戏目录里，删文件得自己去资源管理器");
+                string what = KindsOf(g).Replace("·", " + ");
+                string subj = (lead.Subject ?? "").Trim();
+                if (subj.Length > 0 && subj != slotName) what = what.Length > 0 ? what + " · " + subj : subj;
+                if (what.Length == 0) what = subj;
+                if (what.Length > 0) info += Lang.S("改了什么") + "\t" + what + "\n";
+                if (!string.IsNullOrEmpty(lead.AddonTitle)) info += Lang.S("游戏里叫") + "\t" + lead.AddonTitle + "\n";
+                if (!string.IsNullOrEmpty(lead.AddonAuthor)) info += Lang.S("作者") + "\t" + lead.AddonAuthor + "\n";
+                string file = System.IO.Path.GetFileName(lead.Name ?? "");
+                if (file.Length > 0) info += Lang.S("文件") + "\t" + file + "\n";
+                if (lead.FromWorkshop) info += Lang.S("这是 Steam 创意工坊订阅的内容，程序不删也不搬；去掉它请在创意工坊取消订阅");
+                else if (lead.FromGame) info += Lang.S("这份就在游戏目录里，删文件得自己去资源管理器");
             }
 
             string meta = KindsOf(g) + " · " + Core.Human(g.Size);
             if (g.Parts.Count > 1) meta += " · " + g.Parts.Count + " 件";
-            peek.Show(g.Show, meta, src, imgPath, null, info);
+            peek.Show(g.Show, meta, src, imgPath, null, info, chips);
         }
 
         /// <summary>
@@ -3927,10 +3962,23 @@ namespace Installer
 
         // ---------------------------------------------------------- 布局
 
+        /// <summary>树这一栏的列头高度（契约 v1：上面一行「按位置 / 一个位置一个 MOD」）。</summary>
+        private const int TreeHeadH = 24;
+
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
             if (scroll == null) return;
+            // 列头：左边说这栏在按什么看，右边说这栏一条是什么 —— 预览稿同位置那行
+            int hh = Dpi.S(TreeHeadH);
+            TextRenderer.DrawText(e.Graphics, Lang.S("按位置"), Theme.UIBold,
+                new Rectangle(Dpi.S(12), 0, Math.Max(40, scroll.Width - Dpi.S(24)), hh), Theme.Ink2,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(e.Graphics, Lang.S("一个位置一个 MOD"), Theme.UISmall,
+                new Rectangle(Dpi.S(12), 0, Math.Max(40, scroll.Width - Dpi.S(24)), hh), Theme.Ink3,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            using (Pen hp = new Pen(Theme.Line))
+                e.Graphics.DrawLine(hp, 0, hh - 1, scroll.Right, hh - 1);
             using (Pen p = new Pen(Theme.Line))
                 e.Graphics.DrawLine(p, scroll.Right, 0, scroll.Right, Height);
         }
@@ -4039,7 +4087,7 @@ namespace Installer
             int treeW = treeWpx > 0 ? treeWpx : Math.Min(Dpi.S(340), Math.Max(Dpi.S(240), W * 26 / 100));
             treeW = Math.Min(Math.Max(treeW, Dpi.S(200)), Math.Max(Dpi.S(220), W / 2));
             curTreeW = treeW;
-            if (scroll != null) scroll.SetBounds(0, 0, treeW, H);
+            if (scroll != null) scroll.SetBounds(0, Dpi.S(TreeHeadH), treeW, Math.Max(40, H - Dpi.S(TreeHeadH)));
             if (splitA != null) splitA.SetBounds(Math.Max(0, treeW - Dpi.S(3)), 0, Dpi.S(6), H);
             // Dock 让树体宽度自动跟着可视区走（含竖直滚动条出现/消失），不然右边「n 个」会被裁掉
             if (scroll != null) scroll.Relayout();
@@ -4050,7 +4098,8 @@ namespace Installer
             int detailW = 0;
             if (rightW >= Dpi.S(680))
             {
-                detailW = detailWpx > 0 ? detailWpx : Math.Min(Dpi.S(480), Math.Max(Dpi.S(380), rightW * 44 / 100));
+                // 契约 v1 断点：宽窗 372、窄窗 320（以前按 44% 算，1280 宽时给到 570，候选区被挤扁）
+                detailW = detailWpx > 0 ? detailWpx : (rightW >= Dpi.S(1328) ? Dpi.S(372) : Dpi.S(320));
                 detailW = Math.Min(detailW, Math.Max(Dpi.S(300), rightW - Dpi.S(360)));
                 if (detailW < Dpi.S(260)) detailW = 0;
             }
@@ -4065,7 +4114,7 @@ namespace Installer
             int peekTop = 60;
             if (detailW == 0) top = peekTop + peekH + Theme.S;
             int bottom = by - Theme.S;                     // 列表底边，与动作行之间留一个步长
-            const int headH = 26;
+            const int headH = 0;      // 契约 v1：候选区不要表头，靠行内两行字说清哪列是什么
 
             // 右半分栏：够宽时「候选」和「可叠加的扩展」并排。
             // 以前是上下按 56% 切，候选只有三行时上半留一大片空白、下半的扩展还被压扁；
@@ -4099,13 +4148,13 @@ namespace Installer
                 {
                     int dx = x + candW + Theme.G;
                     // 预览图从卡片最上沿开始；底部留 32px 给「打开文件位置 / 在工坊查看」
-                    int actH3 = Dpi.S(32), gap3 = Dpi.S(6);
+                    int actH3 = Dpi.S(32), gap3 = Dpi.S(6);   // 契约 v1：左「在工坊查看」右「打开文件位置」
                     int dW = Math.Max(Dpi.S(220), detailW);
                     int by3 = H - Dpi.S(2) - actH3;
                     peek.SetBounds(dx, 2, dW, Math.Max(Dpi.S(240), by3 - Dpi.S(6)));
                     int half = (dW - gap3) / 2;
-                    btnDOpen.SetBounds(dx, by3, half, actH3);
-                    btnDShop.SetBounds(dx + half + gap3, by3, half, actH3);
+                    btnDShop.SetBounds(dx, by3, half, actH3);
+                    btnDOpen.SetBounds(dx + half + gap3, by3, half, actH3);
                     btnDOpen.Visible = btnDShop.Visible = lv != null && lv.Visible;
                     ModItem leadNow = LeadItemOf(peekGroup);
                     btnDShop.Enabled = leadNow != null && !string.IsNullOrEmpty(leadNow.WorkshopId);
@@ -4141,7 +4190,7 @@ namespace Installer
             if (headMain != null)
             {
                 headMain.SetBounds(mainX + 4, top, mainW - 8, headH);
-                headMain.Visible = lv != null && lv.Visible;
+                headMain.Visible = false;      // 表头取消，列表直接顶上来
             }
             int listH = Math.Max(40, bottom - top - headH);
             if (lv != null) lv.SetBounds(mainX + 4, top + headH, mainW - 8, listH);
@@ -4155,7 +4204,7 @@ namespace Installer
                     // 不能指望 FillDetail 一定把 Visible 打开（空位那一轮会把它关掉）。
                     if (lblExtraTitle != null) lblExtraTitle.SetBounds(exX + pad, 34, Math.Max(60, exW - 2 * pad), 18);
                     lvExtra.Visible = true;
-                    if (headExtra != null) { headExtra.SetBounds(exX + 4, top, exW - 8, headH); headExtra.Visible = true; }
+                    if (headExtra != null) { headExtra.SetBounds(exX + 4, top, exW - 8, headH); headExtra.Visible = false; }
                     lvExtra.SetBounds(exX + 4, top + headH, exW - 8, listH);
                 }
                 else
@@ -4204,7 +4253,7 @@ namespace Installer
                     const int pitch = 84;
                     // 空/失败态：收成一条 40px 的行（状态 + 立即重试），高度全部还给候选列表。
                     // 以前那儿是一张「工坊网页连不上」的大空卡，占了半个列表的坑。
-                    bool compact = recGrid != null && recGrid.IsEmpty;
+                    bool compact = recGrid != null && (recGrid.IsEmpty || recGrid.IsLoading);
                     int candH, recH;
                     if (compact)
                     {
@@ -4252,7 +4301,7 @@ namespace Installer
             if (lblCandVoid != null)
             {
                 int rows = lv == null ? 0 : lv.Items.Count;
-                int rowH = Dpi.S(50);
+                int rowH = Dpi.S(57);
                 if (rows > 0 && lv.Visible) { try { rowH = lv.GetItemRect(0).Height; } catch { } }
                 int usedH = rows * rowH;
                 int freeH = (lv == null ? 0 : lv.Height) - usedH;
@@ -5230,7 +5279,6 @@ namespace Installer
                     // 状态点：绿=选了本体，橙=叠了好几件本体，蓝=只有扩展（音效/只改第一人称模型），灰=空
                     // 「一堆」（地图 / 我的分支）里勾好几个是正常事，别用橙色报警
                     int cnt = owner.CheckedGroups(s);
-                    int ecnt = 0;   // 扩展已移除：这里恒 0，下面几处判断自然走不到
                     // 「允许多选」的位置叠着是正常的：用蓝色（信息色）而不是黄色，免得看着像警告
                     bool multiSlot = Core.Cfg.MultiSlots.Contains(s.Key);
                     Color dot = s.Pile ? (cnt > 0 ? Theme.Ok : Theme.TreeBranch)
@@ -5240,7 +5288,7 @@ namespace Installer
                     using (SolidBrush b = new SolidBrush(dot)) g.FillEllipse(b, bx + 17, y + RowH / 2 - 3, 6, 6);
 
                     int nx = bx + 30;
-                    int nameW = 86;
+                    int nameW = Math.Max(60, W - nx - 56);   // 契约 v1：树只留位置名 + 计数，不再列当前 MOD
                     // 位置名一律用方案表里的名字，不随 MOD 内容变。
                     // 以前「位置名 == 小分类名 且里面装了 MOD」会改显示成「未分型号」，
                     // 结果同一个位置空着叫「手枪」、装了包叫「未分型号」—— 系统自带的树名不该这么被改（用户 2026-11-21 反馈）。
@@ -5252,18 +5300,6 @@ namespace Installer
                         | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
                     // 「扩」角标：名字后面挂一个蓝底小图标，有可叠扩展的位置不用看数字就能扫出来
-
-                    ModGroup chosen = owner.ChosenOf(s);
-                    string sub = chosen == null ? (ecnt > 0 ? "原版" : "未选") : chosen.Name;
-                    if (s.Empty) sub = "还没有 MOD";
-                    else if (s.Pile)
-                    {
-                        sub = cnt == 0 ? "未勾 · 共 " + s.Items.Count + " 个" : "已勾 " + cnt + " 个";
-                    }
-                    else
-                    {
-                        if (cnt > 1) sub = "叠了 " + cnt + " 件";
-                    }
 
                     // 右端数字：本体候选数；有扩展时「+N」单独用信息蓝 —— 扫一眼，带蓝色 +N 的就是有扩展可叠
                     string plus = "";
@@ -5282,21 +5318,6 @@ namespace Installer
                         new Rectangle(W - 42 - pw, y, 32, RowH), Theme.Ink3,
                         TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
-                    int subX = nx + nameW + 26;      // 角标固定占一列，没角标的行文字也对得齐
-                    int subW = W - subX - 46 - pw;
-                    string subText = sub;
-                    // 窄窗口下这一列只剩三四十像素，「还没有 MOD」会被截成「还没有 M…」，
-                    // 看着像排版坏了。空位换成两个字的短说法，宁可少说一个词。
-                    if (s.Empty && subW > 20)
-                    {
-                        Size need = TextRenderer.MeasureText(g, sub, Theme.UISmall,
-                            new Size(subW, RowH), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
-                        if (need.Width > subW) subText = "空位";
-                    }
-                    if (subW > 20)
-                        TextRenderer.DrawText(g, subText, Theme.UISmall, new Rectangle(subX, y, subW, RowH), Theme.Ink3,
-                            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding
-                            | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
                 }
             }
 
@@ -7269,6 +7290,8 @@ namespace Installer
         private string emptyText = "", emptyHint = "";
         /// <summary>现在是空态/失败态（没卡片可画）。排版时据此收成一条细行，别占整块高度。</summary>
         public bool IsEmpty { get { return !skeleton && items.Count == 0 && emptyText.Length > 0; } }
+        /// <summary>正在拉推荐（骨架态）：也算「没有内容」，按一条 40px 的细条排，别铺一墙灰块。</summary>
+        public bool IsLoading { get { return skeleton; } }
         private bool emptyHot, copyHot;
 
         private int G { get { return Dpi.S(8); } }
@@ -7364,7 +7387,7 @@ namespace Installer
             g.Clear(BackColor);
             if (skeleton)
             {
-                Color baseCol = Theme.IsDark ? Color.FromArgb(44, 48, 54) : Color.FromArgb(232, 236, 242);
+                Color baseCol = Theme.SkeletonFill;
                 for (int i = 0; i < Capacity; i++)
                 {
                     Rectangle r = CardRect(i);

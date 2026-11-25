@@ -481,10 +481,52 @@ namespace Installer
             int sc = treeView == null ? 0 : treeView.SlotCount;
             int sk = treeView == null ? 0 : treeView.SlotCheckedCount;
             string tail = treeView != null && treeView.Unmatched > 0 ? " · " + treeView.Unmatched + " 个未归类" : "";
-            gMod.Caption = Lang.F("方案树 · {0} 个位置 · 已选 {1}{2}", sc, sk, tail);
+            // 上下文条左边先说「在树的哪一层」，再接数量和已选（没选中位置就还是老文案）
+            string crumb = treeView == null ? "" : treeView.CurrentPathText;
+            if (lblCtx != null)
+                lblCtx.Text = crumb.Length == 0
+                    ? Lang.F("方案树 · {0} 个位置 · 已选 {1}{2}", sc, sk, tail)
+                    : crumb + "   ·   " + Lang.F("{0} 个位置 · 已选 {1}{2}", sc, sk, tail);
+            // 底部状态条右段 = 「MOD 库存信息」：库里的存货（MOD 组数 + 总体积）+ 最近一次装进 addons 的时间。
+            // 扫库时 Catalog.Groups 正被后台线程重建，枚举会抛「集合已修改」，这一瞬间沿用上一次的文字。
+            if (!Core.ScanInProgress)
+            {
+                int mods = 0;
+                long bytes = 0;
+                foreach (ModGroup g in Catalog.Groups)
+                {
+                    if (g == null) continue;
+                    mods++;
+                    bytes += g.Size;
+                }
+                string inv = Lang.F("{0} 个 MOD · {1}", mods, Core.Human(bytes));
+                // 装机时间不另存字段：本地模式 addons 就是库，最新那个 vpk 的写入时间就是「上次装过」。
+                DateTime last = DateTime.MinValue;
+                string addons = Core.GameAddonsDir();
+                if (addons != null)
+                {
+                    try
+                    {
+                        foreach (string f in System.IO.Directory.GetFiles(addons, "*.vpk"))
+                        {
+                            DateTime t = System.IO.File.GetLastWriteTime(f);
+                            if (t > last) last = t;
+                        }
+                    }
+                    catch { }
+                }
+                if (last != DateTime.MinValue)
+                    inv += " · " + (last.Date == DateTime.Today
+                        ? Lang.F("今天 {0}", last.ToString("HH:mm"))
+                        : last.ToString("MM-dd HH:mm")) + Lang.S(" 装过");
+                statusRight = inv;
+            }
+            if (statusBar != null) statusBar.Invalidate();
+            gMod.Caption = "";
             // 没认出来的 MOD 为 0 时，这个按钮点了也没内容可看；常驻只增加噪音。
-            if (btnUnmatched != null)
-                btnUnmatched.Visible = treeView != null && treeView.Unmatched > 0;
+            chipUnmatchOn = treeView != null && treeView.Unmatched > 0;
+            if (btnUnmatched != null) btnUnmatched.Text = Lang.F("未识别 {0} 个", treeView == null ? 0 : treeView.Unmatched);
+            if (placeCtxBar != null) placeCtxBar();
         }
     }
 }

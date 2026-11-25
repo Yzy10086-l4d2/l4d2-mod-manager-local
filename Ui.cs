@@ -33,6 +33,12 @@ namespace Installer
         private TextBox txtSearch;
         private Button btnSaveProfile, btnApplyProfile;
         private Panel viewHost;                  // 右栏：方案树就嵌在这里
+        private Panel ctxBar;                    // 上下文条 38px：面包屑 + 计数在左，方案操作在右
+        private Label lblCtx;                    // 上下文条那行字（原来画在卡片标题上）
+        private Action placeCtxBar;               // 上下文条内部的排位器（条宽变了就重排）
+        private Rectangle chipSave, chipApply, chipUnmatch;   // 上下文条右侧三个胶囊的位置
+        private bool chipUnmatchOn;                          // 「未识别 N 个」有没有内容可点
+        private int chipHover = -1;                          // 鼠标正停在哪个胶囊上（0 另存 / 1 套用 / 2 未识别 / -1 都没有）
         private bool langRestart;                // 设置里切了语言：关掉自己，让 Program 重建
         private readonly bool uiWasEn = Lang.IsEn;    // 这个窗口是用哪种语言建的：回来一比就知道要不要重建
         internal bool LangRestartRequested { get { return langRestart; } }
@@ -41,7 +47,11 @@ namespace Installer
         private LoadingPane lblLoading;          // 读取/重扫期间的加载占位（启动报步骤 / 重扫报细条），平时藏着
         private CatTree treeView;                // 方案树：按「能替换的东西」看，一个位置只留一个 MOD
         private Label lblStatus, lblConflict;
-        private Label lblBrand, lblBrandSub, lblBrandVer;     // 顶栏标题区：产品名 + 当前游戏目录（点进设置）
+        private Panel statusBar;                 // 底部 24px 状态条：左「● 就绪」，右统计
+        private string statusRight = "";          // 状态条右段统计（MOD 库存：个数 · 体积 · 上次装机时间）
+        private Label lblBrand, lblBrandSub;                 // 顶栏品牌区：两行文字（点第二行进设置）
+        private Label lblBrandMark;              // 顶栏品牌区：32×32 圆角徽标
+        private Font brandMarkFont;              // 徽标上的「MOD」字号（按 DPI 放大一次，别在 Paint 里反复 new）
         private string statusBase = "", wsSuffix = "";   // 状态行正文 + 「工坊：离线」这类的常驻后缀
         // 底栏总高（设计值）：按钮行 36 + 间距 12 + 状态栏 20 + 触底 8。
         // 原来是 116，按钮下面空出 68px，「下巴」明显偏厚；收到 76 之后按钮行和状态栏只隔 12px。
@@ -50,7 +60,7 @@ namespace Installer
         // 2026-11-21：整条底栏撤掉（窗口底下那条"下巴"）。内容区一直长到窗口下沿，
         // 状态文字 + 刷新按钮并进右栏页脚那一行，不再单独占一条横带。
         private const int BottomBarH = 0;
-        private const int StatusRowH = 20;   // 右栏页脚只留一行状态（刷新已挪到顶栏），越矮内容越长
+        private const int StatusRowH = 24;   // 右栏页脚只留一行状态（刷新已挪到顶栏），越矮内容越长
         // 方案标记：当前下拉里那套方案包含哪些文件，用来在列表里一眼看出「这条属不属于方案」
         private Label lblScheme;
         private readonly HashSet<string> schemeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -455,51 +465,48 @@ namespace Installer
             int rightX = Theme.M;               // 左栏撤掉：右栏直接顶到左边距
             int rightW = W - 2 * Theme.M;
 
-            // ---- 顶部：品牌 / 当前游戏（改路径是设置里的事）+ 工具 + 主操作 ----
-            // 2026-11-24 用户定：游戏目录不该挂在首页。那一行输入框占了半个顶栏，
-            // 真正的用途（换路径、自动找）一年用不了几次，早就在设置里有了。
-            // 空出来的地方给标题区：一行产品名，一行「现在管的是哪个游戏目录」，点一下直接进设置。
+            // ---- 顶部：徽标 + 两行品牌 + 工具 + 主操作 ----
+            // 2026-11-25：按设计稿把顶栏左边改成「32×32 圆角徽标 + 两行字」。
+            // 第一行产品名（13.5px 粗体），第二行「Left 4 Dead 2 · N 个已装」（11.5px 辅助色）。
+            // 游戏目录不再占这一行（改成第二行的悬停提示），但「点第二行进设置」的老入口保留；
+            // 版本号也挪到第二行末尾 —— 系统标题栏早就撤了，界面上得有地方看版本。
+            brandMarkFont = new Font("Microsoft YaHei UI", Dpi.Scaled ? 8F * Dpi.Factor : 8F,
+                FontStyle.Bold, GraphicsUnit.Point);
+            lblBrandMark = new Label();
+            lblBrandMark.BackColor = Color.Transparent;
+            lblBrandMark.SetBounds(Theme.M, 12, 32, 32);
+            lblBrandMark.Paint += PaintBrandMark;
+            Controls.Add(lblBrandMark);
+
             lblBrand = new Label();
-            lblBrand.Text = Lang.S("L4D2 MOD 管理工具");
-            lblBrand.Font = Theme.H1;
+            lblBrand.Text = Lang.S("L4D2 MOD 管理器");
+            lblBrand.Font = Theme.UIBold;           // 13.5px 粗体
             lblBrand.ForeColor = Theme.Ink;
             lblBrand.BackColor = Color.Transparent;
-            lblBrand.SetBounds(Theme.M, 6, 340, 26);
+            lblBrand.SetBounds(Theme.M + 42, 8, 340, 20);
             Controls.Add(lblBrand);
 
-            // 系统标题栏撤掉之后，版本号改成顶栏里的一行小字（任务栏标题里还是带着的）
-            lblBrandVer = new Label();
-            lblBrandVer.Font = Theme.UISmall;
-            lblBrandVer.ForeColor = Theme.Ink3;
-            lblBrandVer.BackColor = Color.Transparent;
-            lblBrandVer.AutoSize = true;
-            lblBrandVer.Text = "v" + (System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.Major
-                + "." + System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.Minor
-                + (System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.Build > 0
-                    ? "." + System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.Build : ""));
-            Controls.Add(lblBrandVer);
-
             lblBrandSub = new Label();
-            lblBrandSub.Font = Theme.UISmall;
+            lblBrandSub.Font = Theme.UISmall;       // 11.5px
             lblBrandSub.ForeColor = Theme.Ink3;
             lblBrandSub.BackColor = Color.Transparent;
             lblBrandSub.AutoEllipsis = true;
             lblBrandSub.Cursor = Cursors.Hand;
-            lblBrandSub.SetBounds(Theme.M + 1, 32, 380, 16);
+            lblBrandSub.SetBounds(Theme.M + 42, 29, 380, 16);
             lblBrandSub.Click += delegate { ShowSettings(); };
-            tips.SetToolTip(lblBrandSub, Lang.S("当前游戏目录。点这里进设置改（可以自动找，也可以浏览…）。"));
+            tips.SetToolTip(lblBrandSub, Lang.S("点这里进设置：改游戏目录（可以自动找，也可以浏览…）。"));
             Controls.Add(lblBrandSub);
 
-            const int findW = 76;
-            const int settingsW = 52;
-            const int viewW = 58;       // 总览（图标 + 文字）（原「方案管理」，四个字在 1080 宽下太占地方）
+            const int findW = 32;
+            const int settingsW = 32;
+            const int viewW = 32;       // 总览（图标 + 文字）（原「方案管理」，四个字在 1080 宽下太占地方）
             const int panelW = 56;      // 左栏抽屉（按钮已隐藏，位置照旧留出来）
-            const int wsW = 64;         // 工坊导入
+            const int wsW = 32;         // 工坊导入
             const int installW = 124;   // 「安装这套方案」：主操作上顶栏最右
-            const int refreshW = 52;    // 「刷新」：常驻顶栏，和主操作同一排
+            const int refreshW = 32;    // 「刷新」：常驻顶栏，和主操作同一排
             const int topGap = 8;
             // 顶栏分三组：启动项·工坊（对象操作）| 总览·设置·刷新（视图与状态）| 主操作
-            const int groupGap = 22;
+            const int groupGap = 10;
             int capX = CapStartX(W);
             int installX = capX - Dpi.S(18) - installW;
             int refreshX = installX - groupGap - refreshW;
@@ -513,13 +520,13 @@ namespace Installer
             txtGame.DropDownStyle = ComboBoxStyle.DropDown; Theme.Dress(txtGame); Controls.Add(txtGame);
             txtGame.Visible = false;
             txtGame.TextChanged += delegate { QueuePrecheck(); };
-            btnLaunch = new FlatButton(); btnLaunch.Plain = true; btnLaunch.Icon = "ui-bolt"; btnLaunch.Text = Lang.S("启动项"); btnLaunch.SetBounds(findX, 16, findW, Theme.H);
+            btnLaunch = new FlatButton(); btnLaunch.Plain = true; btnLaunch.Icon = "ui-bolt"; btnLaunch.Text = ""; btnLaunch.SetBounds(findX, 16, findW, Theme.H);
             btnLaunch.AccessibleName = "启动项组合";
             btnLaunch.Click += delegate { using (LaunchCatalogForm f = new LaunchCatalogForm()) f.ShowDialog(this); };
             tips.SetToolTip(btnLaunch, "自己组合启动项：勾要用的开关，一键复制组合，去 Steam 里粘。\r\n找游戏目录仍在「设置」里（自动找 / 浏览…）。");
             Controls.Add(btnLaunch);
             // 工坊导入：入口放顶栏而不是藏在设置里 —— 这是「往库里加东西」的主路径之一
-            btnWorkshop = new FlatButton(); btnWorkshop.Plain = true; btnWorkshop.Icon = "ui-shop"; btnWorkshop.Text = Lang.S("工坊");
+            btnWorkshop = new FlatButton(); btnWorkshop.Plain = true; btnWorkshop.Icon = "ui-shop"; btnWorkshop.Text = "";
             btnWorkshop.SetBounds(wsX, 16, wsW, Theme.H);
             btnWorkshop.AccessibleName = "从创意工坊导入";
             btnWorkshop.Click += delegate { OpenWorkshop(); };
@@ -527,7 +534,7 @@ namespace Installer
                 + "L4D2 的物品都是单个 vpk，能直接下，不需要 Steam 登录。");
             Controls.Add(btnWorkshop);
 
-            btnSettings = new FlatButton(); btnSettings.Plain = true; btnSettings.Icon = "ui-tune"; btnSettings.Text = Lang.S("设置");
+            btnSettings = new FlatButton(); btnSettings.Plain = true; btnSettings.Icon = "ui-tune"; btnSettings.Text = "";
             btnSettings.SetBounds(settingsX, 16, settingsW, Theme.H);
             btnSettings.AccessibleName = "打开设置";
             btnSettings.Click += delegate
@@ -556,7 +563,7 @@ namespace Installer
             Controls.Add(btnSettings);
 
             // 总览 / 方案树：同一份数据的两种看法，按钮上写的是「点了会去哪种」
-            btnView = new FlatButton(); btnView.Plain = true; btnView.Icon = "ui-grid"; btnView.Text = Lang.S("总览");
+            btnView = new FlatButton(); btnView.Plain = true; btnView.Icon = "ui-grid"; btnView.Text = "";
             btnView.SetBounds(viewX, 16, viewW, Theme.H);
             btnView.Click += delegate
             {
@@ -700,9 +707,44 @@ namespace Installer
             // 看着就是「就绪上面挂了半截黄字」（用户 2026-11-24 反馈）。
             int modH = CH - 56 - BottomBarH - StatusRowH - 8;
             Section gm = new Section();
-            gm.Caption = Lang.S("MOD 库（U 盘的 vpk + 压缩包）"); gm.SetBounds(rightX, 56, rightW, modH); Controls.Add(gm);
+            gm.Caption = ""; gm.SetBounds(rightX, 56 + 38, rightW, modH - 38); Controls.Add(gm);
+            // 契约 v1：顶栏 56 + 上下文条 38 两层。以前这里是「卡片标题」+「另存/套用/未识别」两排，
+            // 内容被压到 y=70 才开始；并成一条 38 的之后内容正好落在 94（和预览稿同一高度）。
+            ctxBar = new Panel();
+            ctxBar.BackColor = Theme.Surface;
+            ctxBar.SetBounds(rightX, 56, rightW, Dpi.S(38));
+            ctxBar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            ctxBar.Paint += delegate(object sp2, PaintEventArgs ep2)
+            {
+                using (Pen pen2 = new Pen(Theme.Line))
+                    ep2.Graphics.DrawLine(pen2, 0, ctxBar.Height - 1, ctxBar.Width, ctxBar.Height - 1);
+                // 三个胶囊：底色按悬停换一档（原来这段贴了两遍，画出来还是同一个样子）
+                CtxChip(ep2.Graphics, chipSave, false, Lang.S("另存"), chipHover == 0);
+                CtxChip(ep2.Graphics, chipApply, false, Lang.S("套用"), chipHover == 1);
+                CtxChip(ep2.Graphics, chipUnmatch, !chipUnmatchOn,
+                    btnUnmatched == null ? "" : btnUnmatched.Text, chipHover == 2);
+            };
+            ctxBar.MouseUp += delegate(object sp3, MouseEventArgs me3)
+            {
+                if (me3.Button != MouseButtons.Left) return;
+                if (chipSave.Contains(me3.Location)) { SaveProfile(); return; }
+                if (chipApply.Contains(me3.Location)) { ApplyProfile(); return; }
+                if (chipUnmatchOn && chipUnmatch.Contains(me3.Location) && treeView != null) treeView.SelectUnmatched();
+            };
+            // 胶囊是画上去的，没有子控件可挂事件：鼠标在条上动，自己算落在哪个胶囊里
+            ctxBar.MouseMove += delegate(object sp4, MouseEventArgs me4) { SetChipHover(ChipAt(me4.Location)); };
+            ctxBar.MouseLeave += delegate { SetChipHover(-1); };
+            Controls.Add(ctxBar);
+            lblCtx = new Label();
+            lblCtx.AutoEllipsis = true;
+            lblCtx.Font = Theme.UIBold;
+            lblCtx.Cursor = Cursors.Default;     // 别继承条上的手型：手型只给胶囊
+            lblCtx.ForeColor = Theme.Ink;
+            lblCtx.BackColor = Theme.Surface;
+            lblCtx.TextAlign = ContentAlignment.MiddleLeft;
+            ctxBar.Controls.Add(lblCtx);
 
-            Label l8 = new Label(); l8.Text = Lang.S("方案"); l8.SetBounds(12, 34, 34, 20); Theme.Dress(l8); gm.Controls.Add(l8);
+            Label l8 = new Label(); l8.Text = Lang.S("方案"); l8.Visible = false; l8.SetBounds(12, 34, 34, 20); Theme.Dress(l8); gm.Controls.Add(l8);
             cboProfile = new ComboBox(); cboProfile.SetBounds(50, 30, 204, 24); cboProfile.DropDownStyle = ComboBoxStyle.DropDownList; Theme.Dress(cboProfile); gm.Controls.Add(cboProfile);
             cboProfile.Visible = false;        // 系统下拉收起来：界面上用下面的按钮 + 卡片弹层代替
 
@@ -726,15 +768,30 @@ namespace Installer
             Controls.Add(pnlScheme);
             cboProfile.SelectedIndexChanged += delegate { ProfileSelectionChanged(); };
             tips.SetToolTip(cboProfile, Lang.S("只选择方案，不会立刻改当前勾选；确认后点「套用」。"));
-            btnSaveProfile = new FlatButton(); btnSaveProfile.Text = Lang.S("另存"); btnSaveProfile.SetBounds(12, 30, 64, Theme.H); btnSaveProfile.Click += delegate { SaveProfile(); }; gm.Controls.Add(btnSaveProfile);
-            btnApplyProfile = new FlatButton(); btnApplyProfile.Text = Lang.S("套用"); btnApplyProfile.SetBounds(84, 30, 52, Theme.H); btnApplyProfile.Click += delegate { ApplyProfile(); }; gm.Controls.Add(btnApplyProfile);
+            btnSaveProfile = new FlatButton(); btnSaveProfile.Text = Lang.S("另存"); btnSaveProfile.SetBounds(0, 3, 56, Theme.H); btnSaveProfile.Visible = false; btnSaveProfile.Click += delegate { SaveProfile(); }; ctxBar.Controls.Add(btnSaveProfile);
+            btnApplyProfile = new FlatButton(); btnApplyProfile.Text = Lang.S("套用"); btnApplyProfile.SetBounds(0, 3, 52, Theme.H); btnApplyProfile.Visible = false; btnApplyProfile.Click += delegate { ApplyProfile(); }; ctxBar.Controls.Add(btnApplyProfile);
             tips.SetToolTip(btnApplyProfile, Lang.S("把选中的方案套用到当前勾选；如果会覆盖现有选择，会先确认。"));
             btnUnmatched = new FlatButton();
             btnUnmatched.Text = Lang.S("未识别 0 个");
-            btnUnmatched.SetBounds(144, 30, 104, Theme.H);
+            btnUnmatched.SetBounds(0, 3, 92, Theme.H); btnUnmatched.Visible = false;
             btnUnmatched.Click += delegate { if (treeView != null) treeView.SelectUnmatched(); };
             tips.SetToolTip(btnUnmatched, Lang.S("程序没认出位置的 MOD 都收在这里，点开可以手动指定分类。\r\n这些不再出现在左边的树里。"));
-            gm.Controls.Add(btnUnmatched);
+            ctxBar.Controls.Add(btnUnmatched);
+            placeCtxBar = delegate
+            {
+                int bx = ctxBar.Width - Dpi.S(12);
+                if (chipUnmatchOn) { bx -= Dpi.S(92); btnUnmatched.SetBounds(bx, Dpi.S(3), Dpi.S(92), Theme.H); bx -= Dpi.S(6); }
+                bx -= Dpi.S(52); btnApplyProfile.SetBounds(bx, Dpi.S(3), Dpi.S(52), Theme.H); bx -= Dpi.S(6);
+                bx -= Dpi.S(56); btnSaveProfile.SetBounds(bx, Dpi.S(3), Dpi.S(56), Theme.H); bx -= Dpi.S(10);
+                lblCtx.SetBounds(Dpi.S(16), 0, Math.Max(Dpi.S(120), bx - Dpi.S(16)), Dpi.S(38));
+                chipSave = new Rectangle(btnSaveProfile.Left, btnSaveProfile.Top, btnSaveProfile.Width, btnSaveProfile.Height);
+                chipApply = new Rectangle(btnApplyProfile.Left, btnApplyProfile.Top, btnApplyProfile.Width, btnApplyProfile.Height);
+                chipUnmatch = new Rectangle(btnUnmatched.Left, btnUnmatched.Top, btnUnmatched.Width, btnUnmatched.Height);
+                if (!chipUnmatchOn && chipHover == 2) chipHover = -1;   // 「未识别」藏起来了，别留着它的悬停态
+                ctxBar.Invalidate();
+            };
+            ctxBar.Resize += delegate { if (placeCtxBar != null) placeCtxBar(); };
+            placeCtxBar();
 
             // 方案差异摘要挪到卡片标题行右端：它说的是「这套方案套下去会变什么」，
             // 跟标题同排比挤在按钮右边更好读，也把整行让给搜索框。
@@ -751,7 +808,7 @@ namespace Installer
 
             // 搜索并进方案行：以前「方案」「搜索」各占一行，加上顶栏和卡片标题，
             // 树上面堆了四层横条。合成一行后树整整多出 48px 高度。
-            Label l9 = lblSearchCap = new Label(); l9.Text = Lang.S("搜索"); l9.SetBounds(472, 36, 34, 20); Theme.Dress(l9); Controls.Add(l9);
+            Label l9 = lblSearchCap = new Label(); l9.Visible = false; l9.SetBounds(472, 36, 34, 20); Theme.Dress(l9); Controls.Add(l9);
             int searchW = Math.Max(160, rightW - 12 - 56 - 8 - 510);
             txtSearch = new TextBox(); txtSearch.SetBounds(510, 34, searchW, 24); txtSearch.AccessibleName = "搜索 MOD"; Theme.Dress(txtSearch); txtSearch.TextChanged += delegate { searchTimer.Stop(); searchTimer.Start(); }; Controls.Add(txtSearch);
             tips.SetToolTip(txtSearch, Lang.S("搜名字 / 替换了什么 / 位置名。Ctrl+F 快速聚焦，Esc 清空并返回方案树。\r\n停止输入 250 ms 自动筛；点搜索结果可跳回它在树里的位置。"));
@@ -760,7 +817,6 @@ namespace Installer
             btnClearSearch.Click += delegate { txtSearch.Clear(); RefreshMods(); txtSearch.Focus(); };
             tips.SetToolTip(btnClearSearch, Lang.S("清空搜索并返回方案树（Esc）"));
             Controls.Add(btnClearSearch);
-            gm.Controls.Add(btnClearSearch);
 
             // 方案分布：这句话和卡片标题上的「已选 N」重复，界面上不再占一行（数据照旧算，日志里能看）
             lblScheme = new Label();
@@ -773,11 +829,11 @@ namespace Installer
             gm.Controls.Add(lblScheme);
 
             int cw = rightW - 24;
-            int ch = modH - 70 - 74;
+            int ch = (modH - 38) - 8 - 74;
 
             // 方案树就放在这块矩形里
             viewHost = new Panel();
-            viewHost.SetBounds(12, 70, cw, ch);
+            viewHost.SetBounds(12, 8, cw, ch);
             viewHost.BackColor = Theme.Surface;
             viewHost.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             viewHost.SizeChanged += delegate
@@ -839,7 +895,7 @@ namespace Installer
             // 快捷刷新 = 「刷新游戏现状」那个动作，常驻顶栏主操作那一排（2026-11-21 用户定：放右上看得到）。
             // 一套逻辑两个入口，不另写一份：重扫库 + 重读 addonlist + 勾选对齐游戏现状。
             btnRefreshLib = new FlatButton(); btnRefreshLib.Plain = true; btnRefreshLib.Icon = "ui-refresh";
-            btnRefreshLib.Text = Lang.S("刷新");
+            btnRefreshLib.Text = "";
             btnRefreshLib.SetBounds(refreshX, 16, refreshW, Theme.H);
             btnRefreshLib.AccessibleName = "刷新游戏现状";
             btnRefreshLib.Click += delegate { DoRefreshGame(); };
@@ -868,10 +924,39 @@ namespace Installer
             lblPre.BackColor = Color.Transparent;
             lblPre.Visible = false;
             Controls.Add(lblPre);
-            lblStatus = new Label(); lblStatus.SetBounds(Theme.M, CH - 28, W - 2 * Theme.M - 250, 20); lblStatus.Text = "";
+            // 契约 v1：底部独立 24px 状态条。以前状态文字贴在卡片最后一行里，和候选列表抢高度。
+            statusBar = new Panel();
+            statusBar.BackColor = Theme.Bg;
+            statusBar.SetBounds(0, CH - StatusRowH, W, StatusRowH);
+            statusBar.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            statusBar.Paint += delegate(object sb2, PaintEventArgs sbp)
+            {
+                using (Pen lp = new Pen(Theme.Line)) sbp.Graphics.DrawLine(lp, 0, 0, statusBar.Width, 0);
+                using (SolidBrush db = new SolidBrush(Theme.Ok))
+                    sbp.Graphics.FillEllipse(db, Dpi.S(14), (statusBar.Height - Dpi.S(8)) / 2, Dpi.S(8), Dpi.S(8));
+                string stTxt = (lblStatus == null || string.IsNullOrEmpty(lblStatus.Text)) ? Lang.S("就绪") : lblStatus.Text;
+                Color stInk = (lblStatus == null || string.IsNullOrEmpty(lblStatus.Text)) ? Theme.Ink3 : lblStatus.ForeColor;
+                if (lblStatus != null)
+                    TextRenderer.DrawText(sbp.Graphics, stTxt, Theme.UI,
+                        new Rectangle(Dpi.S(30), 0, Math.Max(60, statusBar.Width - Dpi.S(350)), statusBar.Height),
+                        stInk, TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+                        | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                if (!string.IsNullOrEmpty(statusRight))
+                    TextRenderer.DrawText(sbp.Graphics, statusRight, Theme.UISmall,
+                        new Rectangle(Math.Max(Dpi.S(40), statusBar.Width - Dpi.S(12) - Dpi.S(320)), 0, Dpi.S(320), statusBar.Height),
+                        Theme.Ink3, TextFormatFlags.Right | TextFormatFlags.VerticalCenter
+                        | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                if (lblNotice != null && !string.IsNullOrEmpty(lblNotice.Text))
+                    TextRenderer.DrawText(sbp.Graphics, lblNotice.Text, Theme.UISmall,
+                        new Rectangle(statusBar.Width - Dpi.S(12) - Dpi.S(240), 0, Dpi.S(240), statusBar.Height),
+                        lblNotice.ForeColor, TextFormatFlags.Right | TextFormatFlags.VerticalCenter
+                        | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            };
+            Controls.Add(statusBar);
+            lblStatus = new Label(); lblStatus.SetBounds(Dpi.S(30), Dpi.S(2), W - 2 * Theme.M - 250, Dpi.S(20)); lblStatus.Text = Lang.S("就绪");
             // 右段常驻：临时消息（扫库/安装进度）在左，这条在右，两者互不覆盖
             lblNotice = new Label();
-            lblNotice.SetBounds(W - Theme.M - 240, CH - 28, 240, 20);
+            lblNotice.SetBounds(W - Theme.M - 240, Dpi.S(2), 240, Dpi.S(20));
             lblNotice.Font = Theme.UISmall;
             lblNotice.ForeColor = Theme.Ink2;
             lblNotice.TextAlign = ContentAlignment.MiddleRight;
@@ -879,9 +964,9 @@ namespace Installer
             lblNotice.Text = "";
             // 这两个标签现在贴在卡片上（卡片铺到窗口底边），底色必须跟卡片一致，
             // 用 Transparent 的话底透出来的是窗口背景，会显出一块更暗的补丁。
-            lblNotice.BackColor = Theme.Surface;
-            Controls.Add(lblNotice);
-            lblStatus.ForeColor = Theme.Ink2; lblStatus.BackColor = Theme.Surface; Controls.Add(lblStatus);
+            lblNotice.BackColor = Color.Transparent;
+            statusBar.Controls.Add(lblNotice);
+            lblStatus.ForeColor = Theme.Ink2; lblStatus.BackColor = Color.Transparent; statusBar.Controls.Add(lblStatus);
 
             // 随窗口缩放：左右拉伸的跟着走，底部按钮贴右下
             gMod = gm; gLog = gl;
@@ -1759,6 +1844,8 @@ namespace Installer
         /// <summary>把左栏那张卡按当前的 addons / addonlist 实况重画一遍。</summary>
         private void RefreshGameNow()
         {
+            // 顶栏第二行的「N 个已装」和左栏游戏现状同一份数据，重量轻，跟着一起刷
+            UpdateBrandLine();
             if (gNow == null || gNow.IsDisposed) return;
             if (Core.ScanInProgress) return;           // 扫库正在重建列表，这时的数字半真半假
             GameNow g = ReadGameNow();
@@ -3800,6 +3887,39 @@ namespace Installer
         }
 
         /// <summary>底部那排（状态条 / 进度条 / 停止 / 替换此方案）钉在客户区底边，按物理高度算，不信锚点。</summary>
+        /// <summary>上下文条右侧的一个胶囊：自绘，不用子控件（子控件在父面板重绘时会被盖掉半截）。</summary>
+        private void CtxChip(Graphics g, Rectangle r, bool hidden, string text, bool hover)
+        {
+            if (hidden || r.Width <= 0 || string.IsNullOrEmpty(text)) return;
+            using (System.Drawing.Drawing2D.GraphicsPath gp = Theme.Round(r, Theme.R))
+            {
+                using (SolidBrush b = new SolidBrush(hover ? Theme.BtnHover : Theme.SurfaceAlt)) g.FillPath(b, gp);
+                using (Pen pen = new Pen(Theme.Line)) g.DrawPath(pen, gp);
+            }
+            TextRenderer.DrawText(g, text, Theme.UI, r, Theme.Ink2,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
+                | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+        }
+
+        /// <summary>鼠标落在哪个胶囊里：0 另存 / 1 套用 / 2 未识别 / -1 都不在。</summary>
+        private int ChipAt(Point p)
+        {
+            if (chipSave.Contains(p)) return 0;
+            if (chipApply.Contains(p)) return 1;
+            if (chipUnmatchOn && chipUnmatch.Contains(p)) return 2;
+            return -1;
+        }
+
+        /// <summary>换悬停的胶囊：进 / 出才重绘一次，鼠标在同一条胶囊里晃不抖。</summary>
+        private void SetChipHover(int idx)
+        {
+            if (chipHover == idx) return;
+            chipHover = idx;
+            if (ctxBar == null) return;
+            ctxBar.Cursor = idx >= 0 ? Cursors.Hand : Cursors.Default;
+            ctxBar.Invalidate();
+        }
+
         private void PinBottomRow(int physH)
         {
             int top = physH - Dpi.S(BottomBarH);
@@ -3810,19 +3930,16 @@ namespace Installer
             // 进度条 / 停止：装在跑的时候临时占用页脚那一行
             if (bar != null) bar.Top = top - Dpi.S(StatusRowH) + Dpi.S(7);
             if (btnCancel != null) btnCancel.Top = top - Dpi.S(StatusRowH) + Dpi.S(1);
-            // 状态行：卡片里最后一行（卡片铺到窗口底边内 8px，不再单独占一条底栏）
-            if (lblStatus != null)
+            // 状态条：独立一条 24px，铺满窗口底边（契约 v1）
+            if (statusBar != null)
             {
-                int left = gMod != null ? gMod.Left + Dpi.S(12) : Dpi.S(Theme.M);
-                int wide = gMod != null ? gMod.Width - Dpi.S(24) - Dpi.S(252)
-                                        : ClientSize.Width - Dpi.S(2 * Theme.M) - Dpi.S(252);
-                lblStatus.SetBounds(left, top - Dpi.S(34), Math.Max(Dpi.S(160), wide), Dpi.S(18));
-            }
-            if (lblNotice != null && lblStatus != null)
-            {
-                lblNotice.Top = lblStatus.Top;
-                lblNotice.Width = Dpi.S(240);
-                lblNotice.Left = (gMod != null ? gMod.Left + gMod.Width : ClientSize.Width) - Dpi.S(12) - lblNotice.Width;
+                statusBar.SetBounds(0, physH - Dpi.S(StatusRowH), ClientSize.Width, Dpi.S(StatusRowH));
+                statusBar.Invalidate();
+                if (lblStatus != null)
+                    lblStatus.SetBounds(Dpi.S(30), Dpi.S(2),
+                        Math.Max(Dpi.S(160), statusBar.Width - Dpi.S(30) - Dpi.S(260)), Dpi.S(20));
+                if (lblNotice != null)
+                    lblNotice.SetBounds(statusBar.Width - Dpi.S(12) - Dpi.S(240), Dpi.S(2), Dpi.S(240), Dpi.S(20));
             }
         }
 
@@ -3830,22 +3947,35 @@ namespace Installer
         private int lastSchemeLeft = -1;   // 顶栏「方案 ▾」左边界（设计值），标题区宽度到它为止      // 顶栏按钮组左边界（设计值），标题区排版要用
 
         /// <summary>
-        /// 顶栏标题区一行：标题 / 当前游戏目录 / 重复提示，三者抢同一条横带。
-        /// 重复提示不出现时，标题和路径吃满整条；出现时按固定 232px 让位。
+        /// 顶栏品牌区：徽标 + 两行字。右边一直顶到「方案 ▾」左边；
+        /// 窗口变宽只拉宽两行文字，徽标钉在左边距上不动。
         /// </summary>
         private void PlaceBrandRow()
         {
             if (lblBrand == null || lblBrandSub == null) return;
             // 标题区只到「方案 ▾」左边为止 —— 方案和搜索上顶栏后，这里不再管它们
             int right = lastSchemeLeft > 0 ? Dpi.S(lastSchemeLeft - 14) : Dpi.S(lastFindX - 16);
-            int w = Math.Max(Dpi.S(120), right - Dpi.S(Theme.M));
-            lblBrand.Width = w;
-            if (lblBrandVer != null)
+            int badge = Dpi.S(32);
+            int textX = Dpi.S(Theme.M) + badge + Dpi.S(10);
+            int w = Math.Max(Dpi.S(120), right - textX);
+            if (lblBrandMark != null) lblBrandMark.SetBounds(Dpi.S(Theme.M), Dpi.S(12), badge, badge);
+            lblBrand.SetBounds(textX, Dpi.S(8), w, Dpi.S(20));
+            lblBrandSub.SetBounds(textX, Dpi.S(29), w, Dpi.S(16));
+        }
+
+        /// <summary>顶栏徽标：32×32 圆角红底 + 白字「MOD」。用 Label 自绘，不新增控件类。</summary>
+        private void PaintBrandMark(object sender, PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            Rectangle r = new Rectangle(0, 0, lblBrandMark.Width, lblBrandMark.Height);
+            using (System.Drawing.Drawing2D.GraphicsPath p = Theme.Round(r, Dpi.S(8)))
             {
-                Size ts = TextRenderer.MeasureText(lblBrand.Text, lblBrand.Font);
-                lblBrandVer.Location = new Point(Dpi.S(Theme.M) + ts.Width + Dpi.S(8), Dpi.S(14));
+                using (SolidBrush b = new SolidBrush(Theme.Primary)) g.FillPath(b, p);
             }
-            lblBrandSub.Width = w;
+            TextRenderer.DrawText(g, "MOD", brandMarkFont, r, Theme.PrimaryInk,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
+                | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
         }
 
         // ---------------------------------------------------------------- 自绘标题栏
@@ -4023,6 +4153,11 @@ namespace Installer
             gMod.Width = Dpi.S(rightW);
             viewHost.Left = Dpi.S(12);
             viewHost.Width = Dpi.S(rightW - 24);
+            if (ctxBar != null)
+            {
+                ctxBar.SetBounds(Dpi.S(rightX), Dpi.S(56), Dpi.S(rightW), Dpi.S(38));
+                if (placeCtxBar != null) placeCtxBar();
+            }
 
             // 纵向也得每次重算。BuildUi 那次是按「当时的客户区」写死的绝对值，之后全靠 Anchor
             // 记住「距底多远」来跟；可只要那次的基数就已经不对（高 DPI 下 BuildUi 把物理像素
@@ -4033,12 +4168,12 @@ namespace Installer
             {
                 // 卡片一路铺到窗口底边（只留 8px 边距）：以前底下还要腾出 28px 给状态行，
                 // 那一条空带就是用户说的「难看的下巴」。现在状态那行搬进卡片里当最后一行。
-                int modH = H - 56 - 8;
-                gMod.Top = Dpi.S(56);
-                gMod.Height = Dpi.S(modH);
-                viewHost.Top = Dpi.S(70);
+                int modH = H - 56 - StatusRowH - 8;
+                gMod.Top = Dpi.S(56 + 38);
+                gMod.Height = Dpi.S(modH - 38);
+                viewHost.Top = Dpi.S(8);
                 // 卡片内部：标题 22 + 方案/搜索行 + 树 + 最后一行状态
-                viewHost.Height = Dpi.S(Math.Max(80, modH - 70 - 26));
+                viewHost.Height = Dpi.S(Math.Max(80, (modH - 38) - 8 - 26));
                 // 左栏纵向：安装选项搬进设置后，顶上那张卡没了 —— 切换按钮和「游戏现状」直接贴顶，
                 // 把原来空出来的半屏交给现状卡（它自己会按高度铺分类分布）。
                 // 状态行现在贴在卡片底部（top=H-34），左栏日志必须停在它上面：原来按 -24 算，
@@ -4114,14 +4249,14 @@ namespace Installer
             if (lblSchemeDiff != null) lblSchemeDiff.Left = Dpi.S(rightW - 376);
 
             // 顶部：品牌区（标题 + 当前游戏目录）· 工具 · 主操作
-            const int findW = 76;
-            const int settingsW = 52;
-            const int viewW = 58;       // 总览（图标 + 文字）
-            const int wsW = 64;         // 工坊导入
+            const int findW = 32;
+            const int settingsW = 32;
+            const int viewW = 32;       // 总览（图标 + 文字）
+            const int wsW = 32;         // 工坊导入
             const int topGap = 8;
-            const int groupGap = 22;
+            const int groupGap = 10;
             const int installW = 124;
-            const int refreshW = 52;
+            const int refreshW = 32;
             int installX = CapStartX(W) - 18 - installW;      // 让开右上角三颗窗口键
             int refreshX = installX - groupGap - refreshW;
             int settingsX = refreshX - groupGap - settingsW;
@@ -4131,7 +4266,7 @@ namespace Installer
             // 标题区吃掉按钮组左边剩下的全部宽度；有重复提示时再让出它那 232px
             // 方案选择器 + 搜索上顶栏：卡片那行只留 另存 / 套用 / 未识别，层级从三层降到两层
             {
-                int searchW2 = Math.Max(Dpi.S(180), Math.Min(Dpi.S(240), W / 6));
+                int searchW2 = Math.Max(Dpi.S(220), Math.Min(Dpi.S(300), W / 4));
                 int clearW2 = Dpi.S(52);
                 int searchRight = Dpi.S(findX) - Dpi.S(14);
                 int searchLeft = searchRight - clearW2 - Dpi.S(6) - searchW2;
@@ -5650,6 +5785,7 @@ namespace Installer
                     lblStatus.ForeColor = Theme.Warn;
                 else
                     lblStatus.ForeColor = Theme.Ink2;
+                if (statusBar != null) statusBar.Invalidate();
             });
         }
 

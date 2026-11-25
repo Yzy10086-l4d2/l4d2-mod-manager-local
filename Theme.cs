@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -35,24 +35,24 @@ namespace Installer
         public static readonly Palette Light = new Palette
         {
             IsDark = false,
-            Bg = C(243, 245, 247),
+            Bg = C(238, 240, 244),
             Surface = C(255, 255, 255),
-            SurfaceAlt = C(250, 251, 252),
+            SurfaceAlt = C(246, 248, 250),
             BtnHover = C(245, 247, 249),
             BtnDown = C(236, 239, 243),
-            Chip = C(242, 243, 246),
-            ChipHover = C(234, 235, 240),
-            ChipDown = C(225, 227, 233),
-            Line = C(226, 230, 235),
+            Chip = C(239, 242, 245),
+            ChipHover = C(232, 236, 241),
+            ChipDown = C(224, 229, 235),
+            Line = C(226, 231, 237),
             LineSoft = C(238, 241, 244),
-            Ink = C(28, 32, 36),
-            Ink2 = C(90, 98, 107),
-            Ink3 = C(102, 112, 122),
+            Ink = C(19, 23, 28),
+            Ink2 = C(79, 89, 102),
+            Ink3 = C(111, 122, 135),
             // 主按钮＝品牌红（白字 5.4:1）。以前是近黑实心，和「设置」「刷新」这类次要按钮
             // 只差一个深浅，主操作淹没在顶栏里（2026-11-24 设计稿 v1 定的方向）。
-            Primary = C(192, 57, 43),
-            PrimaryHover = C(208, 68, 52),
-            PrimaryDown = C(160, 45, 33),
+            Primary = C(200, 64, 42),
+            PrimaryHover = C(216, 69, 47),
+            PrimaryDown = C(150, 48, 32),
             PrimaryInk = C(255, 255, 255),
             Mark = C(28, 32, 36),
             Accent = C(179, 38, 30),
@@ -60,45 +60,45 @@ namespace Installer
             AccentDown = C(135, 26, 21),
             DangerHover = C(255, 244, 243),
             DangerDown = C(250, 235, 234),
-            Warn = C(155, 88, 0),          // 对 RowOff 底色 5.1:1（原来 169,97,0 只有 4.44，差一点）
-            Ok = C(46, 125, 50),
-            Info = C(0, 108, 172),         // 对 RowGame 底色 5.2:1（原来 2,119,189 只有 4.41）
+            Warn = C(168, 111, 20),          // 对 RowOff 底色 5.1:1（原来 169,97,0 只有 4.44，差一点）
+            Ok = C(31, 157, 99),
+            Info = C(42, 111, 214),         // 对 RowGame 底色 5.2:1（原来 2,119,189 只有 4.41）
             RowOn = C(238, 247, 238),
             RowOff = C(253, 246, 231),
             RowGame = C(240, 246, 252),
-            CardEdge = C(232, 233, 238),
-            SegTrack = C(239, 239, 242),
-            SegEdge = C(222, 222, 228),
+            CardEdge = C(226, 231, 237),
+            SegTrack = C(239, 242, 245),
+            SegEdge = C(207, 214, 222),
             TrackOff = C(233, 233, 235),
             TrackEdge = C(140, 145, 152),   // 对白卡 3.17:1：开关「关」态的边界要够 3:1（WCAG 1.4.11）
             ThumbOn = C(255, 255, 255),
             TreeBg = C(247, 249, 251),
-            TreeSel = C(240, 243, 247),
-            TreeHover = C(238, 242, 246),
+            TreeSel = C(250, 240, 237),
+            TreeHover = C(242, 245, 248),
             TreeBranch = C(198, 206, 215),
         };
 
         public static readonly Palette Dark = new Palette
         {
             IsDark = true,
-            Bg = C(15, 17, 20),          // 再压暗一档：卡片和画布的亮度差拉开了，才有"浮起来"的层级
-            Surface = C(30, 33, 38),
-            SurfaceAlt = C(36, 39, 45),
-            BtnHover = C(42, 46, 53),
-            BtnDown = C(50, 55, 63),
-            Chip = C(42, 46, 53),
-            ChipHover = C(51, 56, 65),
-            ChipDown = C(59, 65, 75),
-            Line = C(51, 56, 64),
-            LineSoft = C(42, 46, 53),
-            Ink = C(236, 238, 241),
-            Ink2 = C(167, 174, 184),
-            Ink3 = C(150, 158, 169),      // 对卡片 5.97:1；对选中行底(TreeSel) 4.61:1、对胶囊 5.04:1
+            Bg = C(14, 16, 19),          // 再压暗一档：卡片和画布的亮度差拉开了，才有"浮起来"的层级
+            Surface = C(21, 24, 28),
+            SurfaceAlt = C(27, 31, 36),
+            BtnHover = C(36, 41, 47),
+            BtnDown = C(44, 50, 57),
+            Chip = C(32, 37, 43),
+            ChipHover = C(41, 46, 53),
+            ChipDown = C(50, 56, 64),
+            Line = C(38, 43, 49),
+            LineSoft = C(27, 31, 36),
+            Ink = C(233, 236, 239),
+            Ink2 = C(167, 176, 186),
+            Ink3 = C(139, 149, 162),      // 对卡片 5.97:1；对选中行底(TreeSel) 4.61:1、对胶囊 5.04:1
                                           // （原来 139,147,158 在选中行只有 4.02、胶囊 4.39，不到 AA 的 4.5）
             // 深底上的主按钮用饱和度更高的红，白字 5.9:1；悬停提亮、按下压深
-            Primary = C(197, 58, 42),
-            PrimaryHover = C(216, 72, 53),
-            PrimaryDown = C(168, 46, 33),
+            Primary = C(224, 74, 50),
+            PrimaryHover = C(255, 95, 69),
+            PrimaryDown = C(180, 60, 40),
             PrimaryInk = C(255, 255, 255),
             Mark = C(236, 238, 241),
             Accent = C(240, 112, 106),    // 深底上把红提亮，小字也读得清
@@ -106,22 +106,22 @@ namespace Installer
             AccentDown = C(214, 88, 82),
             DangerHover = C(58, 36, 34),
             DangerDown = C(69, 41, 38),
-            Warn = C(224, 163, 58),
-            Ok = C(111, 191, 115),
-            Info = C(88, 166, 255),
+            Warn = C(230, 168, 60),
+            Ok = C(67, 192, 138),
+            Info = C(90, 160, 255),
             RowOn = C(27, 42, 31),
             RowOff = C(44, 39, 24),
             RowGame = C(27, 38, 50),
-            CardEdge = C(44, 48, 55),
-            SegTrack = C(36, 39, 45),
-            SegEdge = C(54, 59, 67),
-            TrackOff = C(58, 63, 71),
+            CardEdge = C(38, 43, 49),
+            SegTrack = C(32, 37, 43),
+            SegEdge = C(51, 58, 66),
+            TrackOff = C(51, 56, 64),
             TrackEdge = C(110, 116, 124),   // 对卡片 3.42:1：轨道本身太暗，靠这一圈 1px 边交代「这是个可点的开关」
             ThumbOn = C(22, 25, 29),
         
-            TreeBg = C(24, 26, 30),
-            TreeSel = C(48, 52, 60),
-            TreeHover = C(38, 41, 47),
+            TreeBg = C(18, 20, 24),
+            TreeSel = C(45, 30, 31),
+            TreeHover = C(30, 33, 38),
             TreeBranch = C(72, 78, 88),
         };
     }
@@ -608,10 +608,10 @@ namespace Installer
         }
 
         // 字体：一个族 + 固定角色刻度，不换身份
-        public static readonly Font UI = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
-        public static readonly Font UIBold = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold, GraphicsUnit.Point);
-        public static readonly Font UISmall = new Font("Microsoft YaHei UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point);
-        public static readonly Font Mono = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font UI = new Font("Microsoft YaHei UI", 10.125F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font UIBold = new Font("Microsoft YaHei UI", 10.125F, FontStyle.Bold, GraphicsUnit.Point);
+        public static readonly Font UISmall = new Font("Microsoft YaHei UI", 8.625F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font Mono = new Font("Consolas", 9.75F, FontStyle.Regular, GraphicsUnit.Point);
 
         // 栅格：16 外边距 / 12 栏间距 / 8 行内步长。
         // 全窗只认这几个数，不再各处现算 18/22/26 这类一次性间距。
@@ -619,15 +619,15 @@ namespace Installer
         public const int G = 12;
         public const int S = 8;
         public const int H = 32;   // 普通控件高（桌面端最小可点目标，也是列表行高）
-        public const int HP = 36;  // 主操作高
-        public const int R = 8;    // 控件圆角
-        public const int RowH = 32;      // 列表行高：与控件高同一档
+        public const int HP = 32;  // 主操作高
+        public const int R = 6;    // 控件圆角
+        public const int RowH = 30;      // 列表行高：与控件高同一档
         public const int ExtraW = 340;   // 方案树右半「可叠加的扩展」栏定宽
         public const int SideMin = 900;  // 右半够这个宽才并排，否则退回上下堆叠
 
         // 参照 iOS 26（Liquid Glass）的「分组列表」：卡片圆角 + 组标题在卡片外 + 内缩分隔线。
         // 触控端的 44pt 点击目标在桌面上按 26–32px 收敛；留白仍按 8 的倍数走。
-        public const int CardR = 12;     // 卡片圆角
+        public const int CardR = 0;     // 卡片圆角
         public const int CardPad = 16;   // 卡片内边距
         public static Color CardEdge { get { return pal.CardEdge; } }
 
@@ -646,22 +646,22 @@ namespace Installer
         /// <summary>顶栏底色：比画布略深/略亮一档，让"标题栏"和内容区分开，不再靠一条线硬切。</summary>
         public static Color TopBar
         {
-            get { return pal.IsDark ? Color.FromArgb(24, 27, 32) : Color.FromArgb(255, 255, 255); }
+            get { return pal.IsDark ? Color.FromArgb(21, 24, 28) : Color.FromArgb(255, 255, 255); }
         }
 
         /// <summary>底栏（开始安装那一排）底色，和顶栏成对。</summary>
         public static Color BottomBar
         {
-            get { return pal.IsDark ? Color.FromArgb(22, 25, 30) : Color.FromArgb(252, 252, 253); }
+            get { return pal.IsDark ? Color.FromArgb(19, 22, 26) : Color.FromArgb(252, 252, 253); }
         }
         public static Color SegTrack { get { return pal.SegTrack; } }   // 分段控件底
         public static Color SegEdge { get { return pal.SegEdge; } }
         public static Color TrackOff { get { return pal.TrackOff; } }   // 开关·关
         public static Color TrackEdge { get { return pal.TrackEdge; } } // 开关边线：轨道和卡片太接近时靠它交代边界
         public static Color ThumbOn { get { return pal.ThumbOn; } }     // 开关圆点
-        public static readonly Font H1 = new Font("Microsoft YaHei UI", 16F, FontStyle.Bold, GraphicsUnit.Point);
-        public static readonly Font H2 = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold, GraphicsUnit.Point);   // 加载/空态标题
-        public static readonly Font RowTitle = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font H1 = new Font("Microsoft YaHei UI", 12.75F, FontStyle.Bold, GraphicsUnit.Point);
+        public static readonly Font H2 = new Font("Microsoft YaHei UI", 11.25F, FontStyle.Bold, GraphicsUnit.Point);   // 加载/空态标题
+        public static readonly Font RowTitle = new Font("Microsoft YaHei UI", 10.125F, FontStyle.Regular, GraphicsUnit.Point);
 
         /// <summary>只在颜色变化上做很短的过渡；系统开启高对比度或用户选择减少动效时直接切到终态。</summary>
         public static bool MotionEnabled
@@ -1019,8 +1019,8 @@ namespace Installer
             }
             int iw = Dpi.S(15);
             int gap = Dpi.S(6);
-            Size ts = TextRenderer.MeasureText(Text, Font);
-            int total = iw + gap + ts.Width;
+            Size ts = string.IsNullOrEmpty(Text) ? Size.Empty : TextRenderer.MeasureText(Text, Font);
+            int total = string.IsNullOrEmpty(Text) ? iw : iw + gap + ts.Width;
             int x = r.Left + Math.Max(Dpi.S(2), (r.Width - total) / 2);
             Glyph.Draw(g, icon, new Rectangle(x, r.Top + (r.Height - iw) / 2, iw, iw), ink);
             int tx = x + iw + gap;
@@ -1177,8 +1177,21 @@ namespace Installer
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
                    | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            // 卡片里嵌着候选表、上下文条这些子控件：没有 WS_CLIPCHILDREN 时，卡片自己重绘会把
+            // 子控件上半截抹掉（2026-11-24 上下文条按钮只剩半截就是这个原因）。
             BackColor = Theme.Surface;
             Font = Theme.UI;
+        }
+
+        /// <summary>带上 WS_CLIPCHILDREN：卡片重绘时不要把嵌在里面的子控件抹掉。</summary>
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.Style |= 0x02000000;   // WS_CLIPCHILDREN
+                return cp;
+            }
         }
 
         protected override void OnPaint(PaintEventArgs e)

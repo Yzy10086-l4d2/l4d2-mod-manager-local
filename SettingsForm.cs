@@ -952,27 +952,26 @@ namespace Installer
         }
 
         /// <summary>
-        /// 顶栏标题区第二行：现在管的是哪个游戏目录。
-        /// 路径太长时中间省略（尾巴必须留 —— 「\Left 4 Dead 2」才是能认人的部分），
-        /// 鼠标停上去给完整路径。
+        /// 顶栏第二行：游戏名 + 已装数量 + 版本号。
+        /// 数量走 ReadGameNow —— 和左栏「游戏现状」、方案树同一个来源（游戏 addons 里认到的 MOD）。
+        /// 游戏目录不占这一行（太长，一进来就挤掉标题），改放悬停提示里；点这一行仍然进设置。
         /// </summary>
         internal void UpdateBrandLine()
         {
             if (lblBrandSub == null || lblBrandSub.IsDisposed) return;
             string root = (Core.Cfg == null || Core.Cfg.GameRoot == null) ? "" : Core.Cfg.GameRoot.Trim();
-            if (root.Length == 0)
-            {
-                lblBrandSub.Text = Lang.S("还没有选游戏目录 —— 点这里去设置");
-                return;
-            }
-            string shown = root;
-            if (shown.Length > 62)
-                shown = shown.Substring(0, 16) + "…" + shown.Substring(shown.Length - 42);
-            // 版本号跟在路径后面：系统标题栏撤掉后，界面上得有地方能看到现在跑的是哪一版
-                        Version v0 = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            string verText = v0.Major + "." + v0.Minor + (v0.Build > 0 ? "." + v0.Build : "");
-            lblBrandSub.Text = Lang.S("游戏目录 · ") + shown + Lang.S("　·　v") + verText;
-            if (tips != null) tips.SetToolTip(lblBrandSub, root + "\r\n" + Lang.S("点一下进设置改。"));
+            string text = Lang.S("Left 4 Dead 2");
+            int installed = ReadGameNow().Installed;
+            // 一个也没读到（还没扫完 / 目录没配）就只留游戏名，别挂个「0 个已装」吓人
+            if (installed > 0) text += " · " + installed + " 个已装";
+            if (root.Length == 0) text += Lang.S("　·　还没选游戏目录");
+            // 版本号：系统标题栏撤掉后，界面上得有地方能看到现在跑的是哪一版
+            Version v0 = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            text += Lang.S("　·　v") + v0.Major + "." + v0.Minor + (v0.Build > 0 ? "." + v0.Build : "");
+            lblBrandSub.Text = text;
+            if (tips != null)
+                tips.SetToolTip(lblBrandSub,
+                    (root.Length == 0 ? Lang.S("还没选游戏目录。") : root + "\r\n") + Lang.S("点一下进设置改。"));
         }
 
         /// <summary>主库或模式变更后重扫。extra 为空时状态文案由调用场景决定。</summary>

@@ -75,11 +75,18 @@ namespace Installer
             }
         }
 
-        /// <summary>在 rect 里画一个图标。颜色通常给 Theme.Ink2。</summary>
+        /// <summary>
+        /// 在 rect 里画一个图标。颜色通常给 Theme.Ink2。
+        ///
+        /// 两套画法：树里的大类 / 小类图标走「线型」（细描边、圆头圆角，颜色靠抗锯齿自己变淡），
+        /// 顶栏那几个 ui- 开头的工具图标还是原来的实心剪影 —— 它们只有 15px、又贴在两条图标按钮中间，
+        /// 线型在那个尺寸上会散。key 的前缀决定用哪套，调用方不用改。
+        /// </summary>
         public static void Draw(Graphics g, string key, Rectangle rect, Color color)
         {
             if (rect.Width <= 0 || rect.Height <= 0) return;
-            using (GraphicsPath p = Build(key))
+            bool solid = key.StartsWith("ui-", StringComparison.Ordinal);
+            using (GraphicsPath p = solid ? Build(key) : BuildLine(key))
             {
                 if (p == null) return;
                 GraphicsState st = g.Save();
@@ -88,10 +95,274 @@ namespace Installer
                     g.SmoothingMode = SmoothingMode.AntiAlias;
                     g.TranslateTransform(rect.X, rect.Y);
                     g.ScaleTransform(rect.Width / (float)Grid, rect.Height / (float)Grid);
-                    using (SolidBrush b = new SolidBrush(color)) g.FillPath(b, p);
+                    if (solid)
+                    {
+                        using (SolidBrush b = new SolidBrush(color)) g.FillPath(b, p);
+                    }
+                    else
+                    {
+                        // 线宽按 16 格网格给：18px 树里约 1.3px，32px 样张约 2.3px，跟着尺寸缩放不糊。
+                        using (Pen pen = new Pen(color, LineUnit))
+                        {
+                            pen.StartCap = LineCap.Round;
+                            pen.EndCap = LineCap.Round;
+                            pen.LineJoin = LineJoin.Round;
+                            // 「未归类」画虚线框：一眼就知道这行没归位，不只是个方框。
+                            if (key == "unknown")
+                            {
+                                pen.DashStyle = DashStyle.Custom;
+                                pen.DashPattern = new float[] { 1.7f, 1.5f };
+                            }
+                            g.DrawPath(pen, p);
+                        }
+                    }
                 }
                 finally { g.Restore(st); }
             }
+        }
+
+        // ---------------------------------------------------------------- 线型图标（树里用）
+        //
+        // 和下面的实心剪影是同一批 key，换成「细线 + 圆头圆角」的画法：
+        // 16 格网格里一件图标只留 2~5 笔，线宽恒为 1.15 格（18px 下约 1.3px），
+        // 靠形状 + 留白认类别，不靠面积。小件（弹匣、握把）宽了才画闭合框，
+        // 窄的就一根线 —— 1px 的框在 18px 下只会糊成一坨灰。
+
+        /// <summary>线宽（单位是 16 格网格；18px 下约 1.3px，32px 下约 2.3px）。</summary>
+        private const float LineUnit = 1.15f;
+
+        /// <summary>开折线：不闭合，两端是圆头。</summary>
+        private static void Open(GraphicsPath p, params PointF[] pts) { p.AddLines(pts); }
+
+        /// <summary>闭合轮廓。</summary>
+        private static void Loop(GraphicsPath p, params PointF[] pts) { p.AddPolygon(pts); }
+
+        /// <summary>圆圈。</summary>
+        private static void Ring(GraphicsPath p, float cx, float cy, float r) { p.AddEllipse(cx - r, cy - r, r * 2f, r * 2f); }
+
+        /// <summary>一段直线。</summary>
+        private static void Seg(GraphicsPath p, float x1, float y1, float x2, float y2) { p.AddLine(x1, y1, x2, y2); }
+
+        /// <summary>圆角矩形轮廓。</summary>
+        private static void Box(GraphicsPath p, float x, float y, float w, float h, float r)
+        {
+            if (r <= 0f) { p.AddRectangle(new RectangleF(x, y, w, h)); return; }
+            float d = r * 2f;
+            p.AddArc(x, y, d, d, 180f, 90f);
+            p.AddArc(x + w - d, y, d, d, 270f, 90f);
+            p.AddArc(x + w - d, y + h - d, d, d, 0f, 90f);
+            p.AddArc(x, y + h - d, d, d, 90f, 90f);
+            p.CloseFigure();
+        }
+
+        private static GraphicsPath BuildLine(string key)
+        {
+            GraphicsPath p = new GraphicsPath();
+            switch (key)
+            {
+                // ---- 大类
+                case "gun":
+                    GunLine(p);
+                    return p;
+
+                case "person":
+                    PersonLine(p, 8.0f, 4.4f, 2.6f, 4.8f, 8.4f, 14.2f);
+                    return p;
+
+                // 普通感染者：一大一小两个人影叠着 = 一群，和「特感」的三道爪痕分开。
+                case "horde":
+                    PersonLine(p, 6.2f, 5.2f, 2.1f, 2.2f, 9.0f, 14.2f);
+                    Ring(p, 12.0f, 6.8f, 1.5f);
+                    Open(p, new PointF(9.8f, 14.2f), new PointF(10.6f, 10.4f), new PointF(13.4f, 10.4f), new PointF(14.2f, 14.2f));
+                    return p;
+
+                case "medkit":
+                    Box(p, 1.8f, 5.8f, 12.4f, 8.4f, 1.2f);                       // 箱体
+                    Open(p, new PointF(6.2f, 5.8f), new PointF(6.2f, 3.6f), new PointF(9.8f, 3.6f), new PointF(9.8f, 5.8f));  // 提手
+                    Seg(p, 8.0f, 7.6f, 8.0f, 12.4f);                            // 十字
+                    Seg(p, 5.6f, 10.0f, 10.4f, 10.0f);
+                    return p;
+
+                case "map":
+                    Loop(p, new PointF(1.4f, 4.6f), new PointF(5.0f, 3.0f), new PointF(5.0f, 11.8f), new PointF(1.4f, 13.4f));
+                    Loop(p, new PointF(5.6f, 3.0f), new PointF(10.4f, 4.6f), new PointF(10.4f, 13.4f), new PointF(5.6f, 11.8f));
+                    Loop(p, new PointF(11.0f, 4.6f), new PointF(14.6f, 3.0f), new PointF(14.6f, 11.8f), new PointF(11.0f, 13.4f));
+                    return p;
+
+                case "spray":
+                    Box(p, 3.6f, 6.2f, 8.4f, 8.2f, 1.4f);                       // 罐体
+                    Box(p, 6.2f, 3.6f, 3.4f, 2.6f, 0.6f);                       // 罐盖
+                    Seg(p, 5.4f, 9.4f, 10.2f, 9.4f);                            // 标签线
+                    Ring(p, 12.4f, 2.6f, 0.8f);                                 // 雾点
+                    Ring(p, 13.6f, 4.4f, 0.8f);
+                    return p;
+
+                case "branch":
+                    Seg(p, 8.0f, 13.8f, 8.0f, 6.6f);                            // 主干
+                    Seg(p, 8.0f, 8.8f, 4.4f, 5.6f);                             // 左枝
+                    Seg(p, 8.0f, 7.8f, 11.6f, 4.8f);                            // 右枝
+                    Ring(p, 3.2f, 4.4f, 1.5f);
+                    Ring(p, 12.4f, 3.6f, 1.5f);
+                    Ring(p, 8.0f, 2.6f, 1.5f);
+                    Seg(p, 5.4f, 14.2f, 10.6f, 14.2f);                          // 底座
+                    return p;
+
+                case "unknown":
+                    Box(p, 2.0f, 2.0f, 12.0f, 12.0f, 2.4f);                     // 虚线框（Draw 里给这个 key 换虚线）
+                    Ring(p, 8.0f, 8.0f, 1.3f);
+                    return p;
+
+                // ---- 枪械小类
+                case "rifle":
+                    GunLine(p);
+                    Box(p, 4.6f, 2.4f, 5.2f, 2.2f, 0.9f);                       // 瞄准镜
+                    Seg(p, 6.0f, 4.6f, 6.0f, 5.4f);
+                    Seg(p, 8.4f, 4.6f, 8.4f, 5.4f);
+                    return p;
+
+                case "smg":
+                    Box(p, 2.6f, 6.0f, 7.0f, 3.2f, 1.0f);                       // 短机匣
+                    Seg(p, 9.6f, 7.6f, 11.6f, 7.6f);                            // 短枪管
+                    Loop(p, new PointF(4.6f, 9.2f), new PointF(7.2f, 9.2f), new PointF(6.6f, 14.0f), new PointF(5.0f, 14.0f));
+                    Open(p, new PointF(2.6f, 6.0f), new PointF(1.2f, 6.0f), new PointF(1.2f, 9.2f), new PointF(2.6f, 9.2f));   // 折叠托
+                    return p;
+
+                case "shotgun":
+                    Seg(p, 1.2f, 5.6f, 14.8f, 5.6f);                            // 上管
+                    Seg(p, 1.2f, 8.0f, 14.8f, 8.0f);                            // 下管
+                    Seg(p, 14.8f, 5.6f, 14.8f, 8.0f);                           // 枪口
+                    Seg(p, 1.2f, 5.6f, 1.2f, 8.0f);                             // 托尾
+                    Box(p, 5.0f, 8.0f, 4.8f, 2.6f, 0.8f);                       // 泵动护木
+                    Open(p, new PointF(9.8f, 8.0f), new PointF(10.2f, 9.8f), new PointF(9.4f, 13.0f));   // 握把
+                    return p;
+
+                case "sniper":
+                    Box(p, 3.8f, 6.4f, 6.4f, 2.8f, 1.0f);                       // 机匣
+                    Seg(p, 10.2f, 7.8f, 15.2f, 7.8f);                           // 长枪管
+                    Box(p, 4.6f, 2.6f, 5.6f, 2.2f, 0.9f);                       // 瞄准镜
+                    Seg(p, 6.2f, 4.8f, 6.2f, 6.4f);
+                    Seg(p, 8.6f, 4.8f, 8.6f, 6.4f);
+                    Loop(p, new PointF(5.6f, 9.2f), new PointF(7.6f, 9.2f), new PointF(7.1f, 13.0f), new PointF(5.9f, 13.0f));
+                    Open(p, new PointF(3.8f, 6.4f), new PointF(2.2f, 6.4f), new PointF(2.2f, 8.6f), new PointF(3.8f, 8.6f));
+                    return p;
+
+                case "pistol":
+                    Box(p, 2.8f, 5.0f, 9.2f, 2.8f, 0.9f);                       // 套筒
+                    Seg(p, 12.0f, 6.4f, 14.6f, 6.4f);                           // 枪口
+                    Loop(p, new PointF(4.4f, 7.8f), new PointF(8.0f, 7.8f), new PointF(7.0f, 13.8f), new PointF(4.9f, 13.8f));   // 握把
+                    Seg(p, 4.4f, 10.4f, 6.4f, 10.4f);                           // 护圈
+                    return p;
+
+                case "launcher":
+                    Box(p, 1.8f, 5.4f, 9.4f, 4.4f, 1.2f);                       // 发射管
+                    Loop(p, new PointF(11.2f, 4.6f), new PointF(14.8f, 6.0f), new PointF(14.8f, 9.2f), new PointF(11.2f, 10.6f));  // 喇叭口
+                    Seg(p, 0.6f, 5.4f, 1.8f, 5.4f);
+                    Open(p, new PointF(5.6f, 9.8f), new PointF(7.4f, 9.8f), new PointF(7.0f, 13.6f));   // 握把
+                    return p;
+
+                case "melee":
+                    Seg(p, 8.6f, 2.2f, 8.6f, 13.8f);                            // 柄（穿出斧头一截，才不像旗子）
+                    Loop(p, new PointF(8.6f, 3.4f), new PointF(12.8f, 2.6f), new PointF(14.2f, 5.0f),
+                              new PointF(12.8f, 7.2f), new PointF(8.6f, 6.4f));  // 斧头：刃口外鼓
+                    return p;
+
+                case "bottle":
+                    Loop(p, new PointF(4.8f, 8.2f), new PointF(11.2f, 8.2f), new PointF(10.4f, 14.4f), new PointF(5.6f, 14.4f));  // 瓶身
+                    Seg(p, 6.9f, 8.2f, 6.9f, 5.0f);                             // 瓶颈
+                    Seg(p, 9.1f, 8.2f, 9.1f, 5.0f);
+                    Seg(p, 6.9f, 5.0f, 9.1f, 5.0f);
+                    Loop(p, new PointF(8.0f, 0.8f), new PointF(9.6f, 4.0f), new PointF(6.4f, 4.0f));   // 火苗
+                    return p;
+
+                case "ammo":
+                    Loop(p, new PointF(5.0f, 1.6f), new PointF(6.6f, 5.4f), new PointF(6.6f, 14.2f), new PointF(3.4f, 14.2f), new PointF(3.4f, 5.4f));
+                    Loop(p, new PointF(11.0f, 1.6f), new PointF(12.6f, 5.4f), new PointF(12.6f, 14.2f), new PointF(9.4f, 14.2f), new PointF(9.4f, 5.4f));
+                    return p;
+
+                // ---- 人物小类
+                case "survivor1":
+                    PersonLine(p, 6.6f, 4.0f, 2.1f, 2.6f, 8.6f, 14.2f);
+                    Ring(p, 12.6f, 8.0f, 1.3f);                                 // 一代：右侧一颗点
+                    return p;
+
+                case "survivor2":
+                    PersonLine(p, 6.6f, 4.0f, 2.1f, 2.6f, 8.6f, 14.2f);
+                    Ring(p, 12.6f, 5.6f, 1.3f);                                 // 二代：两颗点
+                    Ring(p, 12.6f, 10.2f, 1.3f);
+                    return p;
+
+                case "claw":
+                    Seg(p, 2.4f, 3.4f, 10.8f, 13.0f);                           // 三道爪痕
+                    Seg(p, 6.6f, 2.0f, 14.6f, 9.8f);
+                    Seg(p, 1.2f, 7.4f, 8.0f, 14.6f);
+                    return p;
+
+                // ---- 药品小类
+                case "syringe":
+                    Box(p, 4.6f, 5.2f, 6.2f, 3.4f, 0.8f);                       // 药筒
+                    Seg(p, 2.6f, 5.2f, 4.6f, 5.2f);                             // 活塞
+                    Seg(p, 2.6f, 8.6f, 4.6f, 8.6f);
+                    Seg(p, 2.6f, 5.2f, 2.6f, 8.6f);
+                    Seg(p, 1.2f, 6.9f, 2.6f, 6.9f);                             // 推杆
+                    Seg(p, 10.8f, 6.9f, 14.8f, 6.9f);                           // 针
+                    Seg(p, 6.6f, 5.2f, 6.6f, 8.6f);                             // 刻度
+                    return p;
+
+                case "pills":
+                    Loop(p, new PointF(4.8f, 6.2f), new PointF(11.2f, 6.2f), new PointF(10.4f, 14.2f), new PointF(5.6f, 14.2f));  // 瓶身
+                    Box(p, 5.8f, 3.4f, 4.4f, 2.8f, 0.6f);                       // 瓶盖
+                    Seg(p, 6.4f, 8.8f, 9.6f, 8.8f);                             // 标签线
+                    Seg(p, 6.4f, 11.4f, 9.6f, 11.4f);
+                    return p;
+
+                // ---- 杂项 / 整套替换三栏
+                case "ui":
+                    Box(p, 1.6f, 2.2f, 12.8f, 8.6f, 1.2f);                      // 显示器
+                    Seg(p, 8.0f, 10.8f, 8.0f, 13.2f);                           // 支架
+                    Seg(p, 4.8f, 13.6f, 11.2f, 13.6f);                          // 底座
+                    return p;
+
+                case "fx":
+                    Loop(p, Star(5.4f, 5.8f, 4.4f, 1.5f));                      // 一大一小两颗火花
+                    Loop(p, Star(12.0f, 11.8f, 3.0f, 1.0f));
+                    return p;
+
+                case "sound":
+                    Loop(p, new PointF(1.4f, 6.2f), new PointF(4.4f, 6.2f), new PointF(7.6f, 3.0f), new PointF(7.6f, 13.0f), new PointF(4.4f, 9.8f), new PointF(1.4f, 9.8f));  // 喇叭
+                    p.AddArc(7.6f - 4.3f, 8.0f - 4.3f, 8.6f, 8.6f, -50f, 100f);     // 两声波
+                    p.AddArc(7.6f - 6.6f, 8.0f - 6.6f, 13.2f, 13.2f, -46f, 92f);
+                    return p;
+
+                case "misc":
+                    Box(p, 1.8f, 6.6f, 12.4f, 7.6f, 1.2f);                      // 工具箱
+                    Open(p, new PointF(5.8f, 6.6f), new PointF(5.8f, 3.6f), new PointF(10.2f, 3.6f), new PointF(10.2f, 6.6f));  // 提手
+                    Seg(p, 8.0f, 10.6f, 8.0f, 12.2f);                           // 搭扣
+                    return p;
+
+                default:
+                    p.Dispose();
+                    return null;
+            }
+        }
+
+        /// <summary>线型步枪：机匣框 + 细枪管 + 下垂的弹匣 / 握把 + 枪托。</summary>
+        private static void GunLine(GraphicsPath p)
+        {
+            Box(p, 2.0f, 5.4f, 8.8f, 3.2f, 1.0f);                                  // 机匣
+            Seg(p, 10.8f, 7.0f, 14.8f, 7.0f);                                      // 枪管
+            Loop(p, new PointF(4.4f, 8.6f), new PointF(7.4f, 8.6f), new PointF(6.9f, 13.2f), new PointF(4.9f, 13.2f));    // 弹匣
+            Loop(p, new PointF(8.4f, 8.6f), new PointF(10.4f, 8.6f), new PointF(9.8f, 12.4f), new PointF(8.3f, 12.4f));   // 握把
+            Open(p, new PointF(2.0f, 5.4f), new PointF(1.0f, 6.8f), new PointF(1.0f, 8.6f), new PointF(2.0f, 8.6f));     // 枪托
+        }
+
+        /// <summary>
+        /// 线型半身人形：头 + 肩线。头半径 / 肩宽端点都给参数，共用给「人物 / 小僵尸 / 一代 / 二代」。
+        /// </summary>
+        private static void PersonLine(GraphicsPath p, float hx, float hy, float hr, float halfW, float sy, float bottom)
+        {
+            Ring(p, hx, hy, hr);
+            Open(p, new PointF(hx - halfW, bottom), new PointF(hx - halfW + 1.6f, sy),
+                     new PointF(hx + halfW - 1.6f, sy), new PointF(hx + halfW, bottom));
         }
 
         // ---------------------------------------------------------------- 形状

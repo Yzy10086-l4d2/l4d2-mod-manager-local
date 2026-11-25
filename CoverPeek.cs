@@ -18,7 +18,8 @@ namespace Installer
         private string meta = "";
         private string src = "";
         private string hint = "";
-        private string info = "";        // 竖版才用：附加几行（改了什么 / 游戏里叫什么 / 开关状态）
+        private string info = "";        // 竖版才用：「标签\t值」若干行（\n 分隔，没有标签的行当说明文字）
+        private string chips = "";       // 竖版才用：标题下那排胶囊，\t 分隔（替换层 / 大小 / 状态）
         private bool owned;                 // img 是不是自己 new 出来的（要自己释放）
 
         public CoverPeek()
@@ -52,6 +53,15 @@ namespace Installer
             src = srcText ?? "";
             hint = hintText ?? "";
             info = infoText ?? "";
+            chips = "";
+            Invalidate();
+        }
+
+        /// <summary>同上，另给一排胶囊标签（"\t" 分隔：替换层 / 大小 / 状态）。</summary>
+        public void Show(string name, string metaText, string srcText, string imgPath, string hintText, string infoText, string chipsText)
+        {
+            Show(name, metaText, srcText, imgPath, hintText, infoText);
+            chips = chipsText ?? "";
             Invalidate();
         }
 
@@ -81,6 +91,7 @@ namespace Installer
             src = "";
             hint = hintText ?? "";
             info = "";
+            chips = "";
             Invalidate();
         }
 
@@ -205,16 +216,15 @@ namespace Installer
             }
         }
 
-        /// <summary>竖版：16:9 大图在上，标题 / 类型·体积 / 来源 / 提示依次排在下面。</summary>
+        /// <summary>
+        /// 竖版（右侧详情栏）：16:9 大图贴栏边在上，往下是标题 / 胶囊标签 / 键值两列。
+        /// 键值两列的标签列固定 64px、右对齐，值列从 72px 起，行高 22。
+        /// </summary>
         private void PaintTall(Graphics g)
         {
-            int pad = Dpi.S(10);
-            Rectangle full = new Rectangle(0, 0, Width, Height);
-            using (GraphicsPath bg = Round(full, Dpi.S(8)))
-            {
-                using (SolidBrush b = new SolidBrush(Theme.SurfaceAlt)) g.FillPath(b, bg);
-                using (Pen p = new Pen(Theme.LineSoft)) g.DrawPath(p, bg);
-            }
+            // 详情栏是「面板」不是卡片：整块铺满、不描边不圆角（契约：卡片不加圆角）
+            using (SolidBrush b = new SolidBrush(Theme.Surface))
+                g.FillRectangle(b, new Rectangle(0, 0, Width, Height));
 
             int iw = Math.Max(Dpi.S(40), Width);
             int ih = iw * 9 / 16;
@@ -225,34 +235,28 @@ namespace Installer
             if (ih > maxH) { ih = maxH; iw = ih * 16 / 9; }
             Rectangle thumb = new Rectangle((Width - iw) / 2, 0, iw, ih);
 
-            using (GraphicsPath clip = Round(thumb, Dpi.S(6)))
+            // 封面贴边：不裁圆角、不描边（预览稿是满幅图）
+            if (img != null)
             {
-                GraphicsState st = g.Save();
-                g.SetClip(clip);
-                if (img != null)
-                {
-                    float s = Math.Max((float)thumb.Width / img.Width, (float)thumb.Height / img.Height);
-                    int dw = (int)Math.Ceiling(img.Width * s), dh = (int)Math.Ceiling(img.Height * s);
-                    g.DrawImage(img, new Rectangle(thumb.X + (thumb.Width - dw) / 2,
-                                                   thumb.Y + (thumb.Height - dh) / 2, dw, dh));
-                }
-                else
-                {
-                    using (SolidBrush b = new SolidBrush(Theme.IsDark
-                               ? Color.FromArgb(46, 50, 58) : Color.FromArgb(232, 236, 242)))
-                        g.FillRectangle(b, thumb);
-                    string tag = hint.Length > 0 ? hint : "包内无图";
-                    using (Font f = new Font(Theme.UISmall.FontFamily, 8.5f))
-                    using (SolidBrush b = new SolidBrush(Theme.Ink3))
-                    {
-                        SizeF sz = g.MeasureString(tag, f);
-                        g.DrawString(tag, f, b, thumb.X + (thumb.Width - sz.Width) / 2,
-                                     thumb.Y + (thumb.Height - sz.Height) / 2);
-                    }
-                }
-                g.Restore(st);
+                float s = Math.Max((float)thumb.Width / img.Width, (float)thumb.Height / img.Height);
+                int dw = (int)Math.Ceiling(img.Width * s), dh = (int)Math.Ceiling(img.Height * s);
+                g.DrawImage(img, new Rectangle(thumb.X + (thumb.Width - dw) / 2,
+                                               thumb.Y + (thumb.Height - dh) / 2, dw, dh));
             }
-            using (Pen p = new Pen(Theme.LineSoft)) { using (GraphicsPath cp = Round(thumb, Dpi.S(6))) g.DrawPath(p, cp); }
+            else
+            {
+                using (SolidBrush b = new SolidBrush(Theme.IsDark
+                           ? Color.FromArgb(46, 50, 58) : Color.FromArgb(232, 236, 242)))
+                    g.FillRectangle(b, thumb);
+                string tag = hint.Length > 0 ? hint : "包内无图";
+                using (Font f = new Font(Theme.UISmall.FontFamily, 8.5f))
+                using (SolidBrush b = new SolidBrush(Theme.Ink3))
+                {
+                    SizeF sz = g.MeasureString(tag, f);
+                    g.DrawString(tag, f, b, thumb.X + (thumb.Width - sz.Width) / 2,
+                                 thumb.Y + (thumb.Height - sz.Height) / 2);
+                }
+            }
 
             // 文字块也跟图对齐（以前文字内缩 10px、图内缩 10px，现在两个都贴栏边）
             int tx = 0;
@@ -260,38 +264,86 @@ namespace Installer
             int y = thumb.Bottom + Dpi.S(12);
             if (title.Length == 0)
             {
-                TextRenderer.DrawText(g, hint, Theme.UI, new Rectangle(tx, y, tw, Height - y - pad),
+                TextRenderer.DrawText(g, hint, Theme.UI, new Rectangle(tx, y, tw, Height - y),
                     Theme.Ink3, TextFormatFlags.Left | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
                 return;
             }
-            using (Font tf = new Font(Theme.UIBold.FontFamily, 11f, FontStyle.Bold))
-                TextRenderer.DrawText(g, title, tf, new Rectangle(tx, y, tw, Dpi.S(44)),
-                    Theme.Ink, TextFormatFlags.Left | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
-            y += Dpi.S(46);
-            TextRenderer.DrawText(g, meta, Theme.UISmall, new Rectangle(tx, y, tw, Dpi.S(20)),
-                Theme.Ink2, TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-            y += Dpi.S(22);
-            if (src.Length > 0)
+
+            // 标题：17px（12.75pt）/ 600
+            using (Font tf = new Font(Theme.UIBold.FontFamily, 12.75f, FontStyle.Bold))
+                TextRenderer.DrawText(g, title, tf, new Rectangle(tx, y, tw, Dpi.S(26)),
+                    Theme.Ink, TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+                    | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            y += Dpi.S(26) + Dpi.S(8);
+
+            // 胶囊标签：替换层（位置名）/ 大小 / 状态，高 20、圆角 4、间距 6，一行放不下就省略
+            if (chips.Length > 0) y = PaintChips(g, y, tw) + Dpi.S(12);
+
+            // 键值两列 + 末尾无标签说明（预览稿里没有 meta 行和来源胶囊，按图去掉）
+            if (info.Length > 0) PaintInfo(g, y, tx, tw);
+        }
+
+        /// <summary>一排胶囊标签：chips 用 "\t" 分隔，每个一条；一行放不下就把后面的省略掉。</summary>
+        private int PaintChips(Graphics g, int y, int maxW)
+        {
+            int h = Dpi.S(20);
+            int gap = Dpi.S(6);
+            int x = 0;
+            string[] parts = chips.Split('\t');
+            for (int i = 0; i < parts.Length; i++)
             {
-                bool has = img != null;
-                Color ink = has ? Theme.Info : Theme.Ink3;
-                Color bgb = has ? (Theme.IsDark ? Color.FromArgb(27, 42, 58) : Color.FromArgb(227, 240, 250))
-                                : (Theme.IsDark ? Color.FromArgb(42, 46, 53) : Color.FromArgb(242, 243, 246));
-                Font f = Theme.UISmall;
-                Size sz = TextRenderer.MeasureText(g, src, f);
-                Rectangle badge = new Rectangle(tx, y, Math.Min(tw, sz.Width + Dpi.S(6)), Dpi.S(18));
-                using (GraphicsPath bp = Round(badge, Dpi.S(3)))
-                {
-                    using (SolidBrush b = new SolidBrush(bgb)) g.FillPath(b, bp);
-                }
-                TextRenderer.DrawText(g, src, f, badge, ink,
-                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-                y = badge.Bottom + Dpi.S(10);
+                string t = (parts[i] == null ? "" : parts[i]).Trim();
+                if (t.Length == 0) continue;
+                Size sz = TextRenderer.MeasureText(g, t, Theme.UISmall, Size.Empty, TextFormatFlags.NoPadding);
+                int w = sz.Width + Dpi.S(16);
+                if (x + w > maxW) break;
+                Rectangle r = new Rectangle(x, y, w, h);
+                using (GraphicsPath p = Round(r, Dpi.S(4)))
+                using (SolidBrush b = new SolidBrush(Theme.SurfaceAlt)) g.FillPath(b, p);
+                TextRenderer.DrawText(g, t, Theme.UISmall, r, Theme.Ink3,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
+                    | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                x += w + gap;
             }
-            if (info.Length > 0)
+            return y + h;
+        }
+
+        /// <summary>
+        /// 「标签 / 值」两列：标签列 64px、右对齐、11.5px 辅助色；值列从 72px 起、13.5px 正文色，行高 22。
+        /// info 用 "\t" 分标签和值、"\n" 分条；没有 "\t" 的行当说明文字，通栏换行排在最后。
+        /// </summary>
+        private void PaintInfo(Graphics g, int y, int tx, int tw)
+        {
+            int labelW = Dpi.S(64);
+            int gap = Dpi.S(8);
+            int rowH = Dpi.S(22);
+            bool noteStarted = false;
+            string[] lines = info.Replace("\r\n", "\n").Split('\n');
+            for (int i = 0; i < lines.Length; i++)
             {
-                TextRenderer.DrawText(g, info, Theme.UISmall, new Rectangle(tx, y, tw, Height - y - pad),
-                    Theme.Ink3, TextFormatFlags.Left | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+                string line = lines[i] == null ? "" : lines[i].Trim();
+                if (line.Length == 0) continue;
+                int tab = line.IndexOf('\t');
+                if (tab < 0)
+                {
+                    if (!noteStarted) { noteStarted = true; y += Dpi.S(6); }   // 说明文字和键值对之间留一口气
+                    Size need = TextRenderer.MeasureText(g, line, Theme.UISmall, new Size(tw, int.MaxValue),
+                        TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+                    TextRenderer.DrawText(g, line, Theme.UISmall, new Rectangle(tx, y, tw, need.Height),
+                        Theme.Ink3, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak
+                        | TextFormatFlags.NoPrefix);
+                    y += need.Height + Dpi.S(4);
+                    continue;
+                }
+                string label = line.Substring(0, tab).Trim();
+                string value = line.Substring(tab + 1).Trim();
+                TextRenderer.DrawText(g, label, Theme.UISmall, new Rectangle(tx, y, labelW, rowH), Theme.Ink3,
+                    TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                int vx = tx + labelW + gap;
+                TextRenderer.DrawText(g, value, Theme.UI, new Rectangle(vx, y, Math.Max(0, tw - labelW - gap), rowH),
+                    Theme.Ink, TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+                    | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                y += rowH;
             }
         }
 
