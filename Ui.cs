@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -4361,7 +4361,12 @@ namespace Installer
                 FlatButton[] top = new FlatButton[] { btnLaunch, btnWorkshop, btnView, btnSettings, btnRefreshLib, btnInstall };
                 if (btnSettings.Left + Dpi.S(60) > W - m + 1) { bad++; Core.Log("FAIL", tag + "「设置」出窗"); }
                 for (int i = 1; i < top.Length; i++)
-                    if (top[i].Left <= top[i - 1].Left + Dpi.S(56)) { bad++; Core.Log("FAIL", tag + "顶部按钮叠在一起：" + top[i].Text); }
+                {
+                    // 按前一个按钮的实际宽度比，不写死 56：顶栏按钮 2026-11-25 从「52~76 宽的文字按钮」
+                    // 改成了 32px 纯图标，固定阈值会把正常间距误判成重叠。
+                    int gapNeed = top[i - 1].Width + Dpi.S(2);
+                    if (top[i].Left <= top[i - 1].Left + gapNeed) { bad++; Core.Log("FAIL", tag + "顶部按钮叠在一起：" + top[i].Text); }
+                }
 
                 // 两栏：右栏整体落在窗口里，且不压到左栏
                 if (gMod.Left < m) { bad++; Core.Log("FAIL", tag + "右栏左边距算成负数"); }
@@ -4375,11 +4380,14 @@ namespace Installer
                     Core.Log("FAIL", tag + "右栏底边 " + (gMod.Top + gMod.Height)
                         + "px 越过窗口下沿（客户区高 " + ClientSize.Height + "px）");
                 }
-                if (gMod.Top + viewHost.Top + viewHost.Height > lblStatus.Top + Dpi.S(2))
+                // 页脚（状态条）自 2026-11-25 起是窗体上的独立 Panel，lblStatus 成了它的子控件，
+                // Top 是相对状态条的，不能直接拿来跟绝对坐标比。
+                int footerTop = statusBar != null ? statusBar.Top : lblStatus.Top;
+                if (gMod.Top + viewHost.Top + viewHost.Height > footerTop + Dpi.S(2))
                 {
                     bad++;
                     Core.Log("FAIL", tag + "候选列表压进页脚：列表底 "
-                        + (gMod.Top + viewHost.Top + viewHost.Height) + "px / 页脚顶 " + lblStatus.Top + "px");
+                        + (gMod.Top + viewHost.Top + viewHost.Height) + "px / 页脚顶 " + footerTop + "px");
                 }
                 if (viewHost.Width <= 0) { bad++; Core.Log("FAIL", tag + "台面宽度算成 0"); }
                 if (txtLog.Width <= 0) { bad++; Core.Log("FAIL", tag + "日志框宽度算成 0"); }
@@ -4391,8 +4399,8 @@ namespace Installer
                 if (gLog.Height > 0)
                 { bad++; Core.Log("FAIL", tag + "日志默认没收起（高 " + gLog.Height + "px）"); }
                 SetLogOpen(true);
-                if (gLog.Top + gLog.Height > lblStatus.Top + 1)
-                { bad++; Core.Log("FAIL", tag + "日志展开后压到底栏（底 " + (gLog.Top + gLog.Height) + " / 状态行 " + lblStatus.Top + "）"); }
+                if (gLog.Top + gLog.Height > footerTop + 1)
+                { bad++; Core.Log("FAIL", tag + "日志展开后压到底栏（底 " + (gLog.Top + gLog.Height) + " / 状态条 " + footerTop + "）"); }
                 if (gLog.Top < Dpi.S(56))
                 { bad++; Core.Log("FAIL", tag + "日志展开后压到「安装选项」卡片"); }
                 if (gLog.Height < Dpi.S(120))
