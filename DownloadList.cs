@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -89,10 +89,10 @@ namespace Installer
             lv.FullRowSelect = true;
             lv.MultiSelect = false;
             lv.HideSelection = false;
-            lv.Columns.Add("MOD", S(300));
-            lv.Columns.Add(Lang.S("大小"), S(130));
-            lv.Columns.Add(Lang.S("状态"), S(190));
-            lv.Columns.Add(Lang.S("时间"), S(120));
+            lv.Columns.Add("MOD", S(240));
+            lv.Columns.Add(Lang.S("大小"), S(90));
+            lv.Columns.Add(Lang.S("状态"), S(160));
+            lv.Columns.Add(Lang.S("时间"), S(110));   // 合计 600：字号涨到 13.5 后 740 放不下，状态/时间表头会被截
             lv.DoubleClick += delegate { Locate(); };
             lv.SelectedIndexChanged += delegate { UpdateButtons(); };
             // 滚轮发给有焦点的控件：鼠标进哪个列表就把焦点给它，免得"滚轮怎么滚都不动"

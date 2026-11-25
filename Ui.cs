@@ -196,7 +196,8 @@ namespace Installer
         private UpdateInfo pendingUpdate;
         private Label lblNotice;                    // 状态行右段：常驻提示（新版 / 离线 / 未识别数），不被临时消息覆盖
         private Label lblSchemeDiff;
-        private Label lblSearchCap;                 // 顶栏搜索框左边那两个字                // 方案行右侧：这套方案和当前勾选差几处（套用前先看得到）
+        private Label lblSearchCap;
+        private Label lblSearchHint;   // 搜索框占位提示（覆盖层）                 // 顶栏搜索框左边那两个字                // 方案行右侧：这套方案和当前勾选差几处（套用前先看得到）
         private OverviewForm overviewWindow;        // 方案总览的独立窗口
         private FlatButton btnScheme;               // 方案按钮（替代系统下拉）
         private Panel pnlScheme;                    // 方案弹层：每套一行，带覆盖数 / 正在用 / 有改动
@@ -810,7 +811,24 @@ namespace Installer
             // 树上面堆了四层横条。合成一行后树整整多出 48px 高度。
             Label l9 = lblSearchCap = new Label(); l9.Visible = false; l9.SetBounds(472, 36, 34, 20); Theme.Dress(l9); Controls.Add(l9);
             int searchW = Math.Max(160, rightW - 12 - 56 - 8 - 510);
-            txtSearch = new TextBox(); txtSearch.SetBounds(510, 34, searchW, 24); txtSearch.AccessibleName = "搜索 MOD"; Theme.Dress(txtSearch); txtSearch.TextChanged += delegate { searchTimer.Stop(); searchTimer.Start(); }; Controls.Add(txtSearch);
+            txtSearch = new TextBox(); txtSearch.SetBounds(510, 34, searchW, 24); txtSearch.AccessibleName = "搜索 MOD";
+            // 契约 v1：搜索框给占位提示（预览稿是「搜 MOD / 位置 / 替换内容」+ Ctrl F）
+            // 契约 v1：搜索框占位提示。用覆盖在输入框上的一层 Label 做（EM_SETCUEBANNER 在
+            // 自绘深色输入框上不生效，实测点了不显示）。
+            lblSearchHint = new Label();
+            lblSearchHint.Text = Lang.S("搜 MOD / 位置 / 替换内容");
+            lblSearchHint.Font = Theme.UI;
+            lblSearchHint.ForeColor = Theme.Ink3;
+            lblSearchHint.BackColor = Theme.Surface;
+            lblSearchHint.AutoEllipsis = true;
+            lblSearchHint.TextAlign = ContentAlignment.MiddleLeft;
+            lblSearchHint.Cursor = Cursors.IBeam;
+            lblSearchHint.Click += delegate { txtSearch.Focus(); };
+            Controls.Add(lblSearchHint);
+            lblSearchHint.BringToFront();
+            txtSearch.TextChanged += delegate { if (lblSearchHint != null) lblSearchHint.Visible = txtSearch.Text.Length == 0; };
+            txtSearch.Enter += delegate { if (lblSearchHint != null) lblSearchHint.Visible = false; };
+            txtSearch.Leave += delegate { if (lblSearchHint != null) lblSearchHint.Visible = txtSearch.Text.Length == 0; }; Theme.Dress(txtSearch); txtSearch.TextChanged += delegate { searchTimer.Stop(); searchTimer.Start(); }; Controls.Add(txtSearch);
             tips.SetToolTip(txtSearch, Lang.S("搜名字 / 替换了什么 / 位置名。Ctrl+F 快速聚焦，Esc 清空并返回方案树。\r\n停止输入 250 ms 自动筛；点搜索结果可跳回它在树里的位置。"));
             btnClearSearch = new FlatButton(); btnClearSearch.Text = Lang.S("清空"); btnClearSearch.SetBounds(rightW - 68, 34, 56, 24);
             btnClearSearch.AccessibleName = "清空搜索并返回方案树";
@@ -4276,6 +4294,8 @@ namespace Installer
                 if (btnScheme != null) btnScheme.SetBounds(schemeLeft, Dpi.S(16), schemeW2, Theme.H);
                 if (lblSearchCap != null) lblSearchCap.SetBounds(searchLeft - Dpi.S(40), Dpi.S(22), Dpi.S(34), Dpi.S(18));
                 if (txtSearch != null) txtSearch.SetBounds(searchLeft, Dpi.S(18), searchW2, Dpi.S(26));
+            if (lblSearchHint != null && txtSearch != null)
+                lblSearchHint.SetBounds(searchLeft + Dpi.S(6), Dpi.S(21), Math.Max(Dpi.S(40), searchW2 - Dpi.S(12)), Dpi.S(20));
                 if (btnClearSearch != null) btnClearSearch.SetBounds(searchRight - clearW2, Dpi.S(19), clearW2, Dpi.S(24));
                 if (pnlScheme != null) pnlScheme.SetBounds(schemeLeft, Dpi.S(52), Math.Max(Dpi.S(260), schemeW2), Dpi.S(200));
             }
