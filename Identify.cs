@@ -11,6 +11,15 @@ namespace Installer
     // 刻意不读 addoninfo.txt 的作者自述 —— 实测作者标题与真实内容经常不符。
     public static class ModIdentify
     {
+        // 第 4 刀：结构化主体（主/辅各带证据与状态；字符串 Subject 仍是投影）
+        public sealed class SubjectRef
+        {
+            public string Object = "";
+            public ConfTier Tier = ConfTier.Unknown;
+            public IdStatus Status = IdStatus.Unknown;
+            public string Source = "";
+        }
+
         public class Result
         {
             private string _subject = "";
@@ -35,142 +44,13 @@ namespace Installer
             // 单独一个来源，不参与上面任何一条判定 —— 标题和真实内容对不上的包见得够多了。
             public string Title = "";
             public string Author = "";
+            // 阶段 1：证据与置信度（附加信息，不参与既有判定）
+            public readonly System.Collections.Generic.List<Evidence> Evidence = new System.Collections.Generic.List<Evidence>();
+            public ConfTier Confidence = ConfTier.Unknown;
+            public IdStatus Status = IdStatus.Unknown;
+            public bool MultiSubject;
+            public readonly System.Collections.Generic.List<SubjectRef> Subjects = new System.Collections.Generic.List<SubjectRef>();
         }
-
-        // 特征串 -> 显示名。顺序即优先级：越具体的排在越前面。
-        // 名字对齐 L4D2 官方武器名：v_ / w_ 两个前缀靠同一段特征串归到同一件东西，
-        // 否则 w_shotgun + v_pumpshotgun 会被当成两件，Subject 变成「霰弹枪/木喷」。
-        private static readonly string[,] Dict = new string[,]
-        {
-            // ---- 特感：先判，免得被下面的人名/枪名抢走
-            {"hulk",             "Tank"},
-            {"boomer",           "Boomer"},
-            {"hunter",           "Hunter"},
-            {"smoker",           "Smoker"},
-            {"jockey",           "Jockey"},
-            {"spitter",          "Spitter"},
-            {"charger",          "Charger"},
-            {"witch",            "Witch"},
-            {"tank",             "Tank"},
-
-            // ---- 普通感染者（尸潮里那种小僵尸）：换皮肤最常见的对象，特感那几条接不住。
-            //      模型名都是 common_male_* / common_female_*，比裸 "infected" 稳
-            //      （infected 连特感目录、血贴图、高亮特效都沾，会误判）。
-            //      非普通（防暴/小丑/泥人/道路工/CEDA/堕落/吉米）必须先判：模型名同样是
-            //      common_male_*，排在下面就被普通感染者吃掉，装上去只剩一个槽。
-            {"common_male_riot",     "防暴警察"},
-            {"common_male_ceda",     "CEDA"},
-            {"common_male_clown",    "小丑"},
-            {"common_male_mud",      "泥人"},
-            {"common_male_roadcrew", "道路工"},
-            {"common_male_jimmy",    "吉米"},
-            {"common_male_fallen",   "堕落幸存者"},
-            {"common_male",      "普通感染者"},
-            {"common_female",    "普通感染者"},
-
-            // ---- 幸存者：L4D2 四人 + L4D1 四人。具体模型名必须排在 "survivor" 之前
-            {"survivor_namvet",   "比尔"},
-            {"survivor_teenangst","佐伊"},
-            {"survivor_manager",  "路易斯"},
-            {"survivor_biker",    "弗朗西斯"},
-            {"survivor_coach",    "教练"},
-            {"survivor_producer", "罗谢尔"},     // producer = 新闻制片人 = Rochelle（原来错写成教练）
-            {"survivor_mechanic", "埃利斯"},
-            {"survivor_gambler",  "尼克"},
-            {"survivor",          "幸存者"},
-
-            // ---- 药品
-            {"painpills",        "止痛药"},
-            {"pain_pills",       "止痛药"},
-            {"adrenaline",       "肾上腺素"},
-            {"defibrillator",    "电击器"},
-            {"firstaid",         "医疗包"},
-            {"medkit",           "医疗包"},
-
-            // ---- 投掷物
-            {"vomitjar",         "胆汁"},
-            {"vomit_jar",        "胆汁"},
-            {"bile_flask",       "胆汁"},        // 官方胆汁模型名（来源：NekoVpk TaggedAssets, MIT）
-            {"molotov",          "燃烧瓶"},
-            {"pipebomb",         "土制炸弹"},
-            {"grenade_launcher", "榴弹发射器"},
-
-            // ---- 枪械：具体型号在前，泛称在后
-            {"rifle_ak47",       "AK-47"},
-            {"ak47",             "AK-47"},
-            {"rifle_desert",     "SCAR-L"},      // 三连发 = Desert Rifle，玩家都按 SCAR 叫
-            {"desert_rifle",     "SCAR-L"},
-            {"rif_sg552",        "sg552"},       // v_ 版模型名是缩写 rif_sg552
-            {"rifle_sg552",      "sg552"},
-            {"sg552",            "sg552"},
-            {"rifle_m60",        "M60"},
-            {"machinegun_m60",   "M60"},
-            {"m60",              "M60"},
-            {"smg_mp5",          "MP5"},
-            {"mp5",              "MP5"},
-            {"smg_silenced",     "MAC-10"},
-            {"silenced_smg",     "MAC-10"},
-            {"mac-10",           "MAC-10"},
-            {"mac10",            "MAC-10"},
-            {"smg_a",            "MAC-10"},        // w_smg_a / v_smg_a 是 MAC-10 的模型，必须先于泛称 smg
-            {"smg",              "UZI"},           // 裸 smg = v_smg = UZI
-            {"uzi",              "UZI"},
-            {"sniper_military",  "30发军用狙"},
-            {"huntingrifle",     "15发木狙"},
-            {"hunting_rifle",    "15发木狙"},
-            {"sniper_scout",     "鸟狙"},
-            {"sniper_awp",       "AWP"},
-            {"snip_awp",         "AWP"},
-            {"awp",              "AWP"},
-            {"shotgun_chrome",   "铁喷"},{"chrome",           "铁喷"},
-            {"shotgun_spas",     "二代连喷"},{"spas",             "二代连喷"},{"scattergun",       "二代连喷"},
-            {"pumpshotgun",      "木喷"},
-            {"autoshotgun",      "一代连喷"},
-            {"autoshot",         "一代连喷"},    // 官方一代连喷贴图目录 materials/models/v_models/weapons/autoshot/
-            {"shotgun",          "铁喷"},        // 裸 shotgun = w_shotgun.mdl = 铁喷的官方世界模型（木喷是 pumpshotgun）
-            {"rifle",            "M16"},         // 裸 rifle = v_rifle = M16
-            {"machinegun",       "M60"},
-            {"pistol_magnum",    "马格南"},
-            {"magnum",           "马格南"},
-            {"pistol",           "手枪"},
-            {"melee",            "近战武器"},
-
-            // ---- 近战具体型号（14 种全；来源：NekoVpk TaggedAssets, MIT）
-            {"katana",           "武士刀"},
-            {"machete",          "砍刀"},
-            {"crowbar",          "撬棍"},
-            {"fireaxe",          "消防斧"},
-            {"frying_pan",       "平底锅"},      // 官方模型名 frying_pan；fryingpan 是非常规模型名，兜在底下
-            {"fryingpan",        "平底锅"},
-            {"chainsaw",         "电锯"},
-            {"cricket_bat",      "板球拍"},
-            {"golfclub",         "高尔夫球杆"},
-            {"tonfa",            "警棍"},
-            {"shovel",           "铁锹"},
-            {"pitchfork",        "干草叉"},
-            {"electric_guitar",  "电吉他"},
-            {"knife",            "小刀"},        // 官方 v_knife_t
-            {"v_bat",            "棒球棍"},      // 官方 v_bat/w_bat；裸 "bat" 会误伤，必须带前缀
-            {"w_bat",            "棒球棍"},
-
-            // ---- 其余杂项（道具/弹药包；来源：NekoVpk TaggedAssets, MIT）
-            {"explosive_ammopack",   "爆破弹药包"},
-            {"incendiary_ammopack",  "燃烧弹药包"},
-            {"laser_sights",     "激光瞄准"},
-            {"oxygentank",       "氧气瓶"},
-            {"propanecanister",  "煤气罐"},
-            {"explosive_box",    "烟花盒"},
-            {"barrel_fuel",      "燃料桶"},
-            {"gnome",            "地精"},
-            {"cola",             "可乐"},
-            {"concrete_spawnchunk", "石头"},
-            {"ammo",             "弹药"},
-            {"gascan",           "油桶"},
-            {"pills",            "止痛药"},
-            // ---- 天空盒：改的是 materials/skybox/*.vmt，没有模型文件，只能靠材质路径认。
-            //      "skybox" 只出现在这一个目录，不会误伤别的包。
-            {"skybox",           "天空盒"},
-        };
 
         /// <summary>
         /// 识别表里登记过的全部显示名（去重，按表的优先级顺序）。
@@ -180,9 +60,9 @@ namespace Installer
         internal static List<string> Subjects()
         {
             List<string> list = new List<string>();
-            for (int i = 0; i < Dict.GetLength(0); i++)
+            for (int i = 0; i < RuleTable.Dict.GetLength(0); i++)
             {
-                string n = Dict[i, 1];
+                string n = RuleTable.Dict[i, 1];
                 if (!list.Contains(n)) list.Add(n);
             }
             return list;
@@ -192,8 +72,13 @@ namespace Installer
         private static string Feature(string s)
         {
             if (string.IsNullOrEmpty(s)) return null;
-            for (int i = 0; i < Dict.GetLength(0); i++)
-                if (s.IndexOf(Dict[i, 0], StringComparison.Ordinal) >= 0) return Dict[i, 0];
+            // 第 2 刀：按规则行的显式 Priority 升序遍历。Priority 由原表行顺序生成，
+            // 排序后的遍历顺序与改造前逐行一致；增删规则不再依赖「插队」。
+            foreach (int i in RuleTable.RuleOrder)
+            {
+                RuleTable.RuleRow row = RuleTable.Rules[i];
+                if (RuleTable.Match(s, row)) return row.Feature;
+            }
             return null;
         }
 
@@ -208,8 +93,11 @@ namespace Installer
         private static string Lookup(string s)
         {
             if (string.IsNullOrEmpty(s)) return null;
-            for (int i = 0; i < Dict.GetLength(0); i++)
-                if (s.IndexOf(Dict[i, 0], StringComparison.Ordinal) >= 0) return Dict[i, 1];
+            foreach (int i in RuleTable.RuleOrder)
+            {
+                RuleTable.RuleRow row = RuleTable.Rules[i];
+                if (RuleTable.Match(s, row)) return row.Subject;
+            }
             return null;
         }
 
@@ -272,6 +160,23 @@ namespace Installer
             return false;
         }
 
+        /// <summary>
+        /// 第 1 刀：把每个判定点的命中落成一条证据（只加可追溯信息，不参与判定、不改判定结果）。
+        /// 调用点即判定顺序：地图 → 模型名 → 幸存者目录 → HUD图标 → 音效 → 幸存者材质目录 → 材质路径 → 文件名/标题兜底。
+        /// </summary>
+        private static void AddEvidence(Result r, string asset, string ruleId, string hit, string match, string subject, string level)
+        {
+            if (r == null) return;
+            Evidence e = new Evidence();
+            e.Asset = asset ?? "";
+            e.RuleId = ruleId ?? "";
+            e.Hit = hit ?? "";
+            e.Match = match ?? "";
+            e.Subject = subject ?? "";
+            e.Tier = EvidenceUtil.TierOfLevel(level);
+            r.Evidence.Add(e);
+        }
+
         /// <summary>扫一个 vpk 的目录表，攒出「改了什么」。散装 vpk 和压缩包里的 vpk 走同一套。</summary>
         private sealed class Scan
         {
@@ -283,6 +188,7 @@ namespace Installer
             private readonly HashSet<string> assetSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             private bool assetOverflow;
             public bool Map, Script, Particle, HasMat;
+            public string MapPath;      // 命中的第一张 maps/*.bsp 路径（只作证据，不参与判定）
             public int Entries;
 
             public void Feed(string p)
@@ -320,7 +226,7 @@ namespace Installer
                     // 「彩色血液」的路径里有 smoker_tongue 就被判成 Smoker —— 那是血，不是 smoker。
                     if (MatUsable(p) && Mats.Count < 40) Mats.Add(p);
                 }
-                else if (p.StartsWith("maps/", StringComparison.Ordinal) && p.EndsWith(".bsp", StringComparison.Ordinal)) Map = true;
+                else if (p.StartsWith("maps/", StringComparison.Ordinal) && p.EndsWith(".bsp", StringComparison.Ordinal)) { Map = true; if (MapPath == null) MapPath = p; }
                 else if (p.StartsWith("scripts/", StringComparison.Ordinal)) Script = true;
                 else if (p.StartsWith("particles/", StringComparison.Ordinal)) Particle = true;
             }
@@ -334,7 +240,11 @@ namespace Installer
                 // 包里有 maps/*.bsp，这个包就是一张（套）地图；包里夹的武器模型、HUD 图标、
                 // 音效都是地图自带的资源，不是「这个包换的是枪」。以前这里按模型名先给 Level，
                 // 地图一进门就被盖上「模型」的章，后面再也翻不回来。
-                if (Map) { r.Level = "地图"; r.Trace = "规则:含 maps/*.bsp"; }
+                if (Map)
+                {
+                    r.Level = "地图"; r.Trace = "规则:含 maps/*.bsp";
+                    AddEvidence(r, MapPath ?? "maps/*.bsp", r.Trace, "maps/*.bsp", "prefix", "地图", r.Level);
+                }
                 if (!assetOverflow)
                 {
                     Assets.Sort(StringComparer.OrdinalIgnoreCase);
@@ -356,7 +266,11 @@ namespace Installer
                     {
                         if (!found.Contains(n)) found.Add(n);
                         if (r.Key.Length == 0) r.Key = KeyOf(m);
-                        if (r.Level.Length == 0) { r.Level = "模型"; r.Trace = "规则:模型名 · 命中:" + KeyOf(m); }
+                        if (r.Level.Length == 0)
+                        {
+                            r.Level = "模型"; r.Trace = "规则:模型名 · 命中:" + KeyOf(m);
+                            AddEvidence(r, m, r.Trace, KeyOf(m), "contains", n, r.Level);
+                        }
                     }
                 }
 
@@ -366,26 +280,35 @@ namespace Installer
                 if (found.Count == 0 && !assetOverflow)
                 {
                     List<string> hit = new List<string>();
-                    for (int i = 0; i < SurvivorDirs.GetLength(0); i++)
+                    string hitAsset = "", hitPre = "";
+                    for (int i = 0; i < RuleTable.SurvivorDirs.GetLength(0); i++)
                     {
-                        string pre = "models/survivors/" + SurvivorDirs[i, 0] + "/";
+                        string pre = "models/survivors/" + RuleTable.SurvivorDirs[i, 0] + "/";
                         bool one = false;
                         foreach (string a in Assets)
                         {
                             if (!a.EndsWith(".mdl", StringComparison.Ordinal)) continue;
-                            if (a.StartsWith(pre, StringComparison.Ordinal)) { one = true; break; }
+                            if (a.StartsWith(pre, StringComparison.Ordinal)) { one = true; if (hitAsset.Length == 0) { hitAsset = a; hitPre = pre; } break; }
                         }
-                        if (one && !hit.Contains(SurvivorDirs[i, 1])) hit.Add(SurvivorDirs[i, 1]);
+                        if (one && !hit.Contains(RuleTable.SurvivorDirs[i, 1])) hit.Add(RuleTable.SurvivorDirs[i, 1]);
                     }
                     if (hit.Count == 1)
                     {
                         found.Add(hit[0]);
-                        if (r.Level.Length == 0) { r.Level = "模型"; r.Trace = "规则:幸存者目录 · 命中:" + hit[0]; }
+                        if (r.Level.Length == 0)
+                        {
+                            r.Level = "模型"; r.Trace = "规则:幸存者目录 · 命中:" + hit[0];
+                            AddEvidence(r, hitAsset, r.Trace, hitPre, "prefix", hit[0], r.Level);
+                        }
                     }
                     else if (hit.Count > 1)
                     {
                         found.Add("幸存者");      // 一包里好几个人：八人包
-                        if (r.Level.Length == 0) { r.Level = "模型"; r.Trace = "规则:幸存者目录 · 命中 " + hit.Count + " 人"; }
+                        if (r.Level.Length == 0)
+                        {
+                            r.Level = "模型"; r.Trace = "规则:幸存者目录 · 命中 " + hit.Count + " 人";
+                            AddEvidence(r, "models/survivors/*/", r.Trace, "models/survivors/*/", "prefix", "幸存者", r.Level);
+                        }
                     }
                 }
 
@@ -440,7 +363,11 @@ namespace Installer
                         {
                             if (!found.Contains(n)) found.Add(n);
                             if (r.Key.Length == 0) r.Key = KeyOf(h);
-                            if (r.Level.Length == 0) { r.Level = "HUD图标"; r.Trace = "规则:HUD图标路径 · 命中:" + KeyOf(h); }
+                            if (r.Level.Length == 0)
+                            {
+                                r.Level = "HUD图标"; r.Trace = "规则:HUD图标路径 · 命中:" + KeyOf(h);
+                                AddEvidence(r, "materials/vgui/hud/icon_" + h + ".vtf", r.Trace, KeyOf(h), "contains", n, r.Level);
+                            }
                         }
                     }
                 }
@@ -454,34 +381,47 @@ namespace Installer
                         {
                             if (!found.Contains(n)) found.Add(n);
                             if (r.Key.Length == 0) r.Key = KeyOf(s2);
-                            if (r.Level.Length == 0) { r.Level = "音效"; r.Trace = "规则:音效路径 · 命中:" + KeyOf(s2); }
+                            if (r.Level.Length == 0)
+                            {
+                                r.Level = "音效"; r.Trace = "规则:音效路径 · 命中:" + KeyOf(s2);
+                                AddEvidence(r, "sound/weapons/" + s2 + "/", r.Trace, KeyOf(s2), "contains", n, r.Level);
+                            }
                         }
                     }
                 }
                 // 4) 材质路径（弱信号，只在前三级都没中时才用）
                 //    4.1) 先看幸存者「按人分区」的材质目录：materials/models/survivors/namvet/bill_color.vtf
-                //         必须排在通用 Lookup 前面 —— 否则路径里的 "survivors" 会先撞上 Dict 里的泛称 "survivor" →「幸存者」，
+                //         必须排在通用 Lookup 前面 —— 否则路径里的 "survivors" 会先撞上 RuleTable.Dict 里的泛称 "survivor" →「幸存者」，
                 //         把明明只改比尔一个人的贴图包吞成八人包。
                 if (found.Count == 0)
                 {
                     List<string> hit = new List<string>();
-                    for (int i = 0; i < SurvivorDirs.GetLength(0); i++)
+                    string hitAsset = "", hitPre = "";
+                    for (int i = 0; i < RuleTable.SurvivorDirs.GetLength(0); i++)
                     {
-                        string pre = "materials/models/survivors/" + SurvivorDirs[i, 0] + "/";
+                        string pre = "materials/models/survivors/" + RuleTable.SurvivorDirs[i, 0] + "/";
                         bool one = false;
                         foreach (string mp in Mats)
-                            if (mp.StartsWith(pre, StringComparison.Ordinal)) { one = true; break; }
-                        if (one && !hit.Contains(SurvivorDirs[i, 1])) hit.Add(SurvivorDirs[i, 1]);
+                            if (mp.StartsWith(pre, StringComparison.Ordinal)) { one = true; if (hitAsset.Length == 0) { hitAsset = mp; hitPre = pre; } break; }
+                        if (one && !hit.Contains(RuleTable.SurvivorDirs[i, 1])) hit.Add(RuleTable.SurvivorDirs[i, 1]);
                     }
                     if (hit.Count == 1)
                     {
                         found.Add(hit[0]);
-                        if (r.Level.Length == 0) { r.Level = "材质"; r.Trace = "规则:幸存者材质目录 · 命中:" + hit[0]; }
+                        if (r.Level.Length == 0)
+                        {
+                            r.Level = "材质"; r.Trace = "规则:幸存者材质目录 · 命中:" + hit[0];
+                            AddEvidence(r, hitAsset, r.Trace, hitPre, "prefix", hit[0], r.Level);
+                        }
                     }
                     else if (hit.Count > 1)
                     {
                         found.Add("幸存者");
-                        if (r.Level.Length == 0) { r.Level = "材质"; r.Trace = "规则:幸存者材质目录 · 命中 " + hit.Count + " 人"; }
+                        if (r.Level.Length == 0)
+                        {
+                            r.Level = "材质"; r.Trace = "规则:幸存者材质目录 · 命中 " + hit.Count + " 人";
+                            AddEvidence(r, "materials/models/survivors/*/", r.Trace, "materials/models/survivors/*/", "prefix", "幸存者", r.Level);
+                        }
                     }
                 }
                 if (found.Count == 0)
@@ -492,7 +432,11 @@ namespace Installer
                         if (n != null)
                         {
                             if (!found.Contains(n)) found.Add(n);
-                            if (r.Level.Length == 0) { r.Level = "材质"; r.Trace = "规则:材质路径 · 命中:" + mp; }
+                            if (r.Level.Length == 0)
+                            {
+                                r.Level = "材质"; r.Trace = "规则:材质路径 · 命中:" + mp;
+                                AddEvidence(r, mp, r.Trace, KeyOf(mp), "contains", n, r.Level);
+                            }
                         }
                     }
                 }
@@ -530,14 +474,48 @@ namespace Installer
                     {
                         if (a.IndexOf("models/infected/", StringComparison.OrdinalIgnoreCase) < 0
                             && a.IndexOf("materials/models/infected/", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                        for (int i = 0; i < InfectKeys.GetLength(0); i++)
-                            if (a.IndexOf(InfectKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
-                                tset.Add(InfectKeys[i, 1]);
+                        for (int i = 0; i < RuleTable.InfectKeys.GetLength(0); i++)
+                            if (a.IndexOf(RuleTable.InfectKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
+                                tset.Add(RuleTable.InfectKeys[i, 1]);
                     }
-                    if (tset.Count > 1 && !Map) { r.Subject = "通用"; r.Key = "c:通用"; }
+                    if (tset.Count > 1 && !Map) { r.Subject = "通用"; r.Key = "c:通用"; r.MultiSubject = true; }
                 }
                 catch { }
+                // 阶段 1：置信/状态照旧（判定结果不变）。证据已按判定顺序在各自判定点逐条记录，见 AddEvidence。
+                r.Confidence = EvidenceUtil.TierOfLevel(r.Level);
+                r.Status = EvidenceUtil.StatusOf(r.Subject, r.Confidence, r.MultiSubject);
                 return r;
+            }
+        }
+
+        // 第 4 刀：主体数组（在全部文本兜底之后调用，保证与最终 Subject 一致）
+        internal static void Finalize(Result r)
+        {
+            if (r == null) return;
+            r.Confidence = EvidenceUtil.TierOfLevel(r.Level);
+            r.Status = EvidenceUtil.StatusOf(r.Subject, r.Confidence, r.MultiSubject);
+            r.Subjects.Clear();
+            if (!string.IsNullOrEmpty(r.Subject))
+            {
+                SubjectRef prim = new SubjectRef();
+                prim.Object = r.Subject; prim.Tier = r.Confidence; prim.Status = r.Status; prim.Source = r.Level;
+                r.Subjects.Add(prim);
+            }
+            if (!string.IsNullOrEmpty(r.Kinds))
+            {
+                int at = r.Kinds.IndexOf("附带:", StringComparison.Ordinal);
+                if (at >= 0)
+                {
+                    string tail = r.Kinds.Substring(at + 3);
+                    foreach (string part in tail.Split('/'))
+                    {
+                        string nm = part.Trim();
+                        if (nm.Length == 0) continue;
+                        SubjectRef sec = new SubjectRef();
+                        sec.Object = nm; sec.Tier = ConfTier.Low; sec.Status = IdStatus.Review; sec.Source = "附带";
+                        r.Subjects.Add(sec);
+                    }
+                }
             }
         }
 
@@ -550,6 +528,7 @@ namespace Installer
             catch { return new Result(); }
             FillAddonInfo(r, vpkFile);
             UpgradeShotgunByText(r, vpkFile);
+            Finalize(r);
             return r;
         }
 
@@ -575,6 +554,9 @@ namespace Installer
             r.Subject = hit;
             r.Level = "文件名";
             r.Trace = "规则:文件名 · 命中:" + hit;
+            string fileName = "";
+            try { fileName = System.IO.Path.GetFileName(vpkFile) ?? ""; } catch { }
+            AddEvidence(r, fileName, r.Trace, hit, "contains", hit, r.Level);
         }
 
         /// <summary>
@@ -607,18 +589,22 @@ namespace Installer
         {
             if (r == null || string.IsNullOrEmpty(text) || r.Subject.Length > 0) return;
             string low = text.ToLowerInvariant();
-            for (int i = 0; i < AliasKeys.GetLength(0); i++)
+            for (int i = 0; i < RuleTable.AliasKeys.GetLength(0); i++)
             {
-                string k = AliasKeys[i, 0];
+                string k = RuleTable.AliasKeys[i, 0];
                 bool hit = k.Length <= 3 && k[0] < 128
                     ? System.Text.RegularExpressions.Regex.IsMatch(low, "(^|[^a-z0-9])" + System.Text.RegularExpressions.Regex.Escape(k) + "([^a-z0-9]|$)")
                     : low.IndexOf(k, StringComparison.Ordinal) >= 0;
                 if (!hit) continue;
-                r.Subject = AliasKeys[i, 1];
+                r.Subject = RuleTable.AliasKeys[i, 1];
                 if (r.Level.Length == 0)
                 {
                     r.Level = "标题";
                     r.Trace = "规则:" + source + " · 命中「" + k + "」";
+                    // 文本兜底的证据：Asset 记被扫的那段文本（文件名 / addoninfo 标题+描述）
+                    string textHit = text.Length > 120 ? text.Substring(0, 120) : text;
+                    AddEvidence(r, textHit, r.Trace, k,
+                        (k.Length <= 3 && k[0] < 128) ? "segment" : "contains", r.Subject, r.Level);
                 }
                 return;
             }
@@ -644,7 +630,9 @@ namespace Installer
             if (tree == null) return new Result();
             Scan sc = new Scan();
             try { Vpk.WalkBuffer(tree, 200000, sc.Feed); } catch { return new Result(); }
-            return sc.Finish();
+            Result rb = sc.Finish();
+            Finalize(rb);
+            return rb;
         }
 
         /// <summary>只把 vpk 的目录表读出来：前 12 字节头 + tree 段，不解压正片。</summary>
@@ -875,10 +863,10 @@ namespace Installer
             // 改了"识别逻辑"（不是规则表）就改这个串：否则表没变、指纹不变，旧缓存会继续用旧结论。
             // 2026-11-21a：模型证据 v_ 优先 + 裸 shotgun=铁喷 + 材质级霰弹枪按文件名校正（SPAS=二代连喷）
             sb.Append("rules:2026-11-22a;");
-            AppendTable(sb, Dict);
-            AppendTable(sb, AliasKeys);
-            AppendTable(sb, InfectKeys);
-            AppendTable(sb, SurvivorDirs);
+            AppendTable(sb, RuleTable.Dict);
+            AppendTable(sb, RuleTable.AliasKeys);
+            AppendTable(sb, RuleTable.InfectKeys);
+            AppendTable(sb, RuleTable.SurvivorDirs);
             foreach (Positions.Row p in Positions.All)
             {
                 sb.Append(p.Sub).Append('|').Append(p.Name).Append('|').Append(p.En).Append('|');
@@ -980,49 +968,9 @@ namespace Installer
 
         // ============ 内容分类：只读目录表，判"大类型" ============
         // 原则：有把握才返回 true；没把握交回目录规则（不猜）
-        // 这里只问「是不是枪」，细分名字统一由 ModIdentify.Dict 那套给（Sub 不再各写一份）
-        // 标题/描述里常见的玩家叫法 → 位置。只在包内容判不出时兜底。
-        private static readonly string[,] AliasKeys = new string[,]
-        {
-            {"铁喷","铁喷","枪械","霰弹枪"},{"铬制","铁喷","枪械","霰弹枪"},
-            {"木喷","木喷","枪械","霰弹枪"},{"泵动","木喷","枪械","霰弹枪"},
-            {"连喷","一代连喷","枪械","霰弹枪"},{"spas","二代连喷","枪械","霰弹枪"},
-            {"连狙","30发军用狙","枪械","狙击枪"},{"军用狙","30发军用狙","枪械","狙击枪"},
-            {"猎鹿","15发木狙","枪械","狙击枪"},{"鸟狙","鸟狙","枪械","狙击枪"},{"侦察步","鸟狙","枪械","狙击枪"},
-            {"15连","15发木狙","枪械","狙击枪"},{"30连","30发军用狙","枪械","狙击枪"},
-            {"15连狙","15发木狙","枪械","狙击枪"},{"30连狙","30发军用狙","枪械","狙击枪"},
-            {"木狙","15发木狙","枪械","狙击枪"},{"军用狙","30发军用狙","枪械","狙击枪"},
-            {"huntingrifle","15发木狙","枪械","狙击枪"},{"hunting rifle","15发木狙","枪械","狙击枪"},
-            {"hunting_rifle","15发木狙","枪械","狙击枪"},{"military sniper","30发军用狙","枪械","狙击枪"},
-            {"马格南","马格南","枪械","手枪"},{"沙鹰","马格南","枪械","手枪"},
-            {"ak","AK-47","枪械","步枪"},{"m16","M16","枪械","步枪"},{"sg552","sg552","枪械","步枪"},
-            {"scar","SCAR-L","枪械","步枪"},{"awp","AWP","枪械","狙击枪"},{"mp5","MP5","枪械","冲锋枪"},
-            {"m60","M60","枪械","特殊武器"},{"uzi","UZI","枪械","冲锋枪"},{"乌兹","UZI","枪械","冲锋枪"},
-            {"mac","MAC-10","枪械","冲锋枪"},{"消音","MAC-10","枪械","冲锋枪"},
-            {"武士刀","武士刀","近战","近战"},{"砍刀","砍刀","近战","近战"},{"撬棍","撬棍","近战","近战"},
-            {"医疗包","医疗包","药品","治疗与复活"},{"止痛药","止痛药","药品","暂时增益"},
-            {"肾上腺素","肾上腺素","药品","暂时增益"},{"电击器","电击器","药品","治疗与复活"},
-            {"燃烧瓶","燃烧瓶","投掷物","投掷物"},{"土制炸弹","土制炸弹","投掷物","投掷物"}
-        };
-
-        // 枪械 / 投掷物 / 近战 / 生还者的模型关键词统一归口到上面的 Dict + Positions.cs，
+        // 这里只问「是不是枪」，细分名字统一由 RuleTable.Dict 那套给（Sub 不再各写一份）
+        // 枪械 / 投掷物 / 近战 / 生还者的模型关键词统一归口到上面的 RuleTable.Dict + Positions.cs，
         // 不再在这里另维护 GunKeys / ThrowKeys / CharKeys 三张副本表（避免「裸 shotgun 一边判铁喷一边判木喷」）。
-
-        // 幸存者的老布局是按人分区：models/survivors/<人名>/<模型>.mdl。
-        // 模型文件名（namvet_deathpose）里没有 survivor_namvet 这段，靠这张表补。
-        private static readonly string[,] SurvivorDirs = new string[,]
-        {
-            {"namvet","比尔"}, {"teenangst","佐伊"}, {"manager","路易斯"}, {"biker","弗朗西斯"},
-            {"producer","罗谢尔"}, {"coach","教练"}, {"mechanic","埃利斯"}, {"gambler","尼克"}
-        };
-
-        // 特感的模型目录就是 models/infected/<名字>/，名字对得上就够
-        private static readonly string[,] InfectKeys = new string[,]
-        {
-            {"hulk","Tank"},{"boomer","Boomer"},{"hunter","Hunter"},{"smoker","Smoker"},
-            {"jockey","Jockey"},{"spitter","Spitter"},{"charger","Charger"},{"witch","Witch"},
-            {"tank","Tank"}
-        };
 
         private static bool ClassifyByPaths(List<string> ps, out string cat, out string sub)
         {
@@ -1034,6 +982,7 @@ namespace Installer
             //   ② 位置级的（人物 / 特感 / 药品 / 枪械 / 场景）：能对到位置表里的一行
             //   ③ 栏目级的（整套界面 / 特效 / 音效 / 材质 / 脚本）：只能说明改的是哪一类
             // 加新规则前先想清楚它属于哪一层，别插到比自己强的证据前面。
+            // 判定顺序常量集中在 RuleTable.ClassifyStage / RuleTable.ClassifyOrder，改顺序前先对照。
 
             // ① 地图：有 maps/*.bsp。必须排在「场景」前面 —— 三方图几乎都自带天空盒、
             //   地面细节贴图，先判场景的话每张自制图都会被判成「天空盒」。
@@ -1113,9 +1062,9 @@ namespace Installer
                     if (p.IndexOf("models/infected/", StringComparison.OrdinalIgnoreCase) < 0
                         && p.IndexOf("materials/models/infected/", StringComparison.OrdinalIgnoreCase) < 0) continue;
                     infAny = true;
-                    for (int i = 0; i < InfectKeys.GetLength(0); i++)
-                        if (p.IndexOf(InfectKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
-                            infTypes.Add(InfectKeys[i, 1]);
+                    for (int i = 0; i < RuleTable.InfectKeys.GetLength(0); i++)
+                        if (p.IndexOf(RuleTable.InfectKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
+                            infTypes.Add(RuleTable.InfectKeys[i, 1]);
                 }
                 if (infAny && infTypes.Count > 1)
                 { cat = "僵尸"; sub = "通用"; return true; }
@@ -1127,22 +1076,21 @@ namespace Installer
             {
                 if (!p.EndsWith(".mdl", StringComparison.OrdinalIgnoreCase)) continue;
                 if (p.IndexOf("models/infected/", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                for (int i = 0; i < InfectKeys.GetLength(0); i++)
-                    if (p.IndexOf(InfectKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
-                    { cat = "僵尸"; sub = InfectKeys[i, 1]; return true; }
+                for (int i = 0; i < RuleTable.InfectKeys.GetLength(0); i++)
+                    if (p.IndexOf(RuleTable.InfectKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
+                    { cat = "僵尸"; sub = RuleTable.InfectKeys[i, 1]; return true; }
                 cat = "僵尸"; sub = "特感"; return true;
             }
 
-            // 4) 药品：医疗包/止痛药/肾上腺素/电击器 的模型或图标
+            // 4) 药品：医疗包/止痛药/肾上腺素/电击器 的模型或图标（规则表在 RuleTable.Medicine，顺序即优先级）
             foreach (string p in ps)
             {
-                if (p.IndexOf("medkit", StringComparison.OrdinalIgnoreCase) >= 0) { cat = "药品"; sub = "医疗包"; return true; }
-                if (p.IndexOf("painpills", StringComparison.OrdinalIgnoreCase) >= 0) { cat = "药品"; sub = "止痛药"; return true; }
-                if (p.IndexOf("adrenaline", StringComparison.OrdinalIgnoreCase) >= 0) { cat = "药品"; sub = "肾上腺素"; return true; }
-                if (p.IndexOf("defibrillator", StringComparison.OrdinalIgnoreCase) >= 0) { cat = "药品"; sub = "电击器"; return true; }
+                for (int i = 0; i < RuleTable.Medicine.GetLength(0); i++)
+                    if (p.IndexOf(RuleTable.Medicine[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
+                    { cat = RuleTable.Medicine[i, 1]; sub = RuleTable.Medicine[i, 2]; return true; }
             }
 
-            // 5) 枪械 / 近战 / 投掷物 / 弹药升级：模型名统一查 Dict，大类小类由 Positions + CatOfSub 决定（单一事实源）
+            // 5) 枪械 / 近战 / 投掷物 / 弹药升级：模型名统一查 RuleTable.Dict，大类小类由 Positions + CatOfSub 决定（单一事实源）
             foreach (string p in ps)
             {
                 if (!p.EndsWith(".mdl", StringComparison.OrdinalIgnoreCase)) continue;
@@ -1227,7 +1175,7 @@ namespace Installer
             foreach (string p in ps)
                 if (p.EndsWith(".nut", StringComparison.Ordinal)
                     || p.IndexOf("scripts/", StringComparison.Ordinal) >= 0)
-                { cat = "杂项"; sub = "其他"; return true; }
+                { cat = "脚本"; sub = "脚本"; return true; }
 
             return false;
         }

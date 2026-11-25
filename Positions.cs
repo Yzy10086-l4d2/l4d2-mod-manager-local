@@ -106,6 +106,7 @@ namespace Installer
             new Row { Sub = "地面细节", Name = "地面细节", En = "Ground detail", Aliases = new string[0] },
             new Row { Sub = "场景贴图", Name = "场景贴图", En = "Scene textures", Aliases = new string[0] },
             new Row { Sub = "平台", Name = "平台", En = "Platform", Aliases = new string[] { "前置", "framework", "底座" } },
+            new Row { Sub = "脚本", Name = "脚本", En = "Scripts", Aliases = new string[] { "脚本", "nut", "script" } },
         };
 
         internal static Row[] All { get { return _rows; } }

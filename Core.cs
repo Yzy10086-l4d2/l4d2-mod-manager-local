@@ -30,6 +30,11 @@ namespace Installer
         public string SubjectKey = "";    // 被替换的模型名，用于同枪冲突检测
         public string SubjectTrace = "";  // 证据链：哪条规则、命中了什么（识别明细里给人看）
         public string Kinds = "";         // 影响面：模型,音效,HUD...
+        // 阶段 1/6：置信等级、识别状态、多主体标记（附加信息，不参与既有判定）
+        public string Confidence = "";   // High / Medium / Low / Unknown
+        public string IdStatus = "";     // Identified / Review / Unknown / Mixed
+        public bool MultiSubject;        // 一个包含多个不同主体
+        public string SubjectsCsv = "";  // 第 4 刀：主体数组投影（object|tier|status;…），仅供展示/导出
         public bool Only1P;               // 模型全是第一人称 v_，世界模型 w_ 一个没动（能和模型叠加）
         public bool AnimOnly;             // 模型全是 anim_/gestures_ 表情骨架（KSEP 这类陪套，能和模型叠加）
         public bool FromGame;             // 这个 vpk 本来就在游戏 addons 里（库外·已装），装的时候不用复制
@@ -51,6 +56,10 @@ namespace Installer
         // 这种包以前和「认不出」混在一起，静默躺在库里 —— 新人只会觉得「装了没反应」。
         public int Entries;
 
+        // 第 3 刀：包级资源类型（AssetType.Detect 的只读判定结果，枚举名）。
+        // 只作标签：分类树、明细、导出都不读它；空串 = 尚未判定（如压缩包内条目）。
+        public string AssetKind = "";
+
         public bool IsArchive { get { return Container != null && Container.Length > 0; } }
     }
 
@@ -63,6 +72,7 @@ namespace Installer
         public bool CfgFile = false;        // 新人首装不默认写 cfg；老配置里写过 True 的照旧
         public bool ReduceMotion = false;   // true = 关闭轻量过渡，直接显示最终状态
         public bool NameByTitle = false;    // MOD 名称显示：false = VPK 文件名（默认）；true = 包内 addoninfo 的标题
+        public bool EffectsOnlyVeto = false; // C1.6 类型否决：默认关；开启后只否决"纯特效包"的主体误判
         public bool DpiAware = true;        // true = 自己按 DPI 缩放界面（高 DPI 下不再模糊）；false = 老样子交给系统拉伸
         public string Mode = "local";       // 工作模式：local = 游戏目录 addons 当库（默认，单 exe 下载的人只有这一种）；usb = 拿 U 盘去装机
         public string Appearance = "system";  // 外观：system = 跟随系统（默认）/ light / dark
@@ -554,6 +564,7 @@ namespace Installer
                     else if (k == "CfgFile") Cfg.CfgFile = (v == "1");
                     else if (k == "ReduceMotion") Cfg.ReduceMotion = (v == "1");
                             else if (k == "NameByTitle") Cfg.NameByTitle = (v == "1");
+                    else if (k == "EffectsOnlyVeto") Cfg.EffectsOnlyVeto = (v == "1");
                     else if (k == "DpiAware") Cfg.DpiAware = (v != "0");
                     else if (k == "Mode") Cfg.Mode = v;
                     else if (k == "Appearance") Cfg.Appearance = v;
@@ -592,6 +603,7 @@ namespace Installer
                 sb.AppendLine("CfgFile=" + (Cfg.CfgFile ? "1" : "0"));
                 sb.AppendLine("ReduceMotion=" + (Cfg.ReduceMotion ? "1" : "0"));
                     sb.AppendLine("NameByTitle=" + (Cfg.NameByTitle ? "1" : "0"));
+                sb.AppendLine("EffectsOnlyVeto=" + (Cfg.EffectsOnlyVeto ? "1" : "0"));
                 sb.AppendLine("DpiAware=" + (Cfg.DpiAware ? "1" : "0"));
                 sb.AppendLine("Mode=" + (ModeLock ?? Cfg.Mode));
                 sb.AppendLine("Appearance=" + Cfg.Appearance);

@@ -477,6 +477,7 @@ namespace Installer
                 case "手枪": case "特殊武器":
                     return "枪械";
                 // 这三样不算枪：各自一个大类，和枪械平级（撬棍 / 燃烧瓶 / 弹药升级箱）
+                case "脚本": return "脚本";
                 case "近战": return "近战";
                 case "投掷物": return "投掷物";
                 case "弹药升级": return "弹药升级";

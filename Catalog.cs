@@ -1048,6 +1048,10 @@ namespace Installer
                 it.AnimOnly = ir.AnimOnly;
                 it.Entries = ir.Entries;
                 it.SubjectTrace = ir.Trace;
+            it.Confidence = ir.Confidence.ToString();
+            it.IdStatus = ir.Status.ToString();
+            it.MultiSubject = ir.MultiSubject;
+            it.SubjectsCsv = SubjectsCsv(ir);
                 it.AssetPaths = ir.Assets;
                 it.AddonTitle = ir.Title;
                 it.AddonAuthor = ir.Author;
@@ -1114,6 +1118,10 @@ namespace Installer
                     it.AnimOnly = ir.AnimOnly;
                     it.Entries = ir.Entries;
                     it.SubjectTrace = ir.Trace;
+            it.Confidence = ir.Confidence.ToString();
+            it.IdStatus = ir.Status.ToString();
+            it.MultiSubject = ir.MultiSubject;
+            it.SubjectsCsv = SubjectsCsv(ir);
                     it.AssetPaths = ir.Assets;
                     it.AddonTitle = ir.Title;
                     it.AddonAuthor = ir.Author;
@@ -1205,6 +1213,8 @@ namespace Installer
             it.Subject = ir.Subject;
             it.SubjectLevel = ir.Level;
             it.SubjectKey = ir.Key;
+            // 一个包里换了好几个生还者（≥3）时，位置跟小分类走，别跟包里第一个模型走
+            if (it.Sub == "幸存者") { it.Subject = "幸存者"; it.SubjectKey = "幸存者"; }
             it.Kinds = ir.Kinds;
             it.Only1P = ir.Only1P;
             it.AnimOnly = ir.AnimOnly;
@@ -1212,8 +1222,39 @@ namespace Installer
             it.AssetPaths = ir.Assets;
             it.AddonTitle = ir.Title;
             it.AddonAuthor = ir.Author;
+            it.Confidence = ir.Confidence.ToString();
+            it.IdStatus = ir.Status.ToString();
+            it.MultiSubject = ir.MultiSubject;
+            it.SubjectsCsv = SubjectsCsv(ir);
             RefineBySubject(it);
+            ApplyEffectsVeto(it, f);   // C1.6 类型否决：默认关；关闭时不进入任何扫描
+            it.AssetKind = AssetType.KindName(f);   // 第 3 刀：只写字段，分类不读
             Add(it);
+        }
+
+        // 只否决"纯特效包"的主体结论，之后走原有 fallback（RefineBySubject 的整包特效分支）
+        static string SubjectsCsv(ModIdentify.Result ir)
+        {
+            if (ir == null || ir.Subjects == null || ir.Subjects.Count == 0) return "";
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            foreach (ModIdentify.SubjectRef s in ir.Subjects)
+            {
+                if (sb.Length > 0) sb.Append(';');
+                sb.Append(s.Object).Append('|').Append(s.Tier).Append('|').Append(s.Status);
+            }
+            return sb.ToString();
+        }
+
+        internal static void ApplyEffectsVeto(ModItem it, string fullPath)
+        {
+            if (it == null || !EffectsVeto.Enabled) return;
+            string reason;
+            if (!EffectsVeto.ShouldVeto(fullPath, out reason)) return;
+            it.Cat = CAT_MISC; it.Sub = "特效"; it.Category = it.Cat;
+            it.Subject = ""; it.SubjectKey = ""; it.SubjectLevel = "特效";
+            it.Kinds = "粒子/特效";
+            it.SubjectTrace = "EffectsOnly否决: " + reason;
+            RefineBySubject(it);       // 复用原有兜底：整包特效 → 特效套装
         }
 
         /// <summary>
@@ -1224,6 +1265,12 @@ namespace Installer
         /// </summary>
         static void RefineBySubject(ModItem it)
         {
+            // 脚本类：只有 .nut/scripts，没有可替换对象；给一个位置名让它能上树（脚本 · 脚本）
+            if (it.Cat == "脚本" && string.IsNullOrEmpty((it.Subject ?? "").Trim()))
+            {
+                it.Subject = "脚本"; it.SubjectKey = "脚本"; it.SubjectLevel = "脚本";
+                return;
+            }
             // 表情 / 动作平台（KSEP 这类）：模型全是 anim_/gestures_、认不出任何本体。
             // 它不是「换谁」，是给别人的 mod 当底座 —— 单独一个大类，永远当叠加；
             // 换方案时不跟着关（Work.SwitchAddons 里有一条对应的跳过）。

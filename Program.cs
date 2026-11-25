@@ -102,6 +102,10 @@ namespace Installer
             bool safeSelf = false;
             bool dumpId = false;
             string dumpIdTo = null;      // --dumpid=文件：把识别快照写成基线
+            string parityDir = null;     // --parityid=目录：用生产函数跑一遍，输出对比快照
+            string parityOut = null;
+            string vetoDir = null;       // --vetoreport=目录：模拟 EffectsOnly 否决后的分类变化
+            string vetoOut = null;
             string idCheckTo = null;     // --idcheck=文件：拿当前结果跟基线比，改判就报
             string vpkCheck = null;
             bool updCheck = false;
@@ -183,6 +187,10 @@ namespace Installer
                 else if (string.Equals(a, "--dumpid", StringComparison.OrdinalIgnoreCase)) dumpId = true;
             else if (a.StartsWith("--dumpid=", StringComparison.OrdinalIgnoreCase)) dumpIdTo = a.Substring(9).Trim('"');
             else if (a.StartsWith("--idcheck=", StringComparison.OrdinalIgnoreCase)) idCheckTo = a.Substring(10).Trim('"');
+            else if (a.StartsWith("--parityid=", StringComparison.OrdinalIgnoreCase)) parityDir = a.Substring(11).Trim('"');
+            else if (a.StartsWith("--parityout=", StringComparison.OrdinalIgnoreCase)) parityOut = a.Substring(12).Trim('"');
+            else if (a.StartsWith("--vetoreport=", StringComparison.OrdinalIgnoreCase)) vetoDir = a.Substring(13).Trim('"');
+            else if (a.StartsWith("--vetoout=", StringComparison.OrdinalIgnoreCase)) vetoOut = a.Substring(10).Trim('"');
             else if (a.StartsWith("--vpkcheck=", StringComparison.OrdinalIgnoreCase)) vpkCheck = a.Substring(11).Trim('"');
             else if (string.Equals(a, "--updatecheck", StringComparison.OrdinalIgnoreCase)) updCheck = true;
             else if (a.StartsWith("--reqcheck=", StringComparison.OrdinalIgnoreCase)) reqCheck = a.Substring(11).Trim('"');
@@ -271,6 +279,25 @@ namespace Installer
                         uu == null ? "null" : ("tag=" + uu.Tag + " ver=" + uu.Version + " newer=" + AppUpdate.Newer(AppUpdate.Current, uu.Version) + " size=" + uu.Size),
                         new System.Text.UTF8Encoding(false));
                     return uu == null ? 3 : 0;
+                }
+                // C1.2~C1.6 Shadow：独立进程内跑结构化对比，不初始化 Core、不写缓存
+                if (au.StartsWith("--shadowclass=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string sdir = au.Substring(14).Trim('"');
+                    string sbase = null;
+                    string sout = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "shadow-classify.tsv");
+                    string sjson = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "shadow-structured.jsonl");
+                    string sofficial = null;
+                    string spositions = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "Positions.cs");
+                    foreach (string x in args)
+                    {
+                        if (x.StartsWith("--shadowbase=", StringComparison.OrdinalIgnoreCase)) sbase = x.Substring(13).Trim('"');
+                        else if (x.StartsWith("--shadowout=", StringComparison.OrdinalIgnoreCase)) sout = x.Substring(12).Trim('"');
+                        else if (x.StartsWith("--shadowjson=", StringComparison.OrdinalIgnoreCase)) sjson = x.Substring(13).Trim('"');
+                        else if (x.StartsWith("--shadowofficial=", StringComparison.OrdinalIgnoreCase)) sofficial = x.Substring(17).Trim('"');
+                        else if (x.StartsWith("--shadowpositions=", StringComparison.OrdinalIgnoreCase)) spositions = x.Substring(18).Trim('"');
+                    }
+                    return ShadowClassify.Run(sdir, sbase, sjson, sout, sofficial, spositions);
                 }
             }
             Core.SelfTesting = selfTest || uiTest || copyTest || launchSelf || dupSelf
@@ -467,6 +494,18 @@ namespace Installer
                 int bads = Workshop.SearchTest(wsSearch);
                 Console.WriteLine("workshopsearch failures = " + bads);
                 return bads == 0 ? 0 : 1;
+            }
+            if (vetoDir != null)
+            {
+                Core.SelfTesting = true;
+                if (string.IsNullOrEmpty(vetoOut)) vetoOut = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "veto.tsv");
+                return VetoReport.Run(vetoDir, vetoOut);
+            }
+            if (parityDir != null)
+            {
+                Core.SelfTesting = true;
+                if (string.IsNullOrEmpty(parityOut)) parityOut = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "parity.tsv");
+                return ParityDump.Run(parityDir, parityOut);
             }
             if (dumpIdTo != null)
             {
