@@ -7302,10 +7302,42 @@ namespace Installer
         private bool emptyHot, copyHot;
 
         private int G { get { return Dpi.S(8); } }
-        private int CW { get { return Dpi.S(104); } }
-        private int CH { get { return Dpi.S(58); } }
         private int TH { get { return Dpi.S(18); } }
         private int Pad { get { return Dpi.S(2); } }
+
+        // 卡片尺寸不再写死 104×58：推荐区给多高，卡片就长多大，把列底那块空地吃掉。
+        // 做法：列数从少往多试，取「行数 × 卡高装得下」里卡最大的那一档（保持 16:9）。
+        // 以前写死 6 列 × 58 高，24 张卡只铺 4 行，底下空出两百多像素（2026-11-26 用户截图）。
+        private int layW = -1, layH = -1, layN = -1;
+        private int layCols = 6, layCW = 0, layCH = 0;
+
+        private void EnsureFrame()
+        {
+            if (layW == Width && layH == Height && layN == items.Count) return;
+            layW = Width; layH = Height; layN = items.Count;
+            int n = Math.Max(1, items.Count);
+            int W = Math.Max(Dpi.S(60), Width - Pad * 2);
+            int H = Math.Max(Dpi.S(40), Height - Pad * 2);
+            bool found = false;
+            for (int c = 2; c <= Math.Min(12, Math.Max(2, n)); c++)
+            {
+                int rows = (n + c - 1) / c;
+                int cw = (W - (c - 1) * G) / c;
+                if (cw < Dpi.S(72)) break;
+                if (cw > Dpi.S(190)) continue;        // 卡大到这程度就该多排几列，别摆一排巨图
+                int ch = cw * 9 / 16;
+                if (rows * (ch + TH + G) - G <= H) { layCols = c; layCW = cw; layCH = ch; found = true; break; }
+            }
+            if (!found)
+            {
+                layCols = Math.Max(1, (W + G) / (Dpi.S(104) + G));
+                layCW = Dpi.S(104);
+                layCH = Dpi.S(58);
+            }
+        }
+
+        private int CW { get { EnsureFrame(); return layCW; } }
+        private int CH { get { EnsureFrame(); return layCH; } }
 
         public RecGrid()
         {
@@ -7321,7 +7353,7 @@ namespace Installer
             };
         }
 
-        private int Cols { get { int w = Width - Pad * 2 + G; return Math.Max(0, w / (CW + G)); } }
+        private int Cols { get { EnsureFrame(); return Math.Max(0, layCols); } }
         private int Rows { get { int h = Height - Pad * 2 + G; return Math.Max(0, h / (CH + TH + G)); } }
         public int Capacity { get { return Cols * Rows; } }
 
@@ -7432,7 +7464,9 @@ namespace Installer
                 using (Pen pen = new Pen(hot ? Theme.Ink3 : Theme.LineSoft))
                     g.DrawRectangle(pen, r);
                 string t = items[i].Title ?? "";
-                if (t.Length > 14) t = t.Substring(0, 13) + "…";
+                // 卡片宽度现在跟着推荐区走，标题按实际宽度截（以前固定 14 字，卡一宽就空一截）
+                int fit = Math.Max(4, (r.Width - Dpi.S(2)) / Dpi.S(7));
+                if (t.Length > fit) t = t.Substring(0, Math.Max(1, fit - 1)) + "…";
                 using (SolidBrush tb = new SolidBrush(Theme.Ink2))
                     g.DrawString(t, Theme.UISmall, tb, new RectangleF(r.X, r.Bottom + 1, r.Width, TH));
                 // 已下载：卡片右上角盖一个小角标，不然用户看不出这个推荐其实已经在库里了
