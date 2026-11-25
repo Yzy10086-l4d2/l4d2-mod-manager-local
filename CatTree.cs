@@ -4272,15 +4272,19 @@ namespace Installer
                         candH = Math.Min(Math.Max(listMin, listWant), listMax);
                         int recAvail = whole - candH - Dpi.S(6);
                         int rows = (recAvail - Dpi.S(24)) / Dpi.S(pitch);
-                        if (rows > 6) rows = 6;      // 再高也不铺满整屏，否则一条候选要配一墙推荐
+                        if (rows > 4) rows = 4;      // 2026-11-26 用户定：最多 4 行，再多就成一堵墙了
                         if (rows < 1) rows = 1;
                         recH = Dpi.S(24) + rows * Dpi.S(pitch);
                     }
                     if (whole - recH < Dpi.S(60)) { recPanel.Visible = false; }   // 列太矮就整块让给候选
                     else
                     {
-                        lv.Height = candH;
-                        recPanel.SetBounds(lv.Left, lv.Top + lv.Height + Dpi.S(6), lv.Width, recH);
+                        // 推荐区**贴列底**：行数封顶 4 行，多出来的高度全给候选列表。
+                        // 以前是「列表按内容收高 + 推荐区紧跟其后」，于是推荐区下方留一大块空地
+                        // （2026-11-26 用户两次提这一点）。
+                        int recTop = Math.Max(lv.Top + Dpi.S(120), bottom - recH);
+                        lv.Height = Math.Max(Dpi.S(100), recTop - lv.Top - Dpi.S(6));
+                        recPanel.SetBounds(lv.Left, recTop, lv.Width, recH);
                         recPanel.Visible = true;
                         int sw = Dpi.S(compact ? 76 : 64);
                         if (compact)
@@ -7302,42 +7306,12 @@ namespace Installer
         private bool emptyHot, copyHot;
 
         private int G { get { return Dpi.S(8); } }
+        private int CW { get { return Dpi.S(104); } }
+        private int CH { get { return Dpi.S(58); } }
         private int TH { get { return Dpi.S(18); } }
         private int Pad { get { return Dpi.S(2); } }
 
-        // 卡片尺寸不再写死 104×58：推荐区给多高，卡片就长多大，把列底那块空地吃掉。
-        // 做法：列数从少往多试，取「行数 × 卡高装得下」里卡最大的那一档（保持 16:9）。
-        // 以前写死 6 列 × 58 高，24 张卡只铺 4 行，底下空出两百多像素（2026-11-26 用户截图）。
-        private int layW = -1, layH = -1, layN = -1;
-        private int layCols = 6, layCW = 0, layCH = 0;
 
-        private void EnsureFrame()
-        {
-            if (layW == Width && layH == Height && layN == items.Count) return;
-            layW = Width; layH = Height; layN = items.Count;
-            int n = Math.Max(1, items.Count);
-            int W = Math.Max(Dpi.S(60), Width - Pad * 2);
-            int H = Math.Max(Dpi.S(40), Height - Pad * 2);
-            bool found = false;
-            for (int c = 2; c <= Math.Min(12, Math.Max(2, n)); c++)
-            {
-                int rows = (n + c - 1) / c;
-                int cw = (W - (c - 1) * G) / c;
-                if (cw < Dpi.S(72)) break;
-                if (cw > Dpi.S(190)) continue;        // 卡大到这程度就该多排几列，别摆一排巨图
-                int ch = cw * 9 / 16;
-                if (rows * (ch + TH + G) - G <= H) { layCols = c; layCW = cw; layCH = ch; found = true; break; }
-            }
-            if (!found)
-            {
-                layCols = Math.Max(1, (W + G) / (Dpi.S(104) + G));
-                layCW = Dpi.S(104);
-                layCH = Dpi.S(58);
-            }
-        }
-
-        private int CW { get { EnsureFrame(); return layCW; } }
-        private int CH { get { EnsureFrame(); return layCH; } }
 
         public RecGrid()
         {
@@ -7353,7 +7327,7 @@ namespace Installer
             };
         }
 
-        private int Cols { get { EnsureFrame(); return Math.Max(0, layCols); } }
+        private int Cols { get { int w = Width - Pad * 2 + G; return Math.Max(0, w / (CW + G)); } }
         private int Rows { get { int h = Height - Pad * 2 + G; return Math.Max(0, h / (CH + TH + G)); } }
         public int Capacity { get { return Cols * Rows; } }
 
