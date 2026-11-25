@@ -804,6 +804,8 @@ namespace Installer
             lblSchemeDiff.AutoEllipsis = true;
             lblSchemeDiff.TextAlign = ContentAlignment.MiddleRight;
             lblSchemeDiff.Text = "";
+            // 空着的时候也要藏起来：它铺的是不透明底色，压在详情栏预览图顶上就是一条 20px 的暗带
+            lblSchemeDiff.Visible = false;
             lblSchemeDiff.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             gm.Controls.Add(lblSchemeDiff);
             gm.RightPad = 372;      // 标题让出右侧这条，两段文字不打架
@@ -3851,12 +3853,13 @@ namespace Installer
             if (cboProfile == null || cboProfile.SelectedItem == null)
             {
                 lblSchemeDiff.Text = "";
+                lblSchemeDiff.Visible = false;
                 return;
             }
             string name = cboProfile.SelectedItem.ToString();
-            if (name.StartsWith("（")) { lblSchemeDiff.Text = ""; return; }
+            if (name.StartsWith("（")) { lblSchemeDiff.Text = ""; lblSchemeDiff.Visible = false; return; }
             Profile p = ProfileStore.Load(name);
-            if (p == null) { lblSchemeDiff.Text = ""; return; }
+            if (p == null) { lblSchemeDiff.Text = ""; lblSchemeDiff.Visible = false; return; }
             HashSet<string> stored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string k in p.Mods) if (Core.ByRel.ContainsKey(k)) stored.Add(k);
             int add = 0, del = 0;
@@ -3866,10 +3869,12 @@ namespace Installer
             {
                 lblSchemeDiff.Text = Lang.S("与当前勾选一致");
                 lblSchemeDiff.ForeColor = Theme.Ok;
+                lblSchemeDiff.Visible = true;
                 return;
             }
             lblSchemeDiff.Text = Lang.F("套用将改 {0} 处：新增 {1} · 移除 {2}", add + del, add, del);
             lblSchemeDiff.ForeColor = Theme.Warn;
+            lblSchemeDiff.Visible = true;
         }
 
         private bool CurrentSelectionDiffersFrom(Profile p)
