@@ -59,7 +59,7 @@ namespace Installer
             if (!Animating || r.Width <= 0 || r.Height <= 0) return;
             int band = Math.Max(48, r.Width / 2);
             int x = r.X - band + (int)((r.Width + band * 2) * Phase);
-            Color c = Theme.IsDark ? Color.FromArgb(26, 255, 255, 255) : Color.FromArgb(20, 0, 0, 0);
+            Color c = Color.FromArgb(26, 255, 255, 255);
             try
             {
                 using (LinearGradientBrush br = new LinearGradientBrush(

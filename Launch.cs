@@ -166,14 +166,14 @@ namespace Installer
             Font = Theme.UI;
             BackColor = Theme.Bg;
             StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
+            Theme.BorderlessChrome(this);
             MaximizeBox = false;
             Theme.DressForm(this);
             MinimizeBox = false;
             ShowInTaskbar = false;
 
             lblHint = new Label();
-            lblHint.SetBounds(16, 12, 872, 20);
+            lblHint.SetBounds(16, 12, 820, 20);   // 右边让出关闭键的位置
             lblHint.Font = Theme.UISmall;
             lblHint.ForeColor = Theme.Ink2;
             lblHint.Text = Lang.S("勾上要用的开关（默认勾好推荐那几条）；右边是选中那条的说明，底下一行是拼出来的组合。");

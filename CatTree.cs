@@ -960,7 +960,6 @@ namespace Installer
         private FlatButton btnDOpen, btnDShop;
         private ModGroup peekGroup;                 // 预览/详情当前指向的那一组
         private readonly Label lblExtraTitle;
-        private readonly FlatButton btnPick;
         private readonly ToolTip tipExtra;                 // 「可叠加的扩展」小标题的悬停说明
         private readonly ToolTip tipRow = new ToolTip();    // 列表行悬停：用 ItemMouseHover 触发，比 MouseMove 可靠
         private int tipShownAt = -1;                        // 当前挂着的那一行（-1 = 没挂）：换行要先收旧的
@@ -1296,13 +1295,6 @@ namespace Installer
             lblExtraTitle.Visible = false;
             Controls.Add(lblExtraTitle);
 
-            btnPick = new FlatButton();
-            btnPick.Text = Lang.S("留原版");
-            btnPick.SetBounds(0, 0, 66, Theme.H);
-            btnPick.Click += delegate { Choose(null); };
-            btnPick.Visible = false;          // 列表里已经有「留原版」那一行，按钮就多余了
-            Controls.Add(btnPick);
-
             // 未归类页的手动入口：选中一行点它（或双击那行），告诉程序这个 MOD 算哪一类、替换什么。
             // 用的是和「设置 MOD 分类…」同一个窗口，保存后立刻重新归组，认出位置就排进树里。
 
@@ -1610,7 +1602,7 @@ namespace Installer
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.Clear(Color.Transparent);
-                using (Pen p = new Pen(on ? Theme.Mark : (Theme.IsDark ? Color.FromArgb(96, 103, 112) : Color.FromArgb(184, 192, 200)), Math.Max(1f, 1.5f * k)))
+                using (Pen p = new Pen(on ? Theme.Mark : Color.FromArgb(96, 103, 112), Math.Max(1f, 1.5f * k)))
                     g.DrawEllipse(p, 2.5f * k, 2.5f * k, 8f * k, 8f * k);
                 if (on)
                     using (SolidBrush br = new SolidBrush(Theme.Mark))
@@ -2329,8 +2321,6 @@ namespace Installer
             // 分类页撤掉后搬到这儿，不然这些功能就没入口了。
             ToolStripMenuItem lib = new ToolStripMenuItem("MOD 库…");
             lib.DropDownItems.Add("从文件夹导入…", null, delegate { mf.BulkImport(); });
-            lib.DropDownItems.Add("库文件夹管理…", null, delegate { mf.ManageModDirs(); });
-            lib.DropDownItems.Add("识别压缩包内容", null, delegate { mf.ProbeArchivesUi(); });
             lib.DropDownItems.Add("清理同名重复", null, delegate { mf.CleanDupMods(); });
             lib.DropDownItems.Add("提交识别反馈（GitHub Issue）…", null, delegate { CatPrefs.SubmitFeedback(unmatchedGroups); });
             lib.DropDownItems.Add(new ToolStripSeparator());
@@ -4325,7 +4315,6 @@ namespace Installer
                 }
             }
 
-            if (btnPick != null) btnPick.SetBounds(x + pad, by, 76, actH);
             // 右下角从右往左排：「指定位置…」只在未归类页。脚注按实际占用让位。
             int edge = x + rightW - 8;
             int used = 0;
@@ -5201,8 +5190,9 @@ namespace Installer
                         if (catSel) g.FillRectangle(selBg, 0, y, W, RowH);
                         else if (i == hov) g.FillRectangle(hovBg, 0, y, W, RowH);
                         DrawTri(g, 10, y + RowH / 2, open);
-                        Glyph.Draw(g, Glyph.ForCat(r.Cat), new Rectangle(18, y + (RowH - 18) / 2, 18, 18), Theme.Ink2);
-                        TextRenderer.DrawText(g, Lang.S(r.Cat), Theme.UIBold, new Rectangle(42, y, W - 106, RowH), Theme.Ink,
+                        // 2026-11-27：大类图标 18 → 20px，字往右让 2px，别贴着图标
+                        Glyph.Draw(g, Glyph.ForCat(r.Cat), new Rectangle(18, y + (RowH - 20) / 2, 20, 20), Theme.Ink2);
+                        TextRenderer.DrawText(g, Lang.S(r.Cat), Theme.UIBold, new Rectangle(44, y, W - 108, RowH), Theme.Ink,
                             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
                         // 计数按整个大类算，不受折叠影响 —— 收起来只是看不见行，
                         // 位置数不该跟着变（桌面上那张卡写的也是这个数）
@@ -5228,8 +5218,8 @@ namespace Installer
                             g.DrawLine(branch, 17, y + RowH / 2, 26, y + RowH / 2);
                             DrawTri(g, 32, y + RowH / 2, open);
                         }
-                        Glyph.Draw(g, Glyph.ForSub(r.Sub, r.Cat), new Rectangle(40, y + (RowH - 17) / 2, 17, 17), Theme.Ink2);
-                        TextRenderer.DrawText(g, Lang.S(r.Sub), Theme.UIBold, new Rectangle(62, y, W - 126, RowH), Theme.Ink2,
+                        Glyph.Draw(g, Glyph.ForSub(r.Sub, r.Cat), new Rectangle(40, y + (RowH - 20) / 2, 20, 20), Theme.Ink2);
+                        TextRenderer.DrawText(g, Lang.S(r.Sub), Theme.UIBold, new Rectangle(64, y, W - 128, RowH), Theme.Ink2,
                             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding
                             | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
                         int k = 0;
@@ -6847,16 +6837,6 @@ namespace Installer
         }
 
         /// <summary>自检：切到方案树并选某个槽位（按显示名）；传「未归类」就打开未归类页。</summary>
-        /// <summary>诊断：展开左栏（装什么 / 安装选项），可选连日志一起展开，给截图核对台面视图。</summary>
-        internal void UiTestDrawer(bool withLog)
-        {
-            SetDrawer(true);
-            if (withLog) SetLogOpen(true);
-            ShowTree();
-            Application.DoEvents();
-            Core.Log("INFO", "DRAWER 左栏已展开" + (withLog ? "，日志展开 高 " + gLog.Height + "px" : "，日志收起"));
-        }
-
         internal void UiTestSelect(string slotName)
         {
             if (viewHost == null) { Core.Log("FAIL", "TREE 没有 viewHost"); return; }
@@ -7234,8 +7214,9 @@ namespace Installer
         }
 
         /// <summary>自测：拿个假游戏目录打开「已装 MOD 开关」，截图看按钮排版。</summary>
-        internal void UiTestAddonSwitch()
+        internal int UiTestAddonSwitch()
         {
+            int bad = 0;
             string tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
                 "l4d2-switch-" + Guid.NewGuid().ToString("N").Substring(0, 6));
             string addons = System.IO.Path.Combine(tmp, "left4dead2", "addons");
@@ -7270,12 +7251,18 @@ namespace Installer
                     f.PerformLayout();
                     Application.DoEvents();
                     Shot(f, "addonswitch");
-                    Core.Log("INFO", "ADDONSW " + i + " 个假 MOD，截图已存 addonswitch.png");
+                    f.ClientSize = Dpi.Sz(520, 460);
+                    f.PerformLayout();
+                    Application.DoEvents();
+                    bad += AuditLayout(f, "已装 MOD 开关-最小尺寸");
+                    Shot(f, "addonswitch-min");
+                    Core.Log("INFO", "ADDONSW " + i + " 个假 MOD，默认/最小尺寸截图完成");
                     f.Close();
                 }
             }
-            catch (Exception ex) { Core.Log("FAIL", "ADDONSW 截图失败: " + ex.Message); }
+            catch (Exception ex) { bad++; Core.Log("FAIL", "ADDONSW 截图失败: " + ex.Message); }
             finally { try { System.IO.Directory.Delete(tmp, true); } catch { } }
+            return bad;
         }
     }
 
@@ -7412,7 +7399,7 @@ namespace Installer
                 {
                     int bandW = Math.Max(Dpi.S(90), Width / 5);
                     Rectangle band = new Rectangle(shimmerX, -Dpi.S(40), bandW, Height + Dpi.S(80));
-                    Color bright = Theme.IsDark ? Color.FromArgb(70, 76, 84) : Color.FromArgb(247, 249, 252);
+                    Color bright = Color.FromArgb(70, 76, 84);
                     Color clear = Color.FromArgb(0, bright);
                     using (System.Drawing.Drawing2D.LinearGradientBrush lg = new System.Drawing.Drawing2D.LinearGradientBrush(
                                band, clear, clear, System.Drawing.Drawing2D.LinearGradientMode.Horizontal))

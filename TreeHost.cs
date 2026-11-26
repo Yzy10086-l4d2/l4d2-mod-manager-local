@@ -6,14 +6,8 @@ using System.Windows.Forms;
 
 namespace Installer
 {
-    // 两副面孔，同一份数据：
-    //   · 桌面：第一人称视角看一张真桌子，一张卡 = 一个大类/分支，卡可以拖到任意位置。
-    //     画面在浏览器里用 WebGL 画（见 desk\index.html），这边只供数据、收操作。
-    //   · 方案树：细到「一个位置一个 MOD」，挑候选、展开套装在那边。
-    // 两边共用同一个 CatTree 模型，所以勾选状态永远是同一份。
     public partial class MainForm
     {
-        private DeskServer desk;
         private OverviewCanvas map;
         private bool mapHooked;
 
@@ -57,27 +51,32 @@ namespace Installer
         internal void HideOverview()
         {
             if (map != null) map.Visible = false;
+            if (overviewWindow != null && !overviewWindow.IsDisposed) overviewWindow.Close();
             if (btnView != null) btnView.Text = Lang.S("方案管理");
             ShowTree();
         }
 
-        internal bool OverviewOpen { get { return map != null && map.Visible; } }
+        internal bool OverviewOpen
+        {
+            get { return (overviewWindow != null && !overviewWindow.IsDisposed && overviewWindow.Visible)
+                || (map != null && map.Visible); }
+        }
 
         /// <summary>截图自检：把总览画布存成 PNG（只抓画布，不抓整窗 —— 屏幕上可能盖着别的窗口）。</summary>
         internal void OverviewShot()
         {
             EnsureTree();
-            ShowOverview();
+            if (overviewWindow != null && !overviewWindow.IsDisposed) overviewWindow.Close();
+            overviewWindow = new OverviewForm(this);
+            overviewWindow.FormClosed += delegate { overviewWindow = null; };
+            overviewWindow.Show(this);
             Pump(700);
-            ShotCanvas("overview");
-
-            if (map != null) map.SelectCatForShot("近战");
-            Pump(400);
-            ShotCanvas("overview2");
-
-            if (map != null) map.SelectCatForShot("枪械");
-            Pump(400);
-            ShotCanvas("overview3");
+            Shot(overviewWindow, "overview-window");
+            overviewWindow.ClientSize = Dpi.Sz(880, 560);
+            Pump(300);
+            Shot(overviewWindow, "overview-window-min");
+            overviewWindow.TestEscape();
+            Pump(120);
         }
 
         private static void Pump(int ms)
@@ -210,6 +209,28 @@ namespace Installer
             catch { }
 
             HideOverview();
+
+            overviewWindow = new OverviewForm(this);
+            overviewWindow.FormClosed += delegate { overviewWindow = null; };
+            overviewWindow.Show(this);
+            Pump(300);
+            Shot(overviewWindow, "overview-window");
+            if (!overviewWindow.Visible) { Core.Log("FAIL", "OVSELF 独立总览窗没有显示"); bad++; }
+            if (want != null)
+            {
+                ShowSlotInTree(want);
+                Pump(120);
+                if (overviewWindow != null) { Core.Log("FAIL", "OVSELF 独立总览窗点行后没有关闭"); bad++; }
+                if (treeView == null || treeView.SelectedKey != want.Key) { Core.Log("FAIL", "OVSELF 独立总览窗点行后没有选中对应位置"); bad++; }
+            }
+            overviewWindow = new OverviewForm(this);
+            overviewWindow.FormClosed += delegate { overviewWindow = null; };
+            overviewWindow.Show(this);
+            Pump(120);
+            overviewWindow.TestEscape();
+            Pump(120);
+            if (overviewWindow != null) { Core.Log("FAIL", "OVSELF 独立总览窗 Esc 没有关闭"); bad++; }
+
             Console.WriteLine("ovself failures = " + bad);
             return bad;
         }
@@ -325,103 +346,13 @@ namespace Installer
             if (lblLoading != null && lblLoading.Visible) lblLoading.BringToFront();
         }
 
-        /// <summary>桌面：开一个第一人称的 3D 桌面窗口（同一个 exe，画面在浏览器里）。</summary>
-        internal void ShowDesk()
-        {
-            EnsureTree();                 // 桌面上的卡是从树的位置表建的，模型得先有
-            DropLoading();
-            treeView.Rebuild();           // 位置表先排好（顺序、手工拖动都在里面）
-            viewHost.Visible = true;
-            treeView.Visible = true;
-
-            if (desk != null && desk.Running)
-            {
-                // 已经开着就别再开一个窗口，桌面自己会轮询最新的数据
-                if (treeView != null) treeView.KeepFoot("桌面已经开着了 —— 在另一个窗口里，关掉它就回到这里");
-                return;
-            }
-            desk = new DeskServer(this, treeView);
-            desk.Start();
-            if (treeView != null) treeView.KeepFoot("桌面已开在另一个窗口：走到桌前看一眼，关掉就回来");
-            UpdateModCaption();
-        }
-
-        internal DeskServer Desk { get { return desk; } }
         internal CatTree Tree { get { return treeView; } }
-
-        /// <summary>自检 / 截图用：只把服务起起来（不弹窗口），守着跑指定秒数。</summary>
-        internal string DeskServe(int seconds)
-        {
-            EnsureTree();
-            treeView.Rebuild();
-            if (desk != null) { desk.Stop(); desk = null; }
-            desk = new DeskServer(this, treeView);
-            desk.Start(false);
-            try
-            {
-                System.IO.File.WriteAllText(System.IO.Path.Combine(Core.LogDir, "desk-url.txt"), desk.Url,
-                    new System.Text.UTF8Encoding(false));
-            }
-            catch { }
-            Console.WriteLine("desk url = " + desk.Url);
-            DateTime until = DateTime.Now.AddSeconds(seconds);
-            while (DateTime.Now < until) { Application.DoEvents(); Thread.Sleep(50); }
-            return desk.Url;
-        }
-
-        internal void CloseDesk()
-        {
-            if (desk == null) return;
-            desk.Stop();
-            desk = null;
-        }
-
-        /// <summary>
-        /// 自检：真开一次桌面窗口，确认浏览器起来了、重复点「桌面」不会再开一个、
-        /// 关掉之后进程真的退了。返回失败条数。
-        /// </summary>
-        internal int DeskLaunchTest()
-        {
-            int bad = 0;
-            CloseDesk();
-            ShowDesk();
-            DeskServer d = desk;
-            DateTime until = DateTime.Now.AddSeconds(25);
-            while (d != null && !d.BrowserAlive && DateTime.Now < until)
-            {
-                Application.DoEvents();
-                Thread.Sleep(100);
-            }
-            if (d == null || !d.BrowserAlive) { Core.Log("FAIL", "desklaunch 浏览器没起来"); bad++; }
-            else Core.Log("INFO", "desklaunch 桌面窗口已开：" + d.Url);
-
-            // 再点一次「桌面」：应该把原来的窗口拎到前面，而不是换一个新的
-            string u1 = d == null ? "" : d.Url;
-            ToggleView();
-            if (d == null || !d.Running || d.Url != u1)
-            {
-                Core.Log("FAIL", "desklaunch 重复点「桌面」把窗口换掉了（" + u1 + " → " + (desk == null ? "无" : desk.Url) + "）");
-                bad++;
-            }
-            Application.DoEvents();
-
-            CloseDesk();
-            for (int i = 0; i < 80 && d != null && d.BrowserAlive; i++)
-            {
-                Application.DoEvents();
-                Thread.Sleep(100);
-            }
-            if (d != null && d.BrowserAlive) { Core.Log("FAIL", "desklaunch 关掉之后浏览器还活着"); bad++; }
-            else Core.Log("INFO", "desklaunch 关掉桌面后窗口已退出");
-
-            Console.WriteLine("desklaunch failures = " + bad);
-            return bad;
-        }
 
         /// <summary>总览里点一行：先把看板收起来，回方案树定位到那个位置（不收起的话树被盖在下面）。</summary>
         internal void ShowSlotInTree(Slot s)
         {
             if (s == null) return;
+            if (overviewWindow != null && !overviewWindow.IsDisposed) overviewWindow.Close();
             if (OverviewOpen) HideOverview();
             else ShowTree();
             if (treeView != null) treeView.SelectSlot(s.Key);
@@ -470,7 +401,6 @@ namespace Installer
             if (treeView != null && treeView.Visible) treeView.Sync();
             if (OverviewOpen) map.RefreshPicks();
             UpdateSel();
-            UpdateSchemeLabel();
             UpdateModCaption();          // 台面标题上的「已选 N」也要跟着动
         }
 
@@ -523,10 +453,16 @@ namespace Installer
             }
             if (statusBar != null) statusBar.Invalidate();
             gMod.Caption = "";
-            // 没认出来的 MOD 为 0 时，这个按钮点了也没内容可看；常驻只增加噪音。
-            chipUnmatchOn = treeView != null && treeView.Unmatched > 0;
-            if (btnUnmatched != null) btnUnmatched.Text = Lang.F("未识别 {0} 个", treeView == null ? 0 : treeView.Unmatched);
-            if (placeCtxBar != null) placeCtxBar();
+            // 没认出来的 MOD 为 0 时，这个胶囊点了也没内容可看；常驻只增加噪音。
+            int unk = treeView == null ? 0 : treeView.Unmatched;
+            bool wasOn = chipUnmatchOn;
+            string wasText = unmatchedText;
+            chipUnmatchOn = unk > 0;
+            unmatchedText = Lang.F("未识别 {0} 个", unk);
+            if (wasOn != chipUnmatchOn || !string.Equals(wasText, unmatchedText, StringComparison.Ordinal))
+            {
+                if (placeCtxBar != null) placeCtxBar();
+            }
         }
     }
 }

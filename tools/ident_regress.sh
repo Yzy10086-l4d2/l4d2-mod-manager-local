@@ -24,8 +24,6 @@ echo "[1/3] 编译 -> $EXE"
   /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll \
   /reference:System.Windows.Forms.dll /reference:System.IO.Compression.dll \
   /reference:System.IO.Compression.FileSystem.dll \
-  /resource:"$(cygpath -w "$REPO/desk/index.html")",desk.html \
-  /resource:"$(cygpath -w "$REPO/desk/three.min.js")",three.js \
   *.cs > "$LOG" 2>&1 ) || { echo "[FAIL] 编译失败："; tail -20 "$LOG"; exit 1; }
 
 echo "[2/3] 生成快照…"

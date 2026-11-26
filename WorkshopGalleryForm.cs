@@ -110,13 +110,15 @@ namespace Installer
             owner = o;
             Text = Lang.S("创意工坊 · 画廊");
             Theme.UseDpi(this);
-            ClientSize = Dpi.Sz(1180, 780);
-            MinimumSize = Dpi.Sz(900, 620);
+            ClientSize = Dpi.Sz(1180, 814);      // +34：自绘标题条
+            MinimumSize = Dpi.Sz(900, 654);
             Font = Theme.UI;
             BackColor = Theme.Bg;
             StartPosition = FormStartPosition.CenterScreen;
             MinimizeBox = false;
             ShowInTaskbar = true;
+            Theme.BorderlessChrome(this, true, true);   // 标题 + × / □，四边可拉伸
+            Icon = Theme.WindowIcon("shop");            // 任务栏单独一个图标，跟下载管理区分开
 
             // ---- 顶部：找 ----
             lblCat.Text = Lang.S("分类");
@@ -380,8 +382,8 @@ namespace Installer
             int W = ClientSize.Width, H = ClientSize.Height;
             int m = S(M);
 
-            // 顶部一行：左边找，右边去别处
-            int y = S(14);
+            // 顶部一行：左边找，右边去别处（整体让出 34px 自绘标题条）
+            int y = S(14) + S(34);
             lblCat.SetBounds(m, y + S(4), S(36), S(20));
             cboCat.SetBounds(m + S(40), y, S(160), S(26));
 
@@ -393,7 +395,7 @@ namespace Installer
             int qx = m + S(40) + S(160) + S(8);
             txtQuery.SetBounds(qx, y + S(2), Math.Max(S(120), bx - S(8) - qx), S(26));
 
-            int top = S(56);
+            int top = S(56) + S(34);
             int bottom = S(64);
             int bodyH = Math.Max(S(160), H - top - bottom);
             host.SetBounds(m, top, W - 2 * m, bodyH);
@@ -842,6 +844,7 @@ namespace Installer
 
         protected override void WndProc(ref Message m)
         {
+            if (Theme.ResizeHit(this, ref m)) return;   // 无边框后四条边自己认
             const int WM_XBUTTONUP = 0x020C;
             if (m.Msg == WM_XBUTTONUP && detail != null && detail.Visible)
             {

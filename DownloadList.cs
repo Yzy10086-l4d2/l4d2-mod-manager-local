@@ -48,14 +48,16 @@ namespace Installer
             owner = mf;
             Text = Lang.S("工坊 · 下载管理");
             Theme.UseDpi(this);
-            ClientSize = Dpi.Sz(780, 560);
-            MinimumSize = Dpi.Sz(720, 420);      // 底栏多了「暂停 / 取消」，640 宽时按钮会挤在一起
+            ClientSize = Dpi.Sz(780, 594);       // +34：自绘标题条吃掉的这一条
+            MinimumSize = Dpi.Sz(720, 454);      // 底栏多了「暂停 / 取消」，640 宽时按钮会挤在一起
             Font = Theme.UI;
             BackColor = Theme.Bg;
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
             ShowInTaskbar = true;
             Theme.DressForm(this);
+            Theme.BorderlessChrome(this, true);   // 系统标题栏换成自绘：标题 + ×，四边还能拉伸
+            Icon = Theme.WindowIcon("down");      // 任务栏单独一个图标
 
             // ---- 顶部：保存位置 ----
             lblSaveTo.Text = Lang.S("保存到");
@@ -196,7 +198,8 @@ namespace Installer
         {
             int W = ClientSize.Width, H = ClientSize.Height;
             int m = S(M);
-            int y = S(14);
+            int y = S(14) + S(34);          // 让出自绘标题条
+
 
             // 顶部一行：左标签，右侧三颗按钮（从右往左排，窗口窄了先挤路径）
             int bx = W - m;
@@ -208,7 +211,7 @@ namespace Installer
             lblDir.SetBounds(m + S(50), y + S(6), Math.Max(S(80), bx - (m + S(50))), S(18));
 
             // 中间：左分类树 + 右记录（分类和工坊首页同一套：大类 → 小分类）
-            int top = S(54);
+            int top = S(54) + S(34);
             int bottom = S(100);
             int listH = Math.Max(S(120), H - top - bottom);
             int treeW = Math.Max(S(150), Math.Min(S(210), (W - 2 * m) / 4));
@@ -255,6 +258,12 @@ namespace Installer
             btnClose.SetBounds(W - m - S(76), by, S(76), S(32));
 
             lblStatus.SetBounds(m, H - S(26), W - 2 * m, S(18));
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (Theme.ResizeHit(this, ref m)) return;   // 无边框后四条边要自己认，不然拉不动
+            base.WndProc(ref m);
         }
 
         // ---------------------------------------------------------- 数据

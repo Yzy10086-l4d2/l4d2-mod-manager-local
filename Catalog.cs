@@ -829,7 +829,7 @@ namespace Installer
                         }
                         Core.Log("INFO", "扫库: 主库 " + Core.ModRoot + " 根目录文件 + " + scanned + " 个子目录（程序目录已跳过）");
                     }
-                    else Core.Log("WARN", "MOD 主库不存在: " + Core.ModRoot + "（可在设置里换盘，或用「库文件夹管理…」添加目录）");
+                    else Core.Log("WARN", "MOD 主库不存在: " + Core.ModRoot + "（本地模式请在设置里指对游戏目录）");
 
                 }
 
@@ -2373,6 +2373,55 @@ namespace Installer
                         new string[] { "materials/models/survivors/namvet/bill_color.vtf" }));
                     bad += RecogCheck(rs.Subject == "比尔" && rs.Level == "材质",
                         "按人分区的幸存者纯材质包认出具体角色");
+                }
+
+                {
+                    string[] weaponMats = new string[]
+                    {
+                        "sniper_scout", "sniper_military", "sniper_awp", "smg_silenced", "smg_mp5", "smg",
+                        "shotgun_spas", "shotgun_chrome", "rifle_sg552", "rifle_m60", "rifle_desert",
+                        "rifle_ak47", "rifle", "pumpshotgun", "pistol_magnum", "pistol", "hunting_rifle", "autoshotgun"
+                    };
+                    List<string> matPaths = new List<string>();
+                    List<string> expectedImpacts = new List<string>(new string[]
+                    {
+                        "鸟狙", "30发军用狙", "AWP", "MAC-10", "MP5", "UZI", "二代连喷", "铁喷", "sg552", "M60",
+                        "SCAR-L", "AK-47", "M16", "木喷", "马格南", "手枪", "15发木狙", "一代连喷"
+                    });
+                    foreach (string n in weaponMats) matPaths.Add("materials/3ptesturik/" + n + ".vmt");
+                    expectedImpacts.Sort(StringComparer.Ordinal);
+                    string impact = "材质,影响:" + string.Join("/", expectedImpacts.ToArray());
+                    ModIdentify.Result many = ModIdentify.AnalyzePaths(matPaths);
+                    List<string> reversedMats = new List<string>(matPaths);
+                    reversedMats.Reverse();
+                    ModIdentify.Result manyReversed = ModIdentify.AnalyzePaths(reversedMats);
+                    bad += RecogCheck(many.AmbiguousMaterial && many.Subject.Length == 0 && many.Key.Length == 0
+                        && many.Level == "材质" && many.Kinds == impact, "18 种武器纯材质不猜主体，完整保留排序后的影响面");
+                    bad += RecogCheck(manyReversed.Kinds == many.Kinds && manyReversed.AmbiguousMaterial,
+                        "纯材质多命中不受目录顺序影响");
+                    bad += RecogCheck(ModIdentify.AnalyzePaths(new List<string>(new string[] { "materials/3ptesturik/sniper_scout.vmt" })).Subject == "鸟狙",
+                        "单一武器材质仍认出具体对象");
+                    ModIdentify.Result multiInfected = ModIdentify.AnalyzePaths(new List<string>(new string[]
+                        { "materials/models/infected/hunter/hunter_color.vtf", "materials/models/infected/smoker/smoker_color.vtf" }));
+                    bad += RecogCheck(multiInfected.Subject == "通用" && !multiInfected.AmbiguousMaterial,
+                        "多特感纯材质仍归通用，不被武器歧义规则清空");
+                    bad += RecogCheck(ModIdentify.CacheRoundTrip(many), "纯材质歧义标记与影响面能穿过识别缓存");
+                    ModIdentify.GuessFromText(many, "鸟狙", "文件名");
+                    bad += RecogCheck(many.Subject.Length == 0 && many.Key.Length == 0, "纯材质歧义结果不被文件名兜底覆盖");
+
+                    ModIdentify.Result wood = ModIdentify.AnalyzePaths(new List<string>(new string[]
+                        { "models/w_models/weapons/w_shotgun.mdl", "models/v_models/v_pumpshotgun.mdl" }));
+                    ModIdentify.Result chrome = ModIdentify.AnalyzePaths(new List<string>(new string[]
+                        { "models/v_models/v_shotgun_chrome.mdl", "models/w_models/weapons/w_pumpshotgun_a.mdl" }));
+                    bad += RecogCheck(wood.Subject == "木喷" && wood.Kinds == "模型", "木喷视角/世界模型配对不产生假附带");
+                    bad += RecogCheck(chrome.Subject == "铁喷" && chrome.Kinds == "模型", "铁喷视角/世界模型配对不产生假附带");
+                    bad += RecogCheck(ModIdentify.AnalyzePaths(new List<string>(new string[] { "models/w_models/weapons/w_shotgun.mdl" })).Subject == "铁喷"
+                        && ModIdentify.AnalyzePaths(new List<string>(new string[] { "models/w_models/weapons/w_pumpshotgun_a.mdl" })).Subject == "木喷",
+                        "只带世界模型时保持原有映射");
+                    ModIdentify.Result pairedPlus = ModIdentify.AnalyzePaths(new List<string>(new string[]
+                        { "models/v_models/v_pumpshotgun.mdl", "models/w_models/weapons/w_shotgun.mdl", "models/v_models/v_rifle_ak47.mdl" }));
+                    bad += RecogCheck(pairedPlus.Subject == "木喷" && pairedPlus.Kinds == "模型,附带:AK-47",
+                        "官方模型配对只消除同件假主体，保留真实附带武器");
                 }
 
                 // 同名伴随文件：vpk 旁边的配图要认得出来（删/改名时一起带走），别把别人的图误收进来

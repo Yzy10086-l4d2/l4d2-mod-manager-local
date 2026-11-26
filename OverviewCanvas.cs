@@ -37,11 +37,10 @@ namespace Installer
         private readonly Dictionary<string, ModGroup> lastPick = new Dictionary<string, ModGroup>(StringComparer.OrdinalIgnoreCase);
         private readonly ToolTip tip;
 
-        // 沿用原来那块画板的暖色：这是「看板」，不跟浅色/深色表单主题走
-        // 配色跟着 Theme 走：以前这里是写死的暖棕色，切到主界面（冷灰）像换了个软件。
-        // 用属性而不是 static readonly —— 静态字段只在类第一次用到时求值一次，换主题不刷新。
+        // 换底盘时这块看板要跟着变，所以用属性取值，不用 static readonly
+        // （静态字段只在类第一次用到时求值一次，切底盘不会重新算）。
         private static Color BoardTop { get { return Theme.Bg; } }
-        private static Color BoardBot { get { return Theme.IsDark ? Color.FromArgb(12, 14, 17) : Color.FromArgb(247, 248, 250); } }
+        private static Color BoardBot { get { return Color.FromArgb(12, 14, 17); } }
         private static Color Ink1 { get { return Theme.Ink; } }
         private static Color Ink2 { get { return Theme.Ink2; } }
         private static Color Ink3 { get { return Theme.Ink3; } }
@@ -49,10 +48,16 @@ namespace Installer
         private static Color Good { get { return Theme.Ok; } }
         private static Color Amber { get { return Theme.Warn; } }
 
-        /// <summary>半透明的前景色：深色主题铺白、浅色主题铺黑，替代原来固定的暖白。</summary>
+        /// <summary>半透明的前景色：深底上铺一层白。</summary>
         private static Color Wash(int a)
         {
-            return Theme.IsDark ? Color.FromArgb(a, 255, 255, 255) : Color.FromArgb(Math.Min(255, a * 3 / 2), 20, 24, 30);
+            return Color.FromArgb(a, 255, 255, 255);
+        }
+
+        /// <summary>选中/悬停的底色：一抹暖白，比纯白柔和。</summary>
+        private static Color Tint(int a)
+        {
+            return Color.FromArgb(a, 255, 240, 215);
         }
 
         private readonly Font fTitle = new Font("Microsoft YaHei", 15.5f, FontStyle.Bold);
@@ -195,6 +200,7 @@ namespace Installer
                        BoardTop, BoardBot, LinearGradientMode.Vertical))
                 g.FillRectangle(b, ClientRectangle);
 
+            // 中间那团光晕：把看板中心提亮一层，和上下两档底色一起做出层次
             using (GraphicsPath p = new GraphicsPath())
             {
                 float cx = ClientSize.Width * 0.5f, cy = ClientSize.Height * 0.32f;
@@ -271,11 +277,12 @@ namespace Installer
                 using (GraphicsPath p = Round(r, 8f))
                 {
                     int a = sel ? 26 : (hot ? 12 : 6);
-                    using (SolidBrush b = new SolidBrush(Color.FromArgb(a, 255, 240, 215)))
+                    using (SolidBrush b = new SolidBrush(Tint(a)))
                         g.FillPath(b, p);
                     Color bc = sel ? Color.FromArgb(kbFocus ? 255 : 200, Accent)
                                    : Color.FromArgb(hot ? 40 : 18, 255, 235, 205);
-                    using (Pen pen = new Pen(bc, sel ? (kbFocus ? 2.2f : 1.4f) : 1f))
+                    float bw = sel ? (kbFocus ? 2.2f : 1.4f) : 1f;
+                    using (Pen pen = new Pen(bc, bw))
                         g.DrawPath(pen, p);
                 }
                 if (sel)
@@ -437,6 +444,7 @@ namespace Installer
             // MOD 名
             string mt = s.ModText;
             if (s.Partial && s.On.Count > 0) mt += "（" + s.Parts + "/" + s.AllParts + "）";
+            // 已装的 MOD 名比位置名低一档：靠暖白和字重一起分层，不用再换色
             Color mc = s.HasMod ? Color.FromArgb(238, 224, 200) : Ink3;
             using (SolidBrush b = new SolidBrush(mc))
                 g.DrawString(mt, fMod, b, new RectangleF(modX, r.Y + 8f, modW, 20f), Ellipsis());

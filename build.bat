@@ -32,8 +32,6 @@ echo [i] compiling %N% source files
   /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll ^
   /reference:System.Windows.Forms.dll ^
   /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll ^
-  /resource:"%~dp0desk\index.html",desk.html ^
-  /resource:"%~dp0desk\three.min.js",three.js ^
   %SRCS%
 if errorlevel 1 (
   echo.

@@ -49,6 +49,7 @@ namespace Installer
             public ConfTier Confidence = ConfTier.Unknown;
             public IdStatus Status = IdStatus.Unknown;
             public bool MultiSubject;
+            public bool AmbiguousMaterial;   // 纯材质命中多个对象，无法确定唯一主体
             public readonly System.Collections.Generic.List<SubjectRef> Subjects = new System.Collections.Generic.List<SubjectRef>();
         }
 
@@ -441,9 +442,48 @@ namespace Installer
                     }
                 }
 
+                for (int i = 0; i < RuleTable.OfficialModelPairs.GetLength(0); i++)
+                {
+                    bool hasView = false, hasWorld = false;
+                    foreach (string m in Mdls)
+                    {
+                        if (string.Equals(m, RuleTable.OfficialModelPairs[i, 0], StringComparison.OrdinalIgnoreCase)) hasView = true;
+                        if (string.Equals(m, RuleTable.OfficialModelPairs[i, 1], StringComparison.OrdinalIgnoreCase)) hasWorld = true;
+                    }
+                    if (!hasView || !hasWorld) continue;
+                    string worldSubject = Lookup(RuleTable.OfficialModelPairs[i, 1]);
+                    if (Lookup(RuleTable.OfficialModelPairs[i, 0]) == RuleTable.OfficialModelPairs[i, 2]
+                        && worldSubject != RuleTable.OfficialModelPairs[i, 2])
+                    {
+                        bool otherEvidence = false;
+                        foreach (string m in Mdls)
+                        {
+                            if (string.Equals(m, RuleTable.OfficialModelPairs[i, 1], StringComparison.OrdinalIgnoreCase)) continue;
+                            if (Lookup(m) == worldSubject) { otherEvidence = true; break; }
+                        }
+                        if (!otherEvidence) found.Remove(worldSubject);
+                    }
+                }
+
                 // 一个包里塞了好几样东西时：归「主件」，其余记成附带影响（用户 2026-11-16 定 A 方案）。
                 // 主件 = 模型出现次数最多的；次数相同保留最先命中的（表里具体型号排在泛称前）。
                 if (found.Count == 0 || Map) { r.Subject = ""; r.Key = ""; }
+                else if (Mdls.Count == 0 && Huds.Count == 0 && Snds.Count == 0
+                    && r.Level == "材质" && found.Count > 1
+                    && found.TrueForAll(delegate(string n)
+                    {
+                        Positions.Row row = Positions.Find(n);
+                        return row != null && (row.Sub == "步枪" || row.Sub == "冲锋枪" || row.Sub == "霰弹枪"
+                            || row.Sub == "狙击枪" || row.Sub == "特殊武器" || row.Sub == "投掷物"
+                            || row.Sub == "手枪" || row.Sub == "近战" || row.Sub == "弹药升级");
+                    }))
+                {
+                    r.AmbiguousMaterial = true;
+                    r.Subject = ""; r.Key = "";
+                    List<string> impacted = new List<string>(found);
+                    impacted.Sort(StringComparer.Ordinal);
+                    r.Kinds += (r.Kinds.Length > 0 ? "," : "") + "影响:" + string.Join("/", impacted.ToArray());
+                }
                 else
                 {
                     string main = found[0];
@@ -478,7 +518,7 @@ namespace Installer
                             if (a.IndexOf(RuleTable.InfectKeys[i, 0], StringComparison.OrdinalIgnoreCase) >= 0)
                                 tset.Add(RuleTable.InfectKeys[i, 1]);
                     }
-                    if (tset.Count > 1 && !Map) { r.Subject = "通用"; r.Key = "c:通用"; r.MultiSubject = true; }
+                    if (tset.Count > 1 && !Map && !r.AmbiguousMaterial) { r.Subject = "通用"; r.Key = "c:通用"; r.MultiSubject = true; }
                 }
                 catch { }
                 // 阶段 1：置信/状态照旧（判定结果不变）。证据已按判定顺序在各自判定点逐条记录，见 AddEvidence。
@@ -585,9 +625,9 @@ namespace Installer
         /// 文件名经常是作者乱写的，但标题和描述里常写着「铁喷」「30连狙」这种玩家叫法。
         /// 只在模型和路径都没判出来时用，且不覆盖已有结论。
         /// </summary>
-        private static void GuessFromText(Result r, string text, string source)
+        internal static void GuessFromText(Result r, string text, string source)
         {
-            if (r == null || string.IsNullOrEmpty(text) || r.Subject.Length > 0) return;
+            if (r == null || string.IsNullOrEmpty(text) || r.Subject.Length > 0 || r.AmbiguousMaterial) return;
             string low = text.ToLowerInvariant();
             for (int i = 0; i < RuleTable.AliasKeys.GetLength(0); i++)
             {
@@ -862,9 +902,10 @@ namespace Installer
             StringBuilder sb = new StringBuilder();
             // 改了"识别逻辑"（不是规则表）就改这个串：否则表没变、指纹不变，旧缓存会继续用旧结论。
             // 2026-11-21a：模型证据 v_ 优先 + 裸 shotgun=铁喷 + 材质级霰弹枪按文件名校正（SPAS=二代连喷）
-            sb.Append("rules:2026-11-22a;");
+            sb.Append("rules:2026-11-27a;");
             AppendTable(sb, RuleTable.Dict);
             AppendTable(sb, RuleTable.AliasKeys);
+            AppendTable(sb, RuleTable.OfficialModelPairs);
             AppendTable(sb, RuleTable.InfectKeys);
             AppendTable(sb, RuleTable.SurvivorDirs);
             foreach (Positions.Row p in Positions.All)
@@ -924,6 +965,7 @@ namespace Installer
             // 老缓存行只有 10 列：没有标题就当空，AnalyzeCached 那边会补读一次并回写
             if (c.Length >= 12) { r.Title = c[10]; r.Author = c[11]; }
             if (c.Length >= 13) r.Trace = c[12];
+            if (c.Length >= 14) r.AmbiguousMaterial = c[13] == "1";
             r.Ok = entries > 0;
             return r;
         }
@@ -933,7 +975,24 @@ namespace Installer
             return relPath + "\t" + stamp + "\t" + r.Subject + "\t" + r.Level + "\t" + r.Key + "\t" + r.Kinds
                  + "\t" + (r.Only1P ? "1" : "0") + "\t" + r.Entries + "\t" + PackAssets(r.Assets)
                  + "\t" + (r.AnimOnly ? "1" : "0")
-                 + "\t" + (r.Title ?? "") + "\t" + (r.Author ?? "") + "\t" + (r.Trace ?? "");
+                 + "\t" + (r.Title ?? "") + "\t" + (r.Author ?? "") + "\t" + (r.Trace ?? "")
+                 + "\t" + (r.AmbiguousMaterial ? "1" : "0");
+        }
+
+        internal static bool CacheRoundTrip(Result r)
+        {
+            if (r == null) return false;
+            Result copy = ReadResult(CacheLine("selftest.vpk", "stamp", r).Split('\t'));
+            return copy != null && copy.Subject == r.Subject && copy.Key == r.Key && copy.Level == r.Level
+                && copy.Kinds == r.Kinds && copy.AmbiguousMaterial == r.AmbiguousMaterial;
+        }
+
+        internal static void ResetCacheForSelfTest()
+        {
+            cache = null;
+            cacheDirty = false;
+            NewEntries = 0;
+            NewPaths.Clear();
         }
 
         private static void LoadCache()
@@ -1185,7 +1244,9 @@ namespace Installer
         {
             Scan sc = new Scan();
             foreach (string p in ps) sc.Feed(p);
-            return sc.Finish();
+            Result r = sc.Finish();
+            Finalize(r);
+            return r;
         }
 
         /// <summary>自检用：直接拿一份路径表走分类，不碰真 vpk。</summary>

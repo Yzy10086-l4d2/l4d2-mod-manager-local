@@ -146,8 +146,7 @@ namespace Installer
                 }
                 else
                 {
-                    using (SolidBrush b = new SolidBrush(Theme.IsDark
-                               ? Color.FromArgb(46, 50, 58) : Color.FromArgb(232, 236, 242)))
+                    using (SolidBrush b = new SolidBrush(Color.FromArgb(46, 50, 58)))
                         g.FillRectangle(b, thumb);
                     string ch = "";
                     if (title.Length > 0 && hint.Length == 0) ch = title.Substring(0, 1);
@@ -201,8 +200,7 @@ namespace Installer
             {
                 bool has = img != null;
                 Color ink = has ? Theme.Info : Theme.Ink3;
-                Color bgb = has ? (Theme.IsDark ? Color.FromArgb(27, 42, 58) : Color.FromArgb(227, 240, 250))
-                                : (Theme.IsDark ? Color.FromArgb(42, 46, 53) : Color.FromArgb(242, 243, 246));
+                Color bgb = has ? Color.FromArgb(27, 42, 58) : Color.FromArgb(42, 46, 53);
                 Font f = Theme.UISmall;
                 Size sz = TextRenderer.MeasureText(g, src, f);
                 Rectangle badge = new Rectangle(tx, top + line1 + line2 + Dpi.S(1),

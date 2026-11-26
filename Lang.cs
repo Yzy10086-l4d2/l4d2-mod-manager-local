@@ -160,13 +160,8 @@ namespace Installer
             Add(d, "导入…", "Import…");
             Add(d, "导出…", "Export…");
             Add(d, "添加文件夹…", "Add folder…");
-            Add(d, "库文件夹管理", "Library folders");
-            Add(d, "没选方案：挑一套，列表里就会标出它在这一类里装了什么",
-                "No set selected: pick one and the list marks what it installs in each category");
 
-            // ---------- 左栏：日志 ----------
-            Add(d, "显示日志 ▾", "Show log ▾");
-            Add(d, "收起日志 ▴", "Hide log ▴");
+            // ---------- 日志（设置页入口） ----------
             Add(d, "打开日志", "Open log");
             Add(d, "日志", "Log");
             Add(d, "确定", "OK");
@@ -240,12 +235,10 @@ namespace Installer
             Add(d, "参数配置…", "Config file…");
                 Add(d, "留原版", "Keep vanilla");
             Add(d, "指定位置…", "Choose slot…");
-                Add(d, "一键还原", "Full restore");
             Add(d, "常规", "General");
             Add(d, "U 盘模式扫所选主库，本地模式只看游戏目录", "USB mode scans the chosen library; local mode only the game folder");
             Add(d, "减少动态效果", "Reduce motion");
             Add(d, "关掉按钮与状态切换的过渡，低配机器更轻快", "Turn off button/state transitions; lighter on low-end PCs");
-            Add(d, "跟随系统 = 跟 Windows 走；选了立即生效", "Follow system = match Windows; picked value applies at once");
             Add(d, "切换后界面立即重建，其它设置不会丢", "UI rebuilds right away; other settings are kept");
             Add(d, "游戏根目录", "Game folder");
             Add(d, "MOD 主库", "MOD library");
@@ -359,7 +352,6 @@ namespace Installer
             Add(d, "保存设置", "Save settings");
             Add(d, "外观", "Appearance");
             Add(d, "深色", "Dark");
-            Add(d, "浅色", "Light");
             Add(d, "语言 / Language", "Language");
             Add(d, "中文", "中文 (Chinese)");
             Add(d, "English", "English");

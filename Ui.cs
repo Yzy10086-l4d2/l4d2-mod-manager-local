@@ -10,34 +10,23 @@ namespace Installer
 {
     public partial class MainForm : Form
     {
-        private ComboBox txtGame;
-        private FlatButton btnLaunch, btnSettings, btnInstall, btnRestore, btnCancel, btnClearSearch, btnRefreshLib;
-        private FlatButton btnView, btnPanel;     // 顶部：台面/方案树 切换、左栏抽屉
+        private string gameRoot = "";
+        private FlatButton btnLaunch, btnSettings, btnInstall, btnCancel, btnClearSearch, btnRefreshLib;
+        private FlatButton btnView;               // 顶部：方案总览
         private FlatButton btnWorkshop;           // 顶部：从创意工坊导入
-        private bool drawerOpen;                  // 左栏（装什么 / 安装选项 / 日志）是否展开
-        private FlatButton btnLogToggle;          // 左栏「显示日志 / 收起日志」
-        // 左栏「游戏现状」卡片：日志收起时它就占着左栏下半屏（以前那块是纯留白），
-        // 同时承担「按游戏现状回填勾选」和「刷新」两个入口 —— 换机器第一件事就是看这里。
-        private Section gNow;
-        private Label lblNowNum, lblNowUnit, lblNowSub, lblNowState, lblNowFoot, lblNowCats;
-        private FlatButton btnNowRefresh;
-        private CheckBox chkAutoSync;
-        private string nowStamp = "";             // 上一次读到游戏现状的时刻
-        private int nowCatRows = 6;               // 「分类分布」这一块能放几行（按卡片高度算，放不下就截断）
-        private bool logOpen;                     // 日志卡片展开（默认收起：排错才看，不该常驻）
-        private ComboBox cboProfile;
+        private readonly List<string> profileNames = new List<string>();
+        private string selectedProfile = "";      // 空 = 没选方案（看当前勾选）
         // 最近套用/保存过的方案名（空=没套方案）：自检结果写回它
         private string appliedProfile = "";
-        private Section gMod, gLog;
-        private Button btnUnmatched;          // 「未识别 N 个」：打开手动分类页
+        private Section gMod;
         private TextBox txtSearch;
-        private Button btnSaveProfile, btnApplyProfile;
         private Panel viewHost;                  // 右栏：方案树就嵌在这里
         private Panel ctxBar;                    // 上下文条 38px：面包屑 + 计数在左，方案操作在右
         private Label lblCtx;                    // 上下文条那行字（原来画在卡片标题上）
         private Action placeCtxBar;               // 上下文条内部的排位器（条宽变了就重排）
         private Rectangle chipSave, chipApply, chipUnmatch;   // 上下文条右侧三个胶囊的位置
         private bool chipUnmatchOn;                          // 「未识别 N 个」有没有内容可点
+        private string unmatchedText = "";                   // 「未识别 N 个」胶囊上的字
         private int chipHover = -1;                          // 鼠标正停在哪个胶囊上（0 另存 / 1 套用 / 2 未识别 / -1 都没有）
         private bool langRestart;                // 设置里切了语言：关掉自己，让 Program 重建
         private readonly bool uiWasEn = Lang.IsEn;    // 这个窗口是用哪种语言建的：回来一比就知道要不要重建
@@ -53,16 +42,11 @@ namespace Installer
         private Label lblBrandMark;              // 顶栏品牌区：32×32 圆角徽标
         private Font brandMarkFont;              // 徽标上的「MOD」字号（按 DPI 放大一次，别在 Paint 里反复 new）
         private string statusBase = "", wsSuffix = "";   // 状态行正文 + 「工坊：离线」这类的常驻后缀
-        // 底栏总高（设计值）：按钮行 36 + 间距 12 + 状态栏 20 + 触底 8。
-        // 原来是 116，按钮下面空出 68px，「下巴」明显偏厚；收到 76 之后按钮行和状态栏只隔 12px。
-        // 底部动作区高度。曾经试过「没有一键还原就收到 56」——实测按钮被挤到窗口边缘、
-        // 状态字被切掉，比原来更糟，已回退（2026-11-19）。要动这块得整块重排，不是改一个数。
         // 2026-11-21：整条底栏撤掉（窗口底下那条"下巴"）。内容区一直长到窗口下沿，
         // 状态文字 + 刷新按钮并进右栏页脚那一行，不再单独占一条横带。
         private const int BottomBarH = 0;
         private const int StatusRowH = 24;   // 右栏页脚只留一行状态（刷新已挪到顶栏），越矮内容越长
-        // 方案标记：当前下拉里那套方案包含哪些文件，用来在列表里一眼看出「这条属不属于方案」
-        private Label lblScheme;
+        // 方案标记：当前选中的那套方案包含哪些文件，用来在列表里一眼看出「这条属不属于方案」
         private readonly HashSet<string> schemeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private string schemeName = "";
         private ToolTip tips;
@@ -72,20 +56,17 @@ namespace Installer
         private bool preOk = true;               // 上一次校验的结论；初值 true = 首次校验前不拦人（和旧行为一致）
         private bool closeWhenIdle;              // 装机中途请求退出：停在文件边界后再关窗口
         private bool forceClose;                 // 已经确认过一次退出，收盘时不要再弹确认
-        private TextBox txtLog;
         private readonly HashSet<string> checkedKeys = new HashSet<string>();
         // 整组一个部件都不勾 = 这套不装（用户 2026-11-21 定）。也要记住，否则重开又回到默认部件。
         private readonly HashSet<string> noParts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // 展开了哪些套装（按 ModGroup.Key）：展开后每个 vpk 单独一行，可以只勾其中一个
         private readonly HashSet<string> expanded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private List<string> conflictMsgs = new List<string>();
-        private int logLines;                    // 日志行数，超了就截断，避免文本框越用越慢
         private readonly System.Windows.Forms.Timer searchTimer = new System.Windows.Forms.Timer();
         private volatile bool bgDone;            // RunBusy 的完成标志
         private int lastRespW, lastRespH = -1;   // 上一次重排用的窗口宽度（拖动时去重，少重排一半以上）
         private object bgResult;
         private Exception bgError;
-        private int logWarnings;                 // 日志里的 WARN/FAIL 条数，直接显示在标题上
 
         // 缩放窗口时闪/错位：整窗走系统合成（WS_EX_COMPOSITED）+ 双缓冲，
         // 子控件不再各自重绘；配合 ApplyResponsive 里的 SuspendLayout，拖动时只排一次
@@ -124,13 +105,9 @@ namespace Installer
             StartPosition = FormStartPosition.CenterScreen;
             BuildUi();
             BuildCaption();
-            Core.Sink = AppendLog;
 
-            if (gameRootHint != null && Core.TestGame(gameRootHint)) txtGame.Text = gameRootHint;
-            else if (Core.TestGame(Core.Cfg.GameRoot)) txtGame.Text = Core.Cfg.GameRoot;
-            // 赋值后文本会整段处于选中态（蓝底），每次开窗都像待输入，光标退回开头
-            txtGame.SelectionStart = 0;
-            txtGame.SelectionLength = 0;
+            if (gameRootHint != null && Core.TestGame(gameRootHint)) gameRoot = gameRootHint.Trim();
+            else if (Core.TestGame(Core.Cfg.GameRoot)) gameRoot = Core.Cfg.GameRoot.Trim();
             // 都没配好也不在这里找：找游戏要遍历所有盘（含只读虚拟卷），放到 BeginInit 的后台线程做
 
             // 重活放到窗口显示之后做，避免启动干等；标题栏深浅要等窗口句柄存在
@@ -143,46 +120,31 @@ namespace Installer
                 Theme.DeepNative(this);
                 BeginInit();
             };
-            // ComboBox 显示后拿到焦点会全选文本（看着像"等你重新输入"），等激活完再把选区收掉
             Shown += delegate
             {
                 Theme.ApplyChrome(this);
                 Theme.DeepNative(this);
-                BeginInvoke((MethodInvoker)delegate
-                {
-                    txtGame.SelectionStart = txtGame.Text.Length;
-                    txtGame.SelectionLength = 0;
-                });
             };
-            // 主窗口一关，桌面的浏览器窗口和本地服务都跟着收摊，
-            // 别留一个孤儿窗口在那儿转圈（它轮询不到数据，看着像卡死）
             FormClosing += delegate(object s, FormClosingEventArgs e)
             {
-                if (forceClose) { CloseDesk(); return; }   // 已经问过一次了（装机停下后自动关），别再拦
+                if (forceClose) return;   // 已经问过一次了（装机停下后自动关），别再拦
                 // 长操作（装机/还原/导入）在跑时关窗口：后台线程随进程一起没，
                 // 文件留在半路上，manifest 也没写，下次启动判断不出该不该重装。
                 string busy = OpGuard.Current;
                 if (busy != null)
                 {
-                    if (closeWhenIdle) return;          // 已经请求停止了，再点一次 × = 直接退（不卡人）
+                    e.Cancel = true;
+                    if (closeWhenIdle) return;
                     if (MessageBox.Show(this,
-                        "正在" + busy + "，还没结束。\r\n\r\n要停下来退出吗？停下后窗口会自己关。",
+                        "正在" + busy + "，还没结束。\r\n\r\n要停下来退出吗？会停在当前文件边界，并保存已完成进度。",
                         "还没结束", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
                         MessageBoxDefaultButton.Button2) != DialogResult.Yes)
-                    { e.Cancel = true; return; }        // 默认是「不关」，接着装
+                        return;                         // 默认是「不关」，接着操作
                     Work.CancelRequested = true;
+                    closeWhenIdle = true;
                     Core.Log("WARN", "用户在「" + busy + "」中途关窗口，已请求停止");
-                    if (busy == "装机")
-                    {
-                        // 等它停在文件边界上再退，别把半边 vpk 留在 addons 里
-                        closeWhenIdle = true;
-                        SetStatus("正在停止装机 · 停在当前文件后自动退出");
-                        e.Cancel = true;
-                        return;
-                    }
-                    return;                             // 别的流程没有停止点，只能硬退
+                    SetStatus("正在停止" + busy + " · 停在当前文件后自动退出");
                 }
-                CloseDesk();
             };
         }
 
@@ -241,7 +203,7 @@ namespace Installer
             lblStatus.Text = Core.IsLocal ? "正在扫描游戏目录…" : "正在读取 U 盘…";
             ShowLoading(Core.IsLocal ? "正在扫描游戏目录…" : "正在读取 U 盘上的 MOD 库…",
                 "第一次启动或刚更新完可能要等几秒，别急着关", true);
-            bool needFind = !Core.TestGame(txtGame.Text);
+            bool needFind = !Core.TestGame(gameRoot);
             System.Threading.Thread th = new System.Threading.Thread(delegate()
             {
                 try
@@ -276,8 +238,8 @@ namespace Installer
                     SafeInvoke(delegate
                     {
                         System.Diagnostics.Stopwatch __sw2 = System.Diagnostics.Stopwatch.StartNew();
-                        if (found != null) { txtGame.Text = found; Core.Log("INFO", "自动找到游戏: " + found); }
-                        else if (!Core.TestGame(txtGame.Text)) Core.Log("WARN", "没自动找到游戏，点「自动找」或「浏览…」");
+                        if (found != null) { gameRoot = found; Core.Log("INFO", "自动找到游戏: " + found); }
+                        else if (!Core.TestGame(gameRoot)) Core.Log("WARN", "没自动找到游戏，去设置里指定游戏目录");
                         ApplyConfig();
                         FillProfiles(null);
                         // 换机器第一屏：配置里一条勾选都对不上（U 盘带来的配置在别的电脑上没有同样的库），
@@ -298,7 +260,7 @@ namespace Installer
                         ShowTree();                        // 启动第一屏是方案树；桌面要点按钮才开
                         FlushAfterScan();                  // 启动扫库期间排队的活（连下两个 MOD 的第二个）
                         StartUpdateCheck();                // 后台查一次新版本，只改状态行，不打扰
-                        ProbeWritable(txtGame.Text.Trim());  // 后台探一次可写性，校验条才有话说
+                        ProbeWritable(gameRoot.Trim());  // 后台探一次可写性，校验条才有话说
                         QueuePrecheck();
                     });
                 }
@@ -443,7 +405,7 @@ namespace Installer
             using (Pen pen = new Pen(Theme.Line)) g.DrawLine(pen, 0, top - 1, W, top - 1);
             for (int i = 0; i < 3; i++)
             {
-                int a = Theme.IsDark ? 30 - i * 9 : 12 - i * 4;
+                int a = 30 - i * 9;
                 if (a <= 0) break;
                 using (Pen p2 = new Pen(Color.FromArgb(a, 0, 0, 0))) g.DrawLine(p2, 0, top + i, W, top + i);
             }
@@ -462,7 +424,6 @@ namespace Installer
 
             int W = ClientSize.Width;
             int CH = ClientSize.Height;                        // 布局按实际客户区算，别再写死 700 时代的坐标
-            int leftW = 396;                    // 旧引用还在用；右栏已改成满宽
             int rightX = Theme.M;               // 左栏撤掉：右栏直接顶到左边距
             int rightW = W - 2 * Theme.M;
 
@@ -502,7 +463,6 @@ namespace Installer
             const int findW = 32;
             const int settingsW = 32;
             const int viewW = 32;       // 总览（图标 + 文字）（原「方案管理」，四个字在 1080 宽下太占地方）
-            const int panelW = 56;      // 左栏抽屉（按钮已隐藏，位置照旧留出来）
             const int wsW = 32;         // 工坊导入
             const int installW = 124;   // 「安装这套方案」：主操作上顶栏最右
             const int refreshW = 32;    // 「刷新」：常驻顶栏，和主操作同一排
@@ -516,12 +476,6 @@ namespace Installer
             int viewX = settingsX - groupGap - viewW;
             int wsX = viewX - groupGap - wsW;
             int findX = wsX - topGap - findW;
-            // 路径输入框从顶栏撤下（改路径在设置里）。控件留着当「当前游戏目录」的唯一数据源，
-            // 隐藏起来，所有读写它的既有代码（预检、换模式、最近列表）都不用动。
-            txtGame = new ComboBox(); txtGame.SetBounds(80, 18, 200, 24);
-            txtGame.DropDownStyle = ComboBoxStyle.DropDown; Theme.Dress(txtGame); Controls.Add(txtGame);
-            txtGame.Visible = false;
-            txtGame.TextChanged += delegate { QueuePrecheck(); };
             btnLaunch = new FlatButton(); btnLaunch.Plain = true; btnLaunch.Icon = "ui-bolt"; btnLaunch.Text = ""; btnLaunch.SetBounds(findX, 16, findW, Theme.H);
             btnLaunch.AccessibleName = "启动项组合";
             btnLaunch.Click += delegate { using (LaunchCatalogForm f = new LaunchCatalogForm()) f.ShowDialog(this); };
@@ -570,136 +524,18 @@ namespace Installer
             btnView.Click += delegate
             {
                 // 方案总览改成独立窗口：以前是盖在主界面上的整块看板，用户嫌「糊在原窗口上」。
-                if (overviewWindow != null && !overviewWindow.IsDisposed) { overviewWindow.Activate(); return; }
+                if (overviewWindow != null && !overviewWindow.IsDisposed)
+                {
+                    overviewWindow.RefreshPicks();   // 已经开着：先按当前树重读一遍，再把它调到前台
+                    overviewWindow.Activate();
+                    return;
+                }
                 overviewWindow = new OverviewForm(this);
                 overviewWindow.FormClosed += delegate { overviewWindow = null; };
                 overviewWindow.Show(this);
             };
             tips.SetToolTip(btnView, Lang.S("方案总览：这套里每个位置装的是哪个 MOD，一眼看完。\r\n左边点大类，右边列这个类的位置和已装的 MOD；没装的灰着，库里没有的空心点。\r\n点开关直接开/关，点名字就地换 MOD，拖大类改顺序；点一行回方案树改那个位置。再点一下回到方案树。"));
             Controls.Add(btnView);
-
-            btnPanel = new FlatButton(); btnPanel.Text = Lang.S("统计");
-            btnPanel.Visible = false;           // 左栏撤掉后这个开关没意义了（对象留着，免得别处引用崩）
-            btnPanel.SetBounds(viewX, 16, panelW, Theme.H);
-            btnPanel.Click += delegate
-            {
-                SetDrawer(!drawerOpen);
-                // 只有用户自己点的时候才记：总览/跳转那些自动展开收起不该改用户偏好
-                if (Core.Cfg.DrawerOpen != drawerOpen) { Core.Cfg.DrawerOpen = drawerOpen; Core.SaveConfig(); }
-            };
-            tips.SetToolTip(btnPanel, Lang.S("展开 / 收起左边那栏（装什么、安装选项、日志）。\r\n收起来以后整个窗口就是一张台面。"));
-            // 左栏撤掉后不再加入顶层：隐藏也占位，会让「顶部按钮叠在一起」的排版自检失败
-
-            // ---- 左栏下：日志（默认收起）----
-            // 日志是排错才看的东西：常驻的话左栏一半高度都被它占着，把「装什么 / 安装选项」
-            // 挤到上面一小块。收起来只留一个切换按钮，点了才展开；高度由 ApplyResponsive 算。
-            Section gl = new Section();
-            gl.Caption = Lang.S("日志"); gl.SetBounds(Theme.M, 478, leftW, 200); gl.Visible = false; Controls.Add(gl);
-            FlatButton btnLog = new FlatButton(); btnLog.Text = Lang.S("打开日志"); btnLog.SetBounds(leftW - 12 - 68, 1, 68, 24); btnLog.Font = Theme.UISmall; btnLog.Click += delegate { try { System.Diagnostics.Process.Start("explorer.exe", Core.LogDir); } catch { } }; gl.Controls.Add(btnLog);
-            txtLog = new TextBox();
-            txtLog.SetBounds(12, 30, leftW - 24, 170);
-            txtLog.Multiline = true; txtLog.ScrollBars = ScrollBars.Both; txtLog.WordWrap = false; txtLog.ReadOnly = true;
-            txtLog.BorderStyle = BorderStyle.None;
-            txtLog.BackColor = Theme.Surface;
-            txtLog.ForeColor = Theme.Ink2;
-            txtLog.Font = Theme.Mono;      // 日志是数据：等宽才能让时间戳和级别对齐
-            gl.Controls.Add(txtLog);
-
-            btnLogToggle = new FlatButton();
-            btnLogToggle.Text = Lang.S("显示日志 ▾");
-            btnLogToggle.Font = Theme.UISmall;
-            btnLogToggle.Soft = true;                 // 整栏大白按钮太抢眼，像个误放的主操作
-            btnLogToggle.SetBounds(Theme.M, 438, 132, Theme.H);
-            btnLogToggle.Visible = false;      // 用户 2026-11-24 定：日志不给人看，只落文件
-            btnLogToggle.Click += delegate { SetLogOpen(!logOpen); };
-            tips.SetToolTip(btnLogToggle, Lang.S("安装日志：什么时候开始、每个文件复制到哪、哪一步跳过了。\r\n平时收起来，出问题再展开。"));
-            Controls.Add(btnLogToggle);
-
-            // ---- 左栏下：游戏现状（和日志共用同一块地方，谁展开谁占）----
-            // 收起日志时这块本来是整片留白 —— 换机器的人最想知道的恰恰是「游戏里现在到底装着什么」，
-            // 与其空着，不如把 addons + addonlist.txt 的实况摆在最显眼的位置。
-            gNow = new Section();
-            gNow.Caption = Lang.S("游戏现状");
-            gNow.SetBounds(Theme.M, 478, leftW, 200);
-            gNow.Visible = false;              // 与「总览」重复，主界面不再展示（数据仍照常读）
-            Controls.Add(gNow);
-
-            lblNowNum = new Label(); lblNowNum.Text = "0";
-            lblNowNum.SetBounds(12, 26, 56, 30);
-            lblNowNum.Font = new Font(Theme.UI.FontFamily, 19F, FontStyle.Bold);
-            lblNowNum.TextAlign = ContentAlignment.MiddleRight;
-            lblNowNum.ForeColor = Theme.Ok;
-            lblNowNum.BackColor = Color.Transparent;
-            gNow.Controls.Add(lblNowNum);
-
-            lblNowUnit = new Label(); lblNowUnit.Text = Lang.S("个 MOD 正在游戏里启用");
-            lblNowUnit.SetBounds(74, 30, leftW - 24 - 62, 22);
-            lblNowUnit.Font = Theme.UIBold;
-            lblNowUnit.TextAlign = ContentAlignment.MiddleLeft;
-            lblNowUnit.AutoEllipsis = true;
-            lblNowUnit.ForeColor = Theme.Ink;
-            lblNowUnit.BackColor = Color.Transparent;
-            gNow.Controls.Add(lblNowUnit);
-
-            lblNowSub = new Label(); lblNowSub.Text = Lang.S("游戏 addons 里还没读到 MOD");
-            lblNowSub.SetBounds(12, 60, leftW - 24, 18);
-            lblNowSub.Font = Theme.UISmall;
-            lblNowSub.AutoEllipsis = true;
-            lblNowSub.ForeColor = Theme.Ink2;
-            lblNowSub.BackColor = Color.Transparent;
-            gNow.Controls.Add(lblNowSub);
-
-            lblNowState = new Label(); lblNowState.Text = "";
-            lblNowState.SetBounds(12, 82, leftW - 24, 18);
-            lblNowState.Font = Theme.UISmall;
-            lblNowState.AutoEllipsis = true;
-            lblNowState.ForeColor = Theme.Ink3;
-            lblNowState.BackColor = Color.Transparent;
-            gNow.Controls.Add(lblNowState);
-
-            // 「刷新」一个入口干两件事：重扫游戏目录 + 把勾选对齐成游戏现状。
-            // 以前拆成「按游戏现状回填」和「刷新」两个按钮，功能重叠，用户问该点哪个。
-            btnNowRefresh = new FlatButton(); btnNowRefresh.Soft = true; btnNowRefresh.Text = Lang.S("刷新游戏现状");
-            btnNowRefresh.SetBounds(12, 106, 132, 28);
-            btnNowRefresh.Font = Theme.UISmall;
-            btnNowRefresh.Click += delegate { DoRefreshGame(); };
-            tips.SetToolTip(btnNowRefresh, Lang.S("重读游戏 addons 和 left4dead2\\addonlist.txt：\r\n"
-                + "新订阅 / 新拷进去的 vpk 会出现在列表里，勾选也对齐成游戏里实际开着的那些。\r\n"
-                + "只读，不动游戏里的任何文件。"));
-            gNow.Controls.Add(btnNowRefresh);
-
-            chkAutoSync = new CheckBox();
-            chkAutoSync.Text = Lang.S("启动时自动回填");
-            chkAutoSync.SetBounds(224, 108, leftW - 224 - 12, 24);
-            chkAutoSync.Font = Theme.UISmall;
-            chkAutoSync.Checked = Core.Cfg.AutoSync;
-            Theme.Dress(chkAutoSync);
-            tips.SetToolTip(chkAutoSync, Lang.S("勾上：每次启动时如果一条勾选都没有（换了台机器 / 配置是空的），\r\n"
-                + "就自动按游戏里正在用的那批填上。\r\n关掉：勾选永远只按你上次留下的来，游戏里有什么都不管。"));
-            chkAutoSync.CheckedChanged += delegate
-            {
-                Core.Cfg.AutoSync = chkAutoSync.Checked;
-                Core.SaveConfig();
-            };
-            gNow.Controls.Add(chkAutoSync);
-
-            lblNowFoot = new Label(); lblNowFoot.Text = "";
-            lblNowFoot.SetBounds(12, 140, leftW - 24, 18);
-            lblNowFoot.Font = Theme.UISmall;
-            lblNowFoot.AutoEllipsis = true;
-            lblNowFoot.ForeColor = Theme.Ink3;
-            lblNowFoot.BackColor = Color.Transparent;
-            gNow.Controls.Add(lblNowFoot);
-
-            // 这批到底动了哪些东西：窗口拉高时它把剩下的竖向空间填满，而不是留一片白
-            lblNowCats = new Label(); lblNowCats.Text = "";
-            lblNowCats.SetBounds(12, 106, leftW - 24, 40);
-            lblNowCats.Font = Theme.UISmall;
-            lblNowCats.ForeColor = Theme.Ink2;
-            lblNowCats.BackColor = Color.Transparent;
-            lblNowCats.AutoSize = false;
-            lblNowCats.TextAlign = ContentAlignment.TopLeft;
-            gNow.Controls.Add(lblNowCats);
 
             // ---- 右栏：MOD 库 ----
             // 只有一屏：方案树。左边是「能替换的东西」的位置，右边是它的候选。
@@ -724,7 +560,7 @@ namespace Installer
                 CtxChip(ep2.Graphics, chipSave, false, Lang.S("另存"), chipHover == 0);
                 CtxChip(ep2.Graphics, chipApply, false, Lang.S("套用"), chipHover == 1);
                 CtxChip(ep2.Graphics, chipUnmatch, !chipUnmatchOn,
-                    btnUnmatched == null ? "" : btnUnmatched.Text, chipHover == 2);
+                    unmatchedText, chipHover == 2);
             };
             ctxBar.MouseUp += delegate(object sp3, MouseEventArgs me3)
             {
@@ -747,8 +583,6 @@ namespace Installer
             ctxBar.Controls.Add(lblCtx);
 
             Label l8 = new Label(); l8.Text = Lang.S("方案"); l8.Visible = false; l8.SetBounds(12, 34, 34, 20); Theme.Dress(l8); gm.Controls.Add(l8);
-            cboProfile = new ComboBox(); cboProfile.SetBounds(50, 30, 204, 24); cboProfile.DropDownStyle = ComboBoxStyle.DropDownList; Theme.Dress(cboProfile); gm.Controls.Add(cboProfile);
-            cboProfile.Visible = false;        // 系统下拉收起来：界面上用下面的按钮 + 卡片弹层代替
 
             btnScheme = new FlatButton(); btnScheme.Soft = true;
             btnScheme.Text = Lang.S("当前选择") + " ▾";
@@ -768,27 +602,25 @@ namespace Installer
             };
             pnlScheme.Visible = false;
             Controls.Add(pnlScheme);
-            cboProfile.SelectedIndexChanged += delegate { ProfileSelectionChanged(); };
-            tips.SetToolTip(cboProfile, Lang.S("只选择方案，不会立刻改当前勾选；确认后点「套用」。"));
-            btnSaveProfile = new FlatButton(); btnSaveProfile.Text = Lang.S("另存"); btnSaveProfile.SetBounds(0, 3, 56, Theme.H); btnSaveProfile.Visible = false; btnSaveProfile.Click += delegate { SaveProfile(); }; ctxBar.Controls.Add(btnSaveProfile);
-            btnApplyProfile = new FlatButton(); btnApplyProfile.Text = Lang.S("套用"); btnApplyProfile.SetBounds(0, 3, 52, Theme.H); btnApplyProfile.Visible = false; btnApplyProfile.Click += delegate { ApplyProfile(); }; ctxBar.Controls.Add(btnApplyProfile);
-            tips.SetToolTip(btnApplyProfile, Lang.S("把选中的方案套用到当前勾选；如果会覆盖现有选择，会先确认。"));
-            btnUnmatched = new FlatButton();
-            btnUnmatched.Text = Lang.S("未识别 0 个");
-            btnUnmatched.SetBounds(0, 3, 92, Theme.H); btnUnmatched.Visible = false;
-            btnUnmatched.Click += delegate { if (treeView != null) treeView.SelectUnmatched(); };
-            tips.SetToolTip(btnUnmatched, Lang.S("程序没认出位置的 MOD 都收在这里，点开可以手动指定分类。\r\n这些不再出现在左边的树里。"));
-            ctxBar.Controls.Add(btnUnmatched);
             placeCtxBar = delegate
             {
                 int bx = ctxBar.Width - Dpi.S(12);
-                if (chipUnmatchOn) { bx -= Dpi.S(92); btnUnmatched.SetBounds(bx, Dpi.S(3), Dpi.S(92), Theme.H); bx -= Dpi.S(6); }
-                bx -= Dpi.S(52); btnApplyProfile.SetBounds(bx, Dpi.S(3), Dpi.S(52), Theme.H); bx -= Dpi.S(6);
-                bx -= Dpi.S(56); btnSaveProfile.SetBounds(bx, Dpi.S(3), Dpi.S(56), Theme.H); bx -= Dpi.S(10);
+                if (chipUnmatchOn)
+                {
+                    chipUnmatch = new Rectangle(bx - Dpi.S(92), Dpi.S(3), Dpi.S(92), Theme.H);
+                    bx -= Dpi.S(92) + Dpi.S(6);
+                }
+                else chipUnmatch = Rectangle.Empty;
+                chipApply = new Rectangle(bx - Dpi.S(52), Dpi.S(3), Dpi.S(52), Theme.H); bx -= Dpi.S(52) + Dpi.S(6);
+                chipSave = new Rectangle(bx - Dpi.S(56), Dpi.S(3), Dpi.S(56), Theme.H); bx -= Dpi.S(56) + Dpi.S(10);
                 lblCtx.SetBounds(Dpi.S(16), 0, Math.Max(Dpi.S(120), bx - Dpi.S(16)), Dpi.S(38));
-                chipSave = new Rectangle(btnSaveProfile.Left, btnSaveProfile.Top, btnSaveProfile.Width, btnSaveProfile.Height);
-                chipApply = new Rectangle(btnApplyProfile.Left, btnApplyProfile.Top, btnApplyProfile.Width, btnApplyProfile.Height);
-                chipUnmatch = new Rectangle(btnUnmatched.Left, btnUnmatched.Top, btnUnmatched.Width, btnUnmatched.Height);
+                // 黄色提示条要让开这三个胶囊：以前它按「这行右半边是空的」摆，正好压在
+                // 另存/套用/未识别 上（2026-11-27 用户截图实锤）。这里跟着胶囊的实际位置排。
+                if (lblConflict != null)
+                {
+                    lblConflict.SetBounds(ctxBar.Left + bx - Dpi.S(10) - Dpi.S(316), ctxBar.Top + Dpi.S(10), Dpi.S(316), Dpi.S(18));
+                    lblConflict.TextAlign = ContentAlignment.MiddleRight;
+                }
                 if (!chipUnmatchOn && chipHover == 2) chipHover = -1;   // 「未识别」藏起来了，别留着它的悬停态
                 ctxBar.Invalidate();
             };
@@ -839,16 +671,6 @@ namespace Installer
             tips.SetToolTip(btnClearSearch, Lang.S("清空搜索并返回方案树（Esc）"));
             Controls.Add(btnClearSearch);
 
-            // 方案分布：这句话和卡片标题上的「已选 N」重复，界面上不再占一行（数据照旧算，日志里能看）
-            lblScheme = new Label();
-            lblScheme.SetBounds(12, 92, rightW - 24, 18);
-            lblScheme.Font = Theme.UISmall;
-            lblScheme.ForeColor = Theme.Ink3;
-            lblScheme.AutoEllipsis = true;
-            lblScheme.Text = "";
-            lblScheme.Visible = false;
-            gm.Controls.Add(lblScheme);
-
             int cw = rightW - 24;
             int ch = (modH - 38) - 8 - 8;   // 卡片内只剩上下 8px 内边距（底部动作行早搬走了）
 
@@ -887,12 +709,10 @@ namespace Installer
             lblConflict.Visible = false;
             lblConflict.Click += delegate { ShowConflictDetail(); };
             Controls.Add(lblConflict);
+            if (placeCtxBar != null) placeCtxBar();   // 按胶囊位置摆一次（创建时还不知道它们在哪儿）
 
             // ---- 底部动作区 ----
-            // 右侧只留「次要 + 主操作」两个；破坏性的「一键还原」挪到最左下角，
-            // 和主操作隔开近一个屏宽 —— 以前它跟「开始安装」同高同排只差 8px，
-            // 手滑一下就得读一段四行长的确认框，读多了确认就失效。
-            const int bwRestore = 96, bwInstall = 132;
+            const int bwInstall = 132;
             int rightEdge = W - Theme.M;
             int xInstall = rightEdge - bwInstall;
 
@@ -904,14 +724,6 @@ namespace Installer
             btnInstall.Font = new Font(Theme.UI, FontStyle.Bold);
             btnInstall.SetBounds(installX, 16, installW, Theme.H);   // 方案 B：主操作上顶栏
             btnInstall.Click += delegate { DoInstall(); }; Controls.Add(btnInstall);
-            btnRestore = new FlatButton(); btnRestore.Text = Lang.S("一键还原"); btnRestore.Danger = true;
-            btnRestore.SetBounds(Theme.M, CH - BottomBarH, bwRestore, Theme.HP);
-            btnRestore.AccessibleName = "危险：移除本次安装写进去的文件";
-            btnRestore.Click += delegate { DoRestore(); }; Controls.Add(btnRestore);
-            // 本地版没有「本次安装写进去的文件」可还原（装机只改 addonlist），
-            // 这个按钮会让人以为能撤掉什么，直接藏掉；开关都能在「已装 MOD 开关」里单独翻。
-            btnRestore.Visible = false;
-            tips.SetToolTip(btnRestore, Lang.S("危险操作：删掉装进游戏的文件。执行前会再次确认。\r\n故意放在最左下角，离「替换为当前设定」最远的地方。"));
 
             // 快捷刷新 = 「刷新游戏现状」那个动作，常驻顶栏主操作那一排（2026-11-21 用户定：放右上看得到）。
             // 一套逻辑两个入口，不另写一份：重扫库 + 重读 addonlist + 勾选对齐游戏现状。
@@ -923,11 +735,10 @@ namespace Installer
             tips.SetToolTip(btnRefreshLib, Lang.S("刷新游戏现状：重扫 MOD 库 + 重读 addons 与 addonlist.txt，\r\n勾选对齐成游戏里实际开着的那些。只读，不动游戏文件。"));
             Controls.Add(btnRefreshLib);
 
-            // 进度条和「停止剩余」跟着让位：起点从还原按钮右边开始
-            bar = new ProgressBar(); bar.SetBounds(Theme.M + bwRestore + Theme.G, CH - BottomBarH + 12, 360, 12); bar.Visible = false; Controls.Add(bar);
+            bar = new ProgressBar(); bar.SetBounds(Theme.M, CH - BottomBarH + 12, 360, 12); bar.Visible = false; Controls.Add(bar);
             btnCancel = new FlatButton();
             btnCancel.Text = Lang.S("停止剩余");
-            btnCancel.SetBounds(Theme.M + bwRestore + Theme.G + 368, CH - BottomBarH + 6, 92, 24);
+            btnCancel.SetBounds(Theme.M + 368, CH - BottomBarH + 6, 92, 24);
             btnCancel.Visible = false;
             btnCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             btnCancel.Click += delegate { RequestStopInstall(); };
@@ -937,7 +748,7 @@ namespace Installer
             // 装机前的常驻校验条：把「目录不对 / 游戏在跑 / 什么都没勾」这三件事提前写在界面上，
             // 别等点了「开始安装」再一个接一个弹框把人拦下来。装机和进度条抢同一块地方。
             lblPre = new Label();
-            lblPre.SetBounds(Theme.M + bwRestore + Theme.G, CH - BottomBarH + 8, 420, 40);
+            lblPre.SetBounds(Theme.M, CH - BottomBarH + 8, 420, 40);
             lblPre.Font = Theme.UISmall;
             lblPre.AutoSize = false;                 // 不设就按文字自动撑开，会盖到右边按钮上
             lblPre.AutoEllipsis = true;
@@ -974,7 +785,7 @@ namespace Installer
                         | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             };
             Controls.Add(statusBar);
-            lblStatus = new Label(); lblStatus.SetBounds(Dpi.S(30), Dpi.S(2), W - 2 * Theme.M - 250, Dpi.S(20)); lblStatus.Text = Lang.S("就绪");
+            lblStatus = new Label(); lblStatus.SetBounds(Dpi.S(30), Dpi.S(2), W - 2 * Theme.M - 258, Dpi.S(20)); lblStatus.Text = Lang.S("就绪");
             // 右段常驻：临时消息（扫库/安装进度）在左，这条在右，两者互不覆盖
             lblNotice = new Label();
             lblNotice.SetBounds(W - Theme.M - 240, Dpi.S(2), 240, Dpi.S(20));
@@ -990,18 +801,14 @@ namespace Installer
             lblStatus.ForeColor = Theme.Ink2; lblStatus.BackColor = Color.Transparent; statusBar.Controls.Add(lblStatus);
 
             // 随窗口缩放：左右拉伸的跟着走，底部按钮贴右下
-            gMod = gm; gLog = gl;
+            gMod = gm;
             // 最小尺寸也守着屏幕：网吧小屏上不能出现「窗口比桌面还宽」
             Rectangle wmin = Screen.PrimaryScreen.WorkingArea;
             MinimumSize = new Size(Math.Min(1120, wmin.Width - 20), Math.Min(740, wmin.Height - 20));
-            txtGame.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             btnLaunch.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            gl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
             gm.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             lblConflict.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            txtLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             btnInstall.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            btnRestore.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;    // 左下角：和右边的主操作分开
             bar.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             lblPre.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             btnCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
@@ -1012,9 +819,6 @@ namespace Installer
             // 校验条防抖：勾选会连着变，进程枚举和路径判断不用每敲一下就做一遍
             preTimer.Interval = 220;
             preTimer.Tick += delegate { preTimer.Stop(); RefreshPrecheck(); };
-            // 默认展开：以前一进来左栏就是收起的，新用户看不到「环境组件」和「安装选项」，
-            // 以为这工具只能看不能装。状态记进配置，收过一次之后下次还是收起的。
-            SetDrawer(Core.Cfg.DrawerOpen);
             Resize += delegate { ApplyResponsive(); };
             ApplyResponsive();
             UpdateBrandLine();
@@ -1066,7 +870,7 @@ namespace Installer
             // 后台正在重建 ModList / Catalog.Groups：这时候枚举必撞「集合已修改」
             if (scanning || initializing) return;
 
-            string root = txtGame == null ? "" : txtGame.Text.Trim();
+            string root = gameRoot.Trim();
             List<string> bad = new List<string>();
             int picked = Selected().Count;
 
@@ -1133,21 +937,19 @@ namespace Installer
 
         private void FillProfiles(string keep)
         {
-            cboProfile.Items.Clear();
+            profileNames.Clear();
             List<string> ps = ProfileStore.ListProfiles();
-            if (ps.Count == 0) { cboProfile.Items.Add("还没有方案"); cboProfile.SelectedIndex = 0; LoadSchemeKeys(); SyncPicks(); return; }
-            cboProfile.Items.Add(Lang.S("当前选择"));
-            foreach (string p in ps) cboProfile.Items.Add(p);
+            profileNames.AddRange(ps);
             string want = string.IsNullOrEmpty(keep) ? appliedProfile : keep;
-            int idx = 0;
+            selectedProfile = "";
             if (!string.IsNullOrEmpty(want))
-                for (int i = 0; i < ps.Count; i++)
-                    if (string.Equals(ps[i], want, StringComparison.OrdinalIgnoreCase)) { idx = i + 1; break; }
-            cboProfile.SelectedIndex = idx;
-            // 下拉现在只代表“选中了哪套”，不再在选择瞬间灌进当前勾选。
+                foreach (string p in ps)
+                    if (string.Equals(p, want, StringComparison.OrdinalIgnoreCase)) { selectedProfile = p; break; }
+            // 方案只代表“选中了哪套”，不在选择瞬间灌进当前勾选。
             // 启动仍然保留上次工作选择，必须点「套用」才覆盖。
             LoadSchemeKeys();
             RefreshMods();
+            UpdateSchemeDiff();
             SyncSchemeButton();
         }
 
@@ -1200,7 +1002,8 @@ namespace Installer
         internal int UiPaintTest()
         {
             int bad = 0;
-            ThemeMode[] seq = new ThemeMode[] { ThemeMode.Light, ThemeMode.Dark, ThemeMode.System, ThemeMode.Dark, ThemeMode.Light };
+            // 三套底盘轮流切，每一步都要真的换过去
+            ThemeMode[] seq = new ThemeMode[] { ThemeMode.Graphite, ThemeMode.Blue, ThemeMode.Warm };
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
             StartPosition = FormStartPosition.Manual;
             Location = new Point(20, 20);
@@ -1214,7 +1017,8 @@ namespace Installer
                     Theme.SetMode(seq[i]);
                     Theme.ApplyToOpenForms();
                     for (int w = 0; w < 8; w++) { Application.DoEvents(); Thread.Sleep(60); }
-                    sb.AppendLine("== " + i + "  " + Theme.ModeLabel + "  dark=" + Theme.IsDark);
+                    sb.AppendLine("== " + i + "  请求 " + seq[i] + "  " + Theme.ModeLabel);
+                    if (Theme.Mode != seq[i]) { bad++; sb.AppendLine("FAIL " + i + ": 请求 " + seq[i] + " 后底盘没换过去"); }
                     DumpNativeColors(sb, this, "   ");
                     Shot("paint" + i);
                 }
@@ -1235,7 +1039,7 @@ namespace Installer
                     t.Tick += delegate
                     {
                         step++;
-                        if (step == 1) sf.PreviewAppearance(ThemeMode.Dark);
+                        if (step == 1) sf.PreviewAppearance(ThemeMode.Blue);
                         else if (step == 2) { t.Stop(); sf.DialogResult = DialogResult.Cancel; }
                     };
                     t.Start();
@@ -1243,13 +1047,13 @@ namespace Installer
                     t.Dispose();
                 }
                 for (int w = 0; w < 12; w++) { Application.DoEvents(); Thread.Sleep(60); }
-                sb.AppendLine("== modal 设置里点深色后直接关掉  " + Theme.ModeLabel + "  dark=" + Theme.IsDark
+                sb.AppendLine("== modal 设置里点蓝黑后直接关掉  " + Theme.ModeLabel
                     + "  cfg=" + Core.Cfg.Appearance);
                 DumpNativeColors(sb, this, "   ");
                 Shot("paint_modal");
-                if (!Theme.IsDark) { bad++; sb.AppendLine("FAIL modal: 关掉设置后外观退回去了"); }
-                if (!string.Equals(Core.Cfg.Appearance, "dark", StringComparison.OrdinalIgnoreCase))
-                { bad++; sb.AppendLine("FAIL modal: 外观没写进配置，重启会还原"); }
+                if (Theme.Mode != ThemeMode.Blue) { bad++; sb.AppendLine("FAIL modal: 关掉设置后底盘退回去了"); }
+                if (!string.Equals(Core.Cfg.Appearance, "blue", StringComparison.OrdinalIgnoreCase))
+                { bad++; sb.AppendLine("FAIL modal: 底盘没写进配置，重启会还原"); }
             }
             catch (Exception ex) { bad++; sb.AppendLine("FAIL modal: " + ex.Message); }
 
@@ -1547,8 +1351,13 @@ namespace Installer
             List<string> failed = new List<string>();
             foreach (ModItem it in todo)
             {
-                try { if (Work.DeleteMod(it) == null) { n++; checkedKeys.Remove(it.Key); } else failed.Add(it.Name); }
-                catch (Exception ex) { failed.Add(it.Name); Core.Log("WARN", "删除 " + it.Name + " 失败: " + ex.Message); }
+                try
+                {
+                    string why = Work.DeleteMod(it);
+                    if (why == null) { n++; checkedKeys.Remove(it.Key); }
+                    else { failed.Add(it.Name + "：" + why); Core.Log("WARN", "删除 " + it.Name + " 失败: " + why); }
+                }
+                catch (Exception ex) { failed.Add(it.Name + "：" + ex.Message); Core.Log("WARN", "删除 " + it.Name + " 失败: " + ex.Message); }
             }
             Core.Log("OK", "批量删除 " + n + "/" + todo.Count + " 个 vpk");
             Core.ScanMods();
@@ -1557,7 +1366,10 @@ namespace Installer
             if (treeView != null) { RebuildViews(); treeView.Sync(); }
             SetStatus(failed.Count == 0
                 ? "已删除 " + n + " 个 vpk（" + Core.Human(size) + "）"
-                : "删了 " + n + " 个，" + failed.Count + " 个没删掉（见日志）");
+                : "删了 " + n + " 个，" + failed.Count + " 个没删掉");
+            if (failed.Count > 0)
+                MessageBox.Show(this, "已删除 " + n + " 个，以下 " + failed.Count + " 个未删除：\r\n\r\n  · "
+                    + string.Join("\r\n  · ", failed.ToArray()), "删除未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         /// <summary>
@@ -1705,11 +1517,13 @@ namespace Installer
                 MessageBoxDefaultButton.Button2) != DialogResult.OK) return;
 
             int n = 0;
+            List<string> failed = new List<string>();
             foreach (ModItem it in parts)
             {
                 try
                 {
-                    if (Work.DeleteMod(it) == null)
+                    string why = Work.DeleteMod(it);
+                    if (why == null)
                     {
                         n++;
                         checkedKeys.Remove(it.Key);
@@ -1720,14 +1534,19 @@ namespace Installer
                             if (galleryWindow != null && !galleryWindow.IsDisposed) galleryWindow.ForgetDownloaded(it.WorkshopId);
                         }
                     }
+                    else { failed.Add(it.Name + "：" + why); Core.Log("WARN", "删除 " + it.Name + " 失败: " + why); }
                 }
-                catch (Exception ex) { Core.Log("WARN", "删除 " + it.Name + " 失败: " + ex.Message); }
+                catch (Exception ex) { failed.Add(it.Name + "：" + ex.Message); Core.Log("WARN", "删除 " + it.Name + " 失败: " + ex.Message); }
             }
             Core.Log("OK", "方案树里删掉 " + n + " 个 vpk：" + name);
             Core.ScanMods();
             RefreshMods();
             RefreshConflicts();
             if (treeView != null) { RebuildViews(); treeView.Sync(); }
+            SetStatus(failed.Count == 0 ? "已删除 " + n + " 个 vpk" : "删了 " + n + " 个，" + failed.Count + " 个没删掉");
+            if (failed.Count > 0)
+                MessageBox.Show(this, "已删除 " + n + " 个，以下 " + failed.Count + " 个未删除：\r\n\r\n  · "
+                    + string.Join("\r\n  · ", failed.ToArray()), "删除未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         /// <summary>方案树里的「用这个替换」：交给树自己去换，位置和勾选都按树的规则走。</summary>
@@ -1810,7 +1629,6 @@ namespace Installer
         /// <summary>搜索或方案变了：树和标题跟着重排。</summary>
         internal void RefreshMods()
         {
-            UpdateSchemeLabel();
             // 方案树是常驻第一屏：万一扫库还没完就点进来了，树会是空的，扫完这里补一次；
             // 树有内容时只刷新状态点，不重建（搜索打字不至于反复重排）
             if (treeView != null)
@@ -1822,6 +1640,12 @@ namespace Installer
             UpdateSel();
             UpdateModCaption();
             RefreshGameNow();
+            // 方案总览窗口是树的快照：树里换了 MOD / 开关一变，这边也得重读，
+            // 否则窗口开着就是一张旧图（用户实测过）。
+            if (overviewWindow != null && !overviewWindow.IsDisposed && overviewWindow.Visible)
+            {
+                try { overviewWindow.RefreshPicks(); } catch { }
+            }
             // 空库那句引导只在真的空着时成立：下完/装完第一个 MOD 就换回常规状态
             if (emptyStatusShown && Core.ModList.Count > 0) SetPackIdleStatus();
         }
@@ -1862,87 +1686,20 @@ namespace Installer
             return g;
         }
 
-        /// <summary>把左栏那张卡按当前的 addons / addonlist 实况重画一遍。</summary>
+        /// <summary>顶栏第二行「N 个已装」和上下文条上的「未识别」胶囊都从这份现状来。</summary>
         private void RefreshGameNow()
         {
-            // 顶栏第二行的「N 个已装」和左栏游戏现状同一份数据，重量轻，跟着一起刷
             UpdateBrandLine();
-            if (gNow == null || gNow.IsDisposed) return;
             if (Core.ScanInProgress) return;           // 扫库正在重建列表，这时的数字半真半假
-            GameNow g = ReadGameNow();
-            nowStamp = DateTime.Now.ToString("HH:mm:ss");
-
-            lblNowNum.Text = g.On.ToString();
-            lblNowNum.ForeColor = g.On > 0 ? Theme.Ok : Theme.Ink3;
-            lblNowUnit.Text = Lang.S("个 MOD 正在游戏里启用");
-
             int unk = treeView == null ? 0 : treeView.Unmatched;
-            if (btnUnmatched != null)
+            bool wasOn = chipUnmatchOn;
+            string wasText = unmatchedText;
+            chipUnmatchOn = unk > 0;
+            unmatchedText = Lang.F("未识别 {0} 个", unk);
+            if (wasOn != chipUnmatchOn || !string.Equals(wasText, unmatchedText, StringComparison.Ordinal))
             {
-                btnUnmatched.Text = Lang.F("未识别 {0} 个", unk);
-                btnUnmatched.Enabled = unk > 0;
+                if (placeCtxBar != null) placeCtxBar();
             }
-            if (g.Installed == 0)
-                lblNowSub.Text = Lang.S("游戏 addons 里还没读到 MOD");
-            else
-                lblNowSub.Text = Lang.F("游戏 addons：{0} 个 vpk · 开启 {1} · 关闭 {2}", g.Installed, g.On, g.Off)
-                    + (unk > 0 ? Lang.F(" · 未归类 {3}", g.Installed, g.On, g.Off, unk) : "");
-
-            // 和勾选比：差多少，差在哪边
-            int miss = 0, extra = 0;
-            foreach (string k in g.Keys) if (!checkedKeys.Contains(k)) miss++;
-            foreach (string k in checkedKeys) if (!g.Keys.Contains(k)) extra++;
-
-            if (g.Installed == 0)
-            {
-                lblNowState.ForeColor = Theme.Ink3;
-                lblNowState.Text = Lang.S("游戏里还没有 MOD：勾选按库里的来");
-            }
-            else if (miss == 0)
-            {
-                lblNowState.ForeColor = Theme.Ok;
-                lblNowState.Text = Lang.F("✓ 勾选和游戏一致（{0} 个都勾着）", g.On)
-                    + (extra > 0 ? Lang.F("，另勾了 {0} 个还没装的", extra) : "");
-            }
-            else
-            {
-                lblNowState.ForeColor = Theme.Warn;
-                lblNowState.Text = Lang.F("游戏里有 {0} 个没勾上", miss)
-                    + (extra > 0 ? Lang.F("，另勾了 {0} 个还没装的", extra) : "")
-                    + Lang.S("（点「按游戏现状回填」）");
-            }
-
-            // 分类分布：窗口拉高时这块竖向会长，一行一类，把它填满；
-            // 也顺手说清「这批都改了什么」，不用去树里数。放不下的按高度截断并注明还剩几类。
-            if (lblNowCats != null)
-            {
-                StringBuilder sb = new StringBuilder();
-                if (g.Installed == 0)
-                {
-                    sb.Append(Lang.S("游戏目录里没有可读的 MOD（选错目录的话先在上面改正）"));
-                }
-                else
-                {
-                    List<KeyValuePair<string, int>> cs = new List<KeyValuePair<string, int>>();
-                    foreach (string c in Catalog.Cats)
-                    {
-                        int n;
-                        if (g.Cats.TryGetValue(c, out n) && n > 0) cs.Add(new KeyValuePair<string, int>(c, n));
-                    }
-                    cs.Sort(delegate(KeyValuePair<string, int> a, KeyValuePair<string, int> b) { return b.Value.CompareTo(a.Value); });
-                    sb.Append(Lang.S("正在用的这些改了什么："));
-                    int room = Math.Max(0, nowCatRows - 1);      // 头一行被标题占了
-                    for (int i = 0; i < cs.Count && i < room; i++)
-                        sb.Append("\r\n").Append(Lang.S(cs[i].Key)).Append("  ").Append(cs[i].Value);
-                    if (cs.Count > room)
-                        sb.Append("\r\n").Append(Lang.F("…还有 {0} 类", cs.Count - room));
-                    else if (room - cs.Count >= 3)
-                        sb.Append("\r\n\r\n").Append(Lang.S("在游戏里改过开关或新订阅了东西，点上面「刷新」重读一遍"));
-                }
-                lblNowCats.Text = sb.ToString();
-            }
-
-            lblNowFoot.Text = Lang.F("刷新于 {0} · 读 addons + addonlist.txt", nowStamp);
         }
 
         /// <summary>
@@ -1955,7 +1712,7 @@ namespace Installer
             if (Selected().Count > 0) return;
             int n = SeedChecksFromGame(false);
             if (n > 0)
-                Core.Log("OK", "自动回填（" + when + "）：游戏里正在用 " + n + " 个 MOD，已勾上（不想要可在左栏关掉「启动时自动回填」）");
+                Core.Log("OK", "自动回填（" + when + "）：游戏里正在用 " + n + " 个 MOD，已勾上（可在设置里关掉「启动时自动回填」）");
             else if (n == 0)
                 Core.Log("INFO", "自动回填（" + when + "）：addons 里的 MOD 在 addonlist.txt 里全是关的，没有可勾的");
         }
@@ -1983,7 +1740,7 @@ namespace Installer
         /// </summary>
         private int RereadAddonList()
         {
-            string root = txtGame == null ? "" : txtGame.Text.Trim();
+            string root = gameRoot.Trim();
             if (!Core.TestGame(root)) return -1;
             Dictionary<string, bool> st = AddonList.Read(root);
             // 顺手看一眼「上次写完到现在，文件是不是被外面动过」（Steam 更新订阅 / 游戏内改开关）。
@@ -2036,7 +1793,6 @@ namespace Installer
         {
             if (scanning || Core.ScanInProgress) { SetStatus("正在扫库，稍等一下"); return; }
             if (btnRefreshLib != null) btnRefreshLib.Enabled = false;
-            btnNowRefresh.Enabled = false;
             Core.Log("INFO", "刷新游戏现状：重读 addons 和 addonlist.txt");
             // 重扫在后台跑，后续几件跟着它的回调走；没起得来（已有扫描在跑）就把按钮亮回去
             bool started = RescanMods(delegate
@@ -2052,13 +1808,11 @@ namespace Installer
                 finally
                 {
                     if (btnRefreshLib != null) btnRefreshLib.Enabled = true;
-                    btnNowRefresh.Enabled = true;
                 }
             });
             if (!started)
             {
                 if (btnRefreshLib != null) btnRefreshLib.Enabled = true;
-                btnNowRefresh.Enabled = true;
             }
         }
 
@@ -2155,35 +1909,17 @@ namespace Installer
         {
             for (int i = 0; i < 200 && !Ready; i++) { Application.DoEvents(); System.Threading.Thread.Sleep(20); }
             for (int i = 0; i < 8; i++) { Application.DoEvents(); System.Threading.Thread.Sleep(80); }
-            // MAINLIGHT=1 时先切浅色再截 —— 改视觉要两套主题都看，深色好看不代表浅色也成立
-            bool light = Environment.GetEnvironmentVariable("MAINLIGHT") == "1";
-            string tag = light ? "-light" : "";
-            if (light)
-            {
-                Theme.SetMode(ThemeMode.Light);
-                Theme.ApplyToOpenForms();
-                Application.DoEvents();
-                Application.DoEvents();
-            }
-
-            Shot(this, "main" + tag);
-            SetDrawer(false);
+            // 只剩深色一套：MAINLIGHT 截浅色那套已经不存在，文件名也不再带 -light 后缀
+            Shot(this, "main");
+            if (overviewWindow != null && !overviewWindow.IsDisposed) overviewWindow.Close();
+            overviewWindow = new OverviewForm(this);
+            overviewWindow.FormClosed += delegate { overviewWindow = null; };
+            overviewWindow.Show(this);
             Application.DoEvents();
             Application.DoEvents();
-            Shot(this, "main-nodrawer" + tag);
-            SetDrawer(true);
-            Application.DoEvents();
-            ShowOverview();
-            Application.DoEvents();
-            Application.DoEvents();
-            Shot(this, "main-overview" + tag);
-            if (light)
-            {
-                Theme.SetMode(ThemeMode.Dark);
-                Theme.ApplyToOpenForms();
-                Application.DoEvents();
-            }
-            Core.Log("INFO", "MAIN 截图完成" + (light ? "（浅色）" : ""));
+            Shot(overviewWindow, "main-overview");
+            overviewWindow.Close();
+            Core.Log("INFO", "MAIN 截图完成");
         }
 
         internal void LoadingShot()
@@ -2242,24 +1978,76 @@ namespace Installer
         /// 加这条是因为 v2.53.1 真栽在这儿 —— 构造函数里一个字段忘了 new，编译器不报，
         /// --layoutself 又不构造工坊窗口，结果一点「工坊」就 NRE 崩掉。
         /// </summary>
-        internal int WorkshopSmoke()
+        /// <summary>自检用：把窗口按逻辑内容抓成 PNG（DrawToBitmap，比 PrintWindow 稳，离屏窗口也能拍全）。</summary>
+        private void DumpForm(Form f, string name)
+        {
+            try
+            {
+                using (Bitmap bmp = new Bitmap(f.Width, f.Height))
+                {
+                    f.DrawToBitmap(bmp, new Rectangle(0, 0, f.Width, f.Height));
+                    bmp.Save(Path.Combine(Core.LogDir, name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+                }
+            }
+            catch (Exception ex) { Core.Log("WARN", "DumpForm " + name + ": " + ex.Message); }
+        }
+
+        internal int WorkshopSmoke()   // 自检：同时把两个窗口图标存一份出来看效果
         {
             // 工坊页面同样得在自检里真的构造一次 —— 漏了这步，「字段忘了 new」这种 NRE
             // 会一路混到 release 才被截图发现。
             // 结果「字段忘了 new」这种 NRE 一路混到 release 才被截图发现。
             try
             {
+                int bad = 0;
                 using (GalleryForm g = new GalleryForm(this))
                 {
                     g.FillSample();
+                    g.StartPosition = FormStartPosition.Manual;
+                    g.Location = new Point(-4000, -4000);
+                    g.Show();
                     g.ClientSize = new Size(Dpi.S(900), Dpi.S(620));
                     g.ClientSize = new Size(Dpi.S(1400), Dpi.S(880));
                     g.ShowDetailForTest(0);
                     g.ClientSize = new Size(Dpi.S(1180), Dpi.S(780));
                     Application.DoEvents();
+                    bad += AuditLayout(g, "工坊画廊");
                 }
+                using (DownloadListForm df = new DownloadListForm())
+                {
+                    df.StartPosition = FormStartPosition.Manual;
+                    df.Location = new Point(-4000, -4000);
+                    df.Show();
+                    Application.DoEvents();
+                    bad += AuditLayout(df, "下载管理");
+                }
+                using (KeyGuideForm kg = new KeyGuideForm(""))
+                {
+                    kg.StartPosition = FormStartPosition.Manual;
+                    kg.Location = new Point(-4000, -4000);
+                    kg.Show();
+                    Application.DoEvents();
+                    bad += AuditLayout(kg, "密钥向导");
+                    DumpForm(kg, "keyguide");
+                }
+                using (LaunchCatalogForm lc = new LaunchCatalogForm())
+                {
+                    lc.StartPosition = FormStartPosition.Manual;
+                    lc.Location = new Point(-4000, -4000);
+                    lc.Show();
+                    Application.DoEvents();
+                    bad += AuditLayout(lc, "启动项组合");
+                    DumpForm(lc, "launch");
+                }
+                try
+                {
+                    Theme.WindowIcon("shop").ToBitmap().Save(Path.Combine(Core.LogDir, "icon-shop.png"));
+                    Theme.WindowIcon("down").ToBitmap().Save(Path.Combine(Core.LogDir, "icon-down.png"));
+                    Theme.WindowIcon("grid").ToBitmap().Save(Path.Combine(Core.LogDir, "icon-grid.png"));
+                }
+                catch { }
                 Core.Log("INFO", "GAL 画廊：构造 / 样例卡片 / 详情页 / 三种尺寸重排 都正常");
-                return 0;
+                return bad;
             }
             catch (Exception ex)
             {
@@ -2713,36 +2501,6 @@ namespace Installer
             catch (Exception ex) { Core.Log("FAIL", "扫库后的补做失败: " + ex.Message); }
         }
 
-        // 一行说清这套方案在各类里放了几个
-        private void UpdateSchemeLabel()
-        {
-            if (lblScheme == null) return;
-            if (schemeName.Length == 0)
-            {
-                lblScheme.ForeColor = Theme.Ink3;
-                lblScheme.Text = Lang.S("没选方案：挑一套，列表里就会标出它在这一类里装了什么");
-                return;
-            }
-            System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            sb.Append("「").Append(schemeName).Append("」");
-            int mods = 0;
-            foreach (string c in Catalog.Cats)
-            {
-                int n = 0;
-                foreach (ModGroup g in Catalog.Groups) if (g.Cat == c && InScheme(g)) n++;
-                if (n == 0) continue;
-                mods += n;
-                sb.Append("  ").Append(c).Append(" ").Append(n);
-            }
-            sb.Append("　共 ").Append(mods).Append(" 个 / ").Append(schemeKeys.Count).Append(" 文件");
-            int add = 0, del = 0;
-            foreach (string k in checkedKeys) if (!schemeKeys.Contains(k)) add++;
-            foreach (string k in schemeKeys) if (!checkedKeys.Contains(k)) del++;
-            if (add > 0 || del > 0) sb.Append("　·　勾选差 多 ").Append(add).Append(" / 少 ").Append(del);
-            lblScheme.ForeColor = add == 0 && del == 0 ? Theme.Ink2 : Theme.Warn;
-            lblScheme.Text = sb.ToString();
-        }
-
         // 大类各一种颜色。只用来区分，不做装饰：同色系深浅差别够看就行。
         /// <summary>这条在不在当前方案里（套装里任意一个 vpk 在就算在）。</summary>
         internal bool InScheme(ModGroup g)
@@ -2758,10 +2516,8 @@ namespace Installer
         {
             schemeKeys.Clear();
             schemeName = "";
-            if (cboProfile == null || cboProfile.SelectedItem == null) return;
-            string n = cboProfile.SelectedItem.ToString();
-            if (n.StartsWith("（")) return;
-            Profile p = ProfileStore.Load(n);
+            if (string.IsNullOrEmpty(selectedProfile)) return;
+            Profile p = ProfileStore.Load(selectedProfile);
             if (p == null) return;
             schemeName = p.Name;
             foreach (string k in p.Mods) schemeKeys.Add(k);
@@ -2889,7 +2645,6 @@ namespace Installer
         /// <summary>在方案树里点了一个候选：方案行、底部计数一起对齐。</summary>
         internal void AfterTreePick()
         {
-            UpdateSchemeLabel();
             UpdateSel();
             UpdateModCaption();
         }
@@ -2942,7 +2697,6 @@ namespace Installer
         {
             // 本地版的 MOD 本来就在游戏里，这里只改开关：既没有「复制多少文件」，也没有「大概几秒装完」，
             // 那行「已选 … 约 … 秒（按 … MB/s）」对这套程序没有意义，连同它的计算一起删了。
-            UpdateSchemeLabel();
             QueuePrecheck();          // 勾选变了，底栏那句「可以装 / 还不能装」跟着变
         }
 
@@ -2954,7 +2708,7 @@ namespace Installer
         // checkExisting=false：不去逐个 stat 游戏 addons 里的文件（共享盘上很贵），启动时用
         private void RefreshConflicts(bool checkExisting)
         {
-            string root = txtGame.Text.Trim();
+            string root = gameRoot.Trim();
             if (!Core.TestGame(root)) { lblConflict.Text = ""; conflictMsgs.Clear(); lblConflict.Visible = false; PlaceBrandRow(); return; }
             List<string> msgs;
             try { msgs = ConflictCheck.Run(Core.ModList, root, checkExisting); }
@@ -3079,7 +2833,8 @@ namespace Installer
         {
             string root = (path == null ? "" : path.Trim().Trim('"').TrimEnd('\\'));
             if (root.Length == 0) return;
-            txtGame.Text = root;
+            gameRoot = root;
+            UpdateBrandLine();
             ProbeWritable(root);            // 换了目录，可写性要重新探一次（校验条读这个缓存）
             QueuePrecheck();
             if (!Core.TestGame(root))
@@ -3261,10 +3016,17 @@ namespace Installer
 
             // 清单落到日志里，删完还能查到删了哪些
             foreach (ModItem m in plan.Drop) Core.Log("INFO", "清重删除: " + m.RelPath);
-            List<string> done = Work.DeleteDuplicates(plan);
+            List<string> failed = new List<string>();
+            List<string> done = Work.DeleteDuplicates(plan, failed);
             Core.Log("OK", "清理重复: 删除 " + done.Count + " 个"
                 + (plan.Differ.Count > 0 ? "，跳过同名不同内容 " + plan.Differ.Count + " 个" : ""));
-            MessageBox.Show("已删除 " + done.Count + " 个重复文件"
+            if (failed.Count > 0)
+            {
+                SetStatus("清理重复未完成：" + failed.Count + " 个没删掉");
+                MessageBox.Show("已删除 " + done.Count + " 个，以下 " + failed.Count + " 个未删除：\r\n\r\n  · "
+                    + string.Join("\r\n  · ", failed.ToArray()), "清理未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else MessageBox.Show("已删除 " + done.Count + " 个重复文件"
                 + (plan.Differ.Count > 0 ? "；另有 " + plan.Differ.Count + " 个同名但内容不同，没动。" : "。")
                 + "\n详见日志。", "清理重复");
             Core.ScanMods(); RefreshMods(); RefreshConflicts();
@@ -3353,7 +3115,7 @@ namespace Installer
         /// </summary>
         private void InstallMods(List<ModItem> sel, string title, string what)
         {
-            string root = txtGame == null ? "" : txtGame.Text.Trim();
+            string root = gameRoot.Trim();
             if (root.Length == 0 || !Core.TestGame(root))
             {
                 MessageBox.Show("先选对游戏目录（有 left4dead2.exe 的那个）。");
@@ -3414,39 +3176,6 @@ namespace Installer
                 + "其它 MOD 的开关状态没动，平台、启动项、参数也没动。", title);
         }
 
-        // 压缩包内容识别：第一次把每个 rar 里的 vpk 目录表读一遍，结果落缓存
-        internal void ProbeArchivesUi()
-        {
-            if (Core.IsLocal)
-            {
-                MessageBox.Show("本地模式只扫描游戏目录 addons，不读取主库里的压缩包。\r\n\r\n要识别 U 盘库里的压缩包，请先切回 U 盘模式。",
-                    "识别压缩包内容", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-            if (MessageBox.Show("会在后台把库里每个压缩包打开看一眼（只读前几百 KB，不解压整包），用来按内容判类型。\r\n\r\n第一次可能要几十秒，之后走缓存不再重复。开始吗？",
-                "识别压缩包内容", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
-            int done = 0;
-            try
-            {
-                RunBusy<int>("正在识别压缩包内容…", delegate
-                {
-                    done = Catalog.ProbeArchives(delegate(string s) { SetStatus(s); });
-                    return done;
-                });
-            }
-            catch (Exception ex)
-            {
-                Core.Log("FAIL", "识别压缩包出错: " + ex.Message);
-                MessageBox.Show("出错了：" + ex.Message, "识别压缩包");
-                return;
-            }
-            Core.ScanMods();
-            RefreshMods();
-            RefreshConflicts(true);
-            Core.Log("OK", "压缩包内容识别完成：新增 " + done + " 条");
-            MessageBox.Show("识别完成：新判出 " + done + " 条（其余读不出结论的也记下来了，不会再重算）。\r\n\r\n方案树和分类已刷新，可以直接查看更新后的位置。", "识别压缩包内容");
-        }
-
         internal void BulkImport()
         {
             FolderBrowserDialog d = new FolderBrowserDialog();
@@ -3463,159 +3192,42 @@ namespace Installer
                 "导入方式", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
             if (how == DialogResult.Cancel) return;
             bool move = (how == DialogResult.Yes);
+            if (!EnterLongOp("导入")) return;
             int imported = 0, skipped = 0;
             List<string> log = null;
+            bool stopped = false;
+            Work.CancelRequested = false;
             try
             {
-                log = RunBusy<List<string>>("正在导入（文件大，别关窗口）…", delegate { return Work.ImportVpks(src, move, out imported, out skipped); });
-            }
-            catch (Exception ex)
-            {
-                Core.Log("FAIL", "导入出错: " + ex.Message);
-                MessageBox.Show("导入失败：" + ex.Message, "导入");
-                return;
-            }
-            Core.Log("OK", "导入完成：" + imported + " 个，已存在跳过 " + skipped + " 个，方式=" + (move ? "移动" : "复制"));
-            RefreshMods();
-            RefreshConflicts(true);
-            string sample = "";
-            if (log != null)
-                for (int i = 0; i < log.Count && i < 6; i++) sample += "\r\n  · " + log[i];
-            MessageBox.Show("导入完成：入库 " + imported + " 个，已存在跳过 " + skipped + " 个。" + sample
-                + "\r\n\r\n分类文件夹是按文件名猜的；猜不准就在列表里右键「重命名所选」或直接拖到对的文件夹。\r\n"
-                + "这些 MOD 现在只在库里，还没有装进游戏。要用的时候在方案树里勾上，或右键选「只装这个 MOD」。", "导入");
-        }
-
-        /// <summary>库文件夹管理：把电脑上任意目录加进/移出扫描范围。工具不再只服务 U 盘布局。</summary>
-        internal void ManageModDirs()
-        {
-            if (Core.IsLocal)
-            {
-                MessageBox.Show("本地模式只扫描游戏目录 addons，附加库目录不参与。\r\n\r\n要管理附加目录，请先在设置里切回 U 盘模式。",
-                    "库文件夹管理", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-            using (LibraryDirsForm f = new LibraryDirsForm())
-            {
-                f.ShowDialog(this);
-            }
-            if (LibraryDirsForm.Dirty)
-            {
-                Core.SaveConfig();
-                Core.Log("OK", "库目录已改，重新扫描…");
-                Core.ScanMods();
-                RefreshMods();
-                RefreshConflicts();
-                if (treeView != null) { RebuildViews(); treeView.Sync(); }
-            }
-        }
-
-        /// <summary>小窗口：列出现有扫描目录（主库 + 自设目录），可添加 / 移除。</summary>
-        private class LibraryDirsForm : Form
-        {
-            public static bool Dirty = false;      // 关掉时让外面知道要不要重扫
-            private readonly ListBox lb = new ListBox();
-            private readonly Label lblMain = new Label();
-
-            public LibraryDirsForm()
-            {
-                Dirty = false;
-                Text = Lang.S("库文件夹管理");
-                Theme.UseDpi(this);
-                ClientSize = Dpi.Sz(560, 380);
-                Font = Theme.UI;
-                BackColor = Theme.Bg;
-                StartPosition = FormStartPosition.CenterParent;
-                MaximizeBox = false;
-                MinimizeBox = false;
-                ShowInTaskbar = false;
-                Theme.DressForm(this);
-
-                Label top = new Label();
-                top.SetBounds(12, 10, 536, 52);
-                top.Font = Theme.UISmall;
-                top.ForeColor = Theme.Ink2;
-                top.Text = "下面的文件夹只在 U 盘模式下扫描（vpk / rar / zip 全认）。游戏目录 addons 里的已装 MOD 自动识别，不用加。\r\n"
-                         + "在这里加目录只是「原地扫描」，不复制不移动任何文件；本地模式不会读取它们。";
-                Controls.Add(top);
-
-                lblMain.SetBounds(12, 66, 536, 20);
-                lblMain.Font = Theme.UIBold;
-                lblMain.ForeColor = Theme.Ink2;
-                lblMain.Text = "U 盘模式主库：" + Core.ModRoot;
-                Controls.Add(lblMain);
-
-                lb.SetBounds(12, 92, 536, 220);
-                lb.BorderStyle = BorderStyle.FixedSingle;
-                lb.IntegralHeight = false;
-                lb.BackColor = Theme.Surface;
-                lb.ForeColor = Theme.Ink;
-                Controls.Add(lb);
-
-                FlatButton add = new FlatButton();
-                add.Text = Lang.S("添加文件夹…");
-                add.SetBounds(12, 326, 120, Theme.H);
-                add.Primary = true;
-                add.Click += delegate { AddDir(); };
-                Controls.Add(add);
-
-                FlatButton del = new FlatButton();
-                del.Text = Lang.S("移除所选");
-                del.SetBounds(142, 326, 96, Theme.H);
-                del.Click += delegate { RemoveDir(); };
-                Controls.Add(del);
-
-                FlatButton close = new FlatButton();
-                close.Text = Lang.S("关闭");
-                close.SetBounds(464, 326, 84, Theme.H);
-                close.DialogResult = DialogResult.Cancel;
-                Controls.Add(close);
-                CancelButton = close;
-
-                Fill();
-            }
-
-            private void Fill()
-            {
-                lb.BeginUpdate();
-                lb.Items.Clear();
-                foreach (string d in Core.Cfg.ModDirs) lb.Items.Add(d);
-                lb.EndUpdate();
-            }
-
-            private void AddDir()
-            {
-                FolderBrowserDialog d = new FolderBrowserDialog();
-                d.Description = "选要扫描的 MOD 文件夹（里面放 vpk / rar / zip，子文件夹也会翻）";
-                if (d.ShowDialog(this) != DialogResult.OK) return;
-                string p = d.SelectedPath.TrimEnd('\\');
-                if (p.Equals(Core.ModRoot.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
-                { MessageBox.Show("这就是主库本身，不用再加。"); return; }
-                foreach (object o in lb.Items)
-                    if (string.Equals((string)o, p, StringComparison.OrdinalIgnoreCase))
-                    { MessageBox.Show("已经在列表里了。"); return; }
-                // 和主库重叠（包含或被包含）只会让同一个文件被扫两遍，列表里多一条同名项。
-                // 扫库那边已经按完整路径去重，这里只是提醒一句，让人知道不是白加的。
-                if (Core.IsUnder(Core.ModRoot, p) || Core.IsUnder(p, Core.ModRoot))
+                try
                 {
-                    if (MessageBox.Show("这个文件夹和主库（" + Core.ModRoot + "）是包含关系，里面的文件主库已经扫过了。\r\n"
-                        + "再加一遍不会出现重复条目（扫库会去重），但也没什么用。还要加吗？",
-                        "和主库重叠", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+                    log = RunBusy<List<string>>("正在导入（可随时停止）…", delegate
+                    {
+                        List<string> result = Work.ImportVpks(src, move, out imported, out skipped);
+                        stopped = Work.CancelRequested;
+                        return result;
+                    });
                 }
-                // 和游戏 addons 重叠的不管：游戏目录已装 MOD 是单独认的，重复扫只会多出同名项
-                Core.Cfg.ModDirs.Add(p);
-                Dirty = true;
-                Fill();
+                catch (Exception ex)
+                {
+                    Core.Log("FAIL", "导入出错: " + ex.Message);
+                    if (!closeWhenIdle) MessageBox.Show("导入失败：" + ex.Message, "导入");
+                    return;
+                }
+                finally { Work.CancelRequested = false; }
+                Core.Log(stopped ? "WARN" : "OK", (stopped ? "导入已停止：" : "导入完成：") + imported + " 个，已存在跳过 " + skipped + " 个，方式=" + (move ? "移动" : "复制"));
+                SetStatus(stopped ? "导入已停止 · 已入库 " + imported + " 个" : "导入完成 · 入库 " + imported + " 个");
+                RefreshMods();
+                RefreshConflicts(true);
+                string sample = "";
+                if (log != null)
+                    for (int i = 0; i < log.Count && i < 6; i++) sample += "\r\n  · " + log[i];
+                if (!closeWhenIdle)
+                    MessageBox.Show((stopped ? "导入已停止：已入库 " : "导入完成：入库 ") + imported + " 个，已存在跳过 " + skipped + " 个。" + sample
+                        + "\r\n\r\n分类文件夹是按文件名猜的；猜不准就在列表里右键「重命名所选」或直接拖到对的文件夹。\r\n"
+                        + "这些 MOD 现在只在库里，还没有装进游戏。要用的时候在方案树里勾上，或右键选「只装这个 MOD」。", "导入");
             }
-
-            private void RemoveDir()
-            {
-                if (lb.SelectedItem == null) { MessageBox.Show("先选中一行。"); return; }
-                string p = (string)lb.SelectedItem;
-                Core.Cfg.ModDirs.Remove(p);
-                Dirty = true;
-                Fill();
-            }
+            finally { ExitLongOp(); }
         }
 
         private void SaveProfile()
@@ -3772,9 +3384,7 @@ namespace Installer
                 EventHandler pick = delegate
                 {
                     HideSchemeMenu();
-                    for (int i = 0; i < cboProfile.Items.Count; i++)
-                        if (string.Equals(cboProfile.Items[i].ToString(), captured, StringComparison.Ordinal))
-                        { cboProfile.SelectedIndex = i; return; }
+                    SelectProfile(captured);
                 };
                 row.Click += pick; nm.Click += pick; mt.Click += pick;
 
@@ -3802,30 +3412,26 @@ namespace Installer
         /// <summary>按钮上的字跟着当前选中项走。</summary>
         private void SyncSchemeButton()
         {
-            if (btnScheme == null || cboProfile == null) return;
-            string t = cboProfile.SelectedItem == null ? Lang.S("当前选择") : cboProfile.SelectedItem.ToString();
+            if (btnScheme == null) return;
+            string t = string.IsNullOrEmpty(selectedProfile) ? Lang.S("当前选择") : selectedProfile;
             btnScheme.Text = t + " ▾";
         }
 
-        private void ProfileSelectionChanged()
+        private void SelectProfile(string name)
         {
-            if (initializing || cboProfile.SelectedItem == null) return;
-            string name = cboProfile.SelectedItem.ToString();
+            selectedProfile = name ?? "";
             LoadSchemeKeys();
             RefreshMods();
-            UpdateSchemeLabel();
             UpdateSchemeDiff();
             SyncSchemeButton();
-            if (name.StartsWith("（")) return;
-            Log("正在对照方案「" + name + "」，点「套用」才会替换当前勾选");
+            if (selectedProfile.Length > 0)
+                Log("正在对照方案「" + selectedProfile + "」，点「套用」才会替换当前勾选");
         }
-
 
         private void ApplyProfile()
         {
-            if (cboProfile.SelectedItem == null) return;
-            string name = cboProfile.SelectedItem.ToString();
-            if (name.StartsWith("（")) return;
+            if (string.IsNullOrEmpty(selectedProfile)) return;
+            string name = selectedProfile;
             Profile p = ProfileStore.Load(name);
             if (p == null) { MessageBox.Show("找不到这个方案（文件可能被删了）。"); return; }
 
@@ -3850,14 +3456,13 @@ namespace Installer
         private void UpdateSchemeDiff()
         {
             if (lblSchemeDiff == null) return;
-            if (cboProfile == null || cboProfile.SelectedItem == null)
+            if (string.IsNullOrEmpty(selectedProfile))
             {
                 lblSchemeDiff.Text = "";
                 lblSchemeDiff.Visible = false;
                 return;
             }
-            string name = cboProfile.SelectedItem.ToString();
-            if (name.StartsWith("（")) { lblSchemeDiff.Text = ""; lblSchemeDiff.Visible = false; return; }
+            string name = selectedProfile;
             Profile p = ProfileStore.Load(name);
             if (p == null) { lblSchemeDiff.Text = ""; lblSchemeDiff.Visible = false; return; }
             HashSet<string> stored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -3897,13 +3502,11 @@ namespace Installer
         {
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
             sb.AppendLine("窗口客户区: " + ClientSize.Width + " x " + ClientSize.Height);
-            sb.AppendLine("游戏路径框: " + txtGame.Width + " x " + txtGame.Height);
+            sb.AppendLine("游戏目录  : " + (gameRoot.Length == 0 ? "（未设置）" : gameRoot));
             sb.AppendLine("MOD 库分组: " + gMod.Width + " x " + gMod.Height);
             sb.AppendLine("方案树    : 树可见=" + (treeView != null && treeView.Visible) + "，树尺寸="
                           + (treeView == null ? "-" : treeView.Width + "x" + treeView.Height)
                           + "，位置 " + (treeView == null ? "-" : treeView.SlotCount.ToString()));
-            sb.AppendLine("日志分组  : " + gLog.Width + " x " + gLog.Height);
-            sb.AppendLine("日志框    : " + txtLog.Width + " x " + txtLog.Height);
             sb.AppendLine("进度条    : " + bar.Left + "," + bar.Top + " " + bar.Width + " x " + bar.Height);
             sb.AppendLine("按钮行    : 顶=" + btnInstall.Top + " 左=" + btnInstall.Left);
             sb.AppendLine("开始装按钮: " + btnInstall.Left + "," + btnInstall.Top + " " + btnInstall.Width + " x " + btnInstall.Height);
@@ -3950,7 +3553,6 @@ namespace Installer
             // 卡片高度统一由 ApplyResponsive 按 modH 定（要留 8px 底边）。
             // 这里以前也写一次 gMod.Height，结果「尺寸没变」的调用会把它撑到窗口最下沿，
             // 和 modH 打架，卡片高度忽高忽低。
-            if (btnRestore != null) btnRestore.Top = top;
             // 进度条 / 停止：装在跑的时候临时占用页脚那一行
             if (bar != null) bar.Top = top - Dpi.S(StatusRowH) + Dpi.S(7);
             if (btnCancel != null) btnCancel.Top = top - Dpi.S(StatusRowH) + Dpi.S(1);
@@ -4170,13 +3772,8 @@ namespace Installer
             // 直接拿物理像素算会把已经缩放过的控件又按原值压回去（越排越小）。
             int W = Dpi.Un(physW);
             SuspendLayout();
-            int leftW = 396;                                   // 左栏定宽：够放最长的复选框文案
-            // 抽屉收起时右栏直接顶到左边距：整个窗口就剩一条顶栏 + 一张台面
             int rightX = Theme.M;                              // 左栏已撤，右栏永远满宽
             int rightW = W - Theme.M - rightX;
-
-            gLog.Width = Dpi.S(leftW);
-            txtLog.Width = Dpi.S(leftW - 24);
 
             gMod.Left = Dpi.S(rightX);
             gMod.Width = Dpi.S(rightW);
@@ -4203,67 +3800,11 @@ namespace Installer
                 viewHost.Top = 0;   // 不再内缩：预览图从卡片最上沿开始，别在横栏下面留一条空带
                 // 卡片内部：标题 22 + 方案/搜索行 + 树 + 最后一行状态
                 viewHost.Height = Dpi.S(Math.Max(80, (modH - 38) - 8));
-                // 左栏纵向：安装选项搬进设置后，顶上那张卡没了 —— 切换按钮和「游戏现状」直接贴顶，
-                // 把原来空出来的半屏交给现状卡（它自己会按高度铺分类分布）。
-                // 状态行现在贴在卡片底部（top=H-34），左栏日志必须停在它上面：原来按 -24 算，
-                // 日志底边正好压到状态行 2px（--layoutself 直接报「日志展开后压到底栏」）。
-                int infoTop = H - BottomBarH - 38;
-                const int btnLogTop = 56;                   // 贴顶：顶栏下面就是「显示日志」
-                int logTop = btnLogTop + Theme.H + Theme.S;
-                int logH = Math.Max(0, infoTop - Theme.S - logTop);
-                if (btnLogToggle != null)
-                {
-                    btnLogToggle.Top = Dpi.S(btnLogTop);
-                    btnLogToggle.Width = Dpi.S(132);
-                    btnLogToggle.Visible = drawerOpen;
-                }
-                // 日志在按钮下方展开：收起时那片是留白，展开时正好被日志填满，两种状态都不空
-                gLog.Top = Dpi.S(logTop);
-                gLog.Height = Dpi.S(logOpen ? logH : 0);
-                gLog.Visible = drawerOpen && logOpen;
-                txtLog.Height = Dpi.S(logOpen ? Math.Max(60, logH - 34) : 0);
-
-                // 「游戏现状」和日志抢同一块地：日志收起时它填满下半屏（以前这儿是纯留白），
-                // 日志展开就整块让给日志 —— 两者互斥，不做上下叠。
-                if (gNow != null)
-                {
-                    int nowH = Math.Max(0, infoTop - Theme.S - logTop);
-                    // 自定义 Visible 判断，别用 gNow.Visible 取反判断：窗体还没显示时
-                    // 控件的 Visible 读出来恒为 false（父级不可见），下面的子控件排版就会被整段跳过。
-                    bool showNow = false;      // 左栏已撤（2026-11-24）：现状卡不再进主界面，数据仍照常读
-                    gNow.Top = Dpi.S(logTop);
-                    gNow.Height = Dpi.S(showNow ? nowH : 0);
-                    gNow.Width = Dpi.S(leftW);
-                    gNow.Visible = showNow;
-                    if (showNow)
-                    {
-                        // 卡片的排版：数字和结论贴顶，分类分布占中间（窗口越高它越长），
-                        // 两个按钮和「刷新于 …」钉在卡片底部 —— 无论窗口多高，中间都不会留一大块白。
-                        int btnTop = Math.Max(106, nowH - 62);
-                        int footTop = nowH - 26;
-                                    btnNowRefresh.Top = Dpi.S(btnTop);
-                        chkAutoSync.Top = Dpi.S(btnTop + 2);
-                        lblNowFoot.Top = Dpi.S(footTop);
-                        lblNowFoot.Width = Dpi.S(leftW - 24);
-                        int catsH = btnTop - 10 - 106;
-                        lblNowCats.Top = Dpi.S(106);
-                        lblNowCats.Height = Dpi.S(Math.Max(0, catsH));
-                        lblNowCats.Visible = catsH >= 34;
-                        // 高度变了就要重排「分类分布」的行数：多出来的行数是白给的空间，少了会截断
-                        int rows = Math.Max(1, catsH / 17);
-                        if (rows != nowCatRows) { nowCatRows = rows; RefreshGameNow(); }
-                        lblNowUnit.Width = Dpi.S(leftW - 24 - 62);
-                        lblNowSub.Width = Dpi.S(leftW - 24);
-                        lblNowState.Width = Dpi.S(leftW - 24);
-                        chkAutoSync.Width = Dpi.S(leftW - 224 - 12);
-                    }
-                }
 
                 // 底部动作区同理：Anchor 只在「距底多远」这一维上跟，自检里连着改几档尺寸时
                 // 会一路漂（窗口缩回 900 却还停在 200% 的位置），所以每次按设计值钉死。
                 btnInstall.Top = Dpi.S(16);
                 btnInstall.Left = Dpi.S(CapStartX(W) - 18 - 124);   // 让开右上角三颗窗口键
-                btnRestore.Top = Dpi.S(H - BottomBarH);
                 bar.Top = Dpi.S(H - 26);
                 btnCancel.Top = Dpi.S(H - 34);
                 // 状态行位置由 PinBottomRow 统一给（它按物理像素算，换算不会漂）
@@ -4274,7 +3815,6 @@ namespace Installer
             txtSearch.Left = Dpi.S(510);
             txtSearch.Width = Dpi.S(Math.Max(160, rightW - 12 - 56 - 8 - 510));
             btnClearSearch.Left = Dpi.S(rightW - 68);
-            if (btnUnmatched != null) btnUnmatched.Left = Dpi.S(144);
             if (lblSchemeDiff != null) lblSchemeDiff.Left = Dpi.S(rightW - 376);
 
             // 顶部：品牌区（标题 + 当前游戏目录）· 工具 · 主操作
@@ -4323,28 +3863,19 @@ namespace Installer
             btnSettings.Left = Dpi.S(settingsX);
             if (btnRefreshLib != null) btnRefreshLib.Left = Dpi.S(refreshX);
             btnView.Left = Dpi.S(viewX);
-            btnPanel.Left = Dpi.S(viewX);
             if (btnWorkshop != null) btnWorkshop.Left = Dpi.S(wsX);
 
-            // 底部：右边一组（工具 + 次要 + 主操作），「一键还原」单独钉在左下角
+            // 底部：右边一组（工具 + 次要 + 主操作）
             btnInstall.Left = Dpi.S(installX);
             btnInstall.Top = Dpi.S(16);
             btnInstall.Width = Dpi.S(installW);
-            btnRestore.Left = Dpi.S(Theme.M);
-            btnRestore.Width = Dpi.S(96);
-            lblStatus.Width = Dpi.S(W - 2 * Theme.M - 250);
+            lblStatus.Width = Dpi.S(W - 2 * Theme.M - 258);   // 右边留 4px 给「N 个 MOD · X GB」，别让两段字压在一起
             if (lblNotice != null) { lblNotice.Left = Dpi.S(W - Theme.M - 240); lblNotice.Top = lblStatus.Top; }
             // 重复嫌疑提示 → 卡片第二行右端（方案/搜索上顶栏后，这行右半边正好空着）
-            if (lblConflict != null)
+            if (lblConflict != null) lblConflict.BringToFront();   // 位置由 placeCtxBar 按胶囊实际位置排
+            // 进度条 / 停止按钮 / 校验条 都从左边距起步（三者互斥显示，共用同一块）
             {
-                // 放进上下文条那一行（56…94），别压在下面详情栏的预览图上
-                lblConflict.SetBounds(Dpi.S(W - Theme.M - 330), Dpi.S(56 + 10), Dpi.S(316), Dpi.S(18));
-                lblConflict.TextAlign = ContentAlignment.MiddleRight;
-                lblConflict.BringToFront();
-            }
-            // 进度条 / 停止按钮 / 校验条 都从还原按钮右边起步（三者互斥显示，共用同一块）
-            {
-                int preLeft = Theme.M + 96 + Theme.G;
+                int preLeft = Theme.M;
                 int barW = Math.Max(160,
                     (W - Theme.M - 112) - preLeft - 8 - 92 - 8);
                 bar.Left = Dpi.S(preLeft);
@@ -4366,6 +3897,89 @@ namespace Installer
         /// 真实窗体加载时还会有一轮 AutoScale 去放大 BuildUi 里写死的 Bounds，
         /// 那部分只能在 125% / 150% 的真机上看，这里模拟不出来。
         /// </summary>
+        /// <summary>
+        /// 通用排版体检：把一个窗口里所有可见控件的「兄弟重叠」和「出界」扫一遍，写进 layout-audit.txt。
+        /// 2026-11-27 的教训：设置页那行说明文字宽 420，压到了右边的分段控件上；Label 的「透明」背景
+        /// 实际会把卡片底色重画一遍，于是控件左半截连字一起被盖掉。这种问题肉眼要盯着才看得见，
+        /// 所以做成自检，跟着 --layoutself 每次跑。
+        /// </summary>
+        internal int AuditLayout(System.Windows.Forms.Form f, string name)
+        {
+            int bad = 0;
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.AppendLine("== " + name + "  " + f.Width + "x" + f.Height);
+            bad += AuditWalk(f, sb);
+            try { System.IO.File.AppendAllText(System.IO.Path.Combine(Core.LogDir, "layout-audit.txt"), sb.ToString(), new System.Text.UTF8Encoding(false)); }
+            catch { }
+            return bad;
+        }
+
+        private static int AuditWalk(System.Windows.Forms.Control parent, System.Text.StringBuilder sb)
+        {
+            int bad = 0;
+            Rectangle area = parent.ClientRectangle;
+            List<System.Windows.Forms.Control> kids = new List<System.Windows.Forms.Control>();
+            foreach (System.Windows.Forms.Control c in parent.Controls) if (c.Visible) kids.Add(c);
+
+            // 开了滚动的容器：内容超出可视区是正常行为（滚动条就是干这个的），不算出界
+            System.Windows.Forms.ScrollableControl sc = parent as System.Windows.Forms.ScrollableControl;
+            bool scrollable = sc != null && sc.AutoScroll;
+            foreach (System.Windows.Forms.Control c in kids)
+            {
+                Rectangle b = c.Bounds;
+                if (!scrollable && (b.Left < -2 || b.Top < -2 || b.Right > area.Width + 2 || b.Bottom > area.Height + 2))
+                {
+                    bad++;
+                    sb.AppendLine("  出界  " + Where(parent) + " → " + Describe(c));
+                }
+            }
+
+            // 兄弟互相压：完全包含的不算（提示文字叠在输入框里是故意的），部分相交才算
+            for (int i = 0; i < kids.Count; i++)
+            {
+                for (int j = i + 1; j < kids.Count; j++)
+                {
+                    Rectangle a = kids[i].Bounds, b = kids[j].Bounds;
+                    if (!a.IntersectsWith(b)) continue;
+                    Rectangle x = Rectangle.Intersect(a, b);
+                    if (x.Width * x.Height < 6) continue;
+                    if (a.Contains(b) || b.Contains(a)) continue;
+                    // 输入框上的灰色占位提示（透明 Label 压在 TextBox 上）是故意叠的，不算问题：
+                    // 要么它明说自己是透明 Label 压着输入框，要么它基本整块落在对方里面（≥60%）。
+                    if (IsHintOverInput(kids[i], kids[j]) || IsHintOverInput(kids[j], kids[i])) continue;
+                    if (x.Width * x.Height >= 0.6f * Math.Min(a.Width * a.Height, b.Width * b.Height)) continue;
+                    bad++;
+                    sb.AppendLine("  重叠  " + Where(parent) + " → " + Describe(kids[i])
+                        + "  ×  " + Describe(kids[j]) + "   交集 " + x.Width + "x" + x.Height);
+                }
+            }
+
+            foreach (System.Windows.Forms.Control c in kids) bad += AuditWalk(c, sb);
+            return bad;
+        }
+
+        private static bool IsHintOverInput(System.Windows.Forms.Control hint, System.Windows.Forms.Control input)
+        {
+            if (!(hint is Label) || hint.BackColor != Color.Transparent) return false;
+            return input is TextBox || input is ComboBox || input is RichTextBox;
+        }
+
+        private static string Describe(System.Windows.Forms.Control c)
+        {
+            string t = "";
+            try { t = c.Text ?? ""; } catch { }
+            t = t.Replace("\r", " ").Replace("\n", " ");
+            if (t.Length > 14) t = t.Substring(0, 14) + "…";
+            return c.GetType().Name + (t.Length > 0 ? "[" + t + "]" : "") + " @ " + c.Bounds;
+        }
+
+        private static string Where(System.Windows.Forms.Control p)
+        {
+            string s = p.GetType().Name;
+            while (p.Parent != null) { p = p.Parent; s = p.GetType().Name + "." + s; }
+            return s;
+        }
+
         internal int LayoutSelfTest(float factor, int designW, int designH)
         {
             int bad = 0;
@@ -4385,11 +3999,9 @@ namespace Installer
                 // 底部右侧三连从右往左排：位置必须严格递减，最左的不能压进左边距，最右的不能出窗
                 // 方案 B（2026-11-19）：主操作上顶栏，底部只剩一行状态。
                 // 下面这几条原来量的是底部那排，现在改成量顶栏：主操作必须在设置左边、且不出窗。
-                // 「一键还原」必须留在左下角、和主操作隔开一大截（就是怕手滑点错的那条）
-                if (Math.Abs(btnRestore.Left - m) > Dpi.S(2)) { bad++; Core.Log("FAIL", tag + "「一键还原」不在左下角"); }
+                // 「一键还原」按钮已移除：进度条 / 停止按钮直接从左边距起步，不再让位
                 if (btnInstall.Left + btnInstall.Width > W - m + 1) { bad++; Core.Log("FAIL", tag + "「替换此方案」出窗"); }
-                if (bar.Left < btnRestore.Left + btnRestore.Width)
-                { bad++; Core.Log("FAIL", tag + "进度条压住了「一键还原」"); }
+                if (bar.Left < m - Dpi.S(2)) { bad++; Core.Log("FAIL", tag + "进度条跑出左边距"); }
                 // 进度条 / 停止按钮 / 主按钮 三者同一行，从左到右必须严格排开，谁都不许压谁
                 if (bar.Left + bar.Width > btnCancel.Left)
                 { bad++; Core.Log("FAIL", tag + "进度条压住了「停止剩余」"); }
@@ -4437,24 +4049,6 @@ namespace Installer
                         + (gMod.Top + viewHost.Top + viewHost.Height) + "px / 页脚顶 " + footerTop + "px");
                 }
                 if (viewHost.Width <= 0) { bad++; Core.Log("FAIL", tag + "台面宽度算成 0"); }
-                if (txtLog.Width <= 0) { bad++; Core.Log("FAIL", tag + "日志框宽度算成 0"); }
-
-                // 左栏日志：默认收起（高度 0），展开后必须排在底栏之上，且不压到「安装选项」。
-                // 这条挡的是「日志又变回常驻、把左栏一半吃掉」的回归。
-                bool savedDrawer = drawerOpen;
-                SetDrawer(true);
-                if (gLog.Height > 0)
-                { bad++; Core.Log("FAIL", tag + "日志默认没收起（高 " + gLog.Height + "px）"); }
-                SetLogOpen(true);
-                if (gLog.Top + gLog.Height > footerTop + 1)
-                { bad++; Core.Log("FAIL", tag + "日志展开后压到底栏（底 " + (gLog.Top + gLog.Height) + " / 状态条 " + footerTop + "）"); }
-                if (gLog.Top < Dpi.S(56))
-                { bad++; Core.Log("FAIL", tag + "日志展开后压到「安装选项」卡片"); }
-                if (gLog.Height < Dpi.S(120))
-                { bad++; Core.Log("FAIL", tag + "日志展开后只有 " + gLog.Height + "px，装不下内容"); }
-                Core.Log("INFO", tag + "日志展开 y" + gLog.Top + "–" + (gLog.Top + gLog.Height) + "（高 " + gLog.Height + "），按钮 " + btnLogToggle.Top);
-                SetLogOpen(false);
-                SetDrawer(savedDrawer);
 
                 // 候选列表的列宽：ListView 的 Columns[].Width 不受 AutoScaleMode.Dpi 管，
                 // 得自己乘。96dpi 设计值：改了什么 100 / 大小 74 / 已装 84 / 开关 62。
@@ -4492,244 +4086,6 @@ namespace Installer
                 ApplyResponsive();
             }
             return bad;
-        }
-
-        /// <summary>总览 ⇄ 方案树。总览是整窗口一块看板，不是另一个窗口。</summary>
-        internal void ToggleView()
-        {
-            if (OverviewOpen) HideOverview();
-            else ShowOverview();
-        }
-
-        /// <summary>桌面上的「开始安装」按钮走这里。</summary>
-        internal void InstallFromDesk() { DoInstall(); }
-
-        /// <summary>左栏抽屉：收起后右栏顶到左边距，整窗只剩台面。</summary>
-        internal void SetDrawer(bool open)
-        {
-            drawerOpen = open;
-            if (gLog != null) gLog.Visible = false;   // 日志不给人看，只落文件
-            if (btnLogToggle != null) btnLogToggle.Visible = open;
-            if (btnPanel != null) btnPanel.Text = open ? Lang.S("收起") : Lang.S("统计");
-            lastRespW = -1;                    // 强制重排一次（尺寸没变也要排）
-            ApplyResponsive();
-        }
-
-        /// <summary>展开 / 收起左栏日志。收起时左栏只剩两张卡，日志不该常驻抢地方。</summary>
-        internal void SetLogOpen(bool open)
-        {
-            logOpen = open;
-            if (btnLogToggle != null) btnLogToggle.Text = open ? "收起日志 ▴" : "显示日志 ▾";
-            lastRespW = -1;
-            ApplyResponsive();
-        }
-
-        /// <summary>桌面自检：--deskself 走这里。不弹浏览器，只验数据与本地服务。</summary>
-        internal int DeskSelfTest()
-        {
-            int bad = 0;
-            ShowTree();
-            if (treeView == null) { Core.Log("FAIL", "DESK 树没建起来"); return 1; }
-
-            // 1) 建卡
-            List<DeskCard> cards = DeskModel.Build(treeView);
-            int rows = 0;
-            foreach (DeskCard c in cards) rows += c.Rows.Count;
-            Core.Log("INFO", "DESK 建卡 " + cards.Count + " 张，行合计 " + rows);
-            if (cards.Count == 0) { bad++; Core.Log("FAIL", "DESK 一张卡都没建出来"); }
-            if (rows == 0) { bad++; Core.Log("FAIL", "DESK 卡里一行都没有"); }
-
-            // 2) JSON 是不是能被前端直接吃
-            string json = DeskModel.ToJson(cards, treeView, this);
-            if (!json.StartsWith("{") || !json.EndsWith("}")) { bad++; Core.Log("FAIL", "DESK 导出的 JSON 头尾不对"); }
-            if (json.IndexOf("\"cards\":[") < 0) { bad++; Core.Log("FAIL", "DESK JSON 里没有 cards"); }
-            if (json.IndexOf("\"rows\":[") < 0) { bad++; Core.Log("FAIL", "DESK JSON 里没有 rows"); }
-            if (json.IndexOf('\u0001') >= 0 || json.IndexOf('\0') >= 0) { bad++; Core.Log("FAIL", "DESK JSON 里混进了控制字符"); }
-
-            // 3) 摆位：写进去能读回来，文件落盘，然后原样还原
-            //    收尾必须用 Reload（只丢内存里那份）—— 以前用 Clear()，那是「清空并落盘」，
-            //    自检跑一趟就把用户真摆好的卡片位置抹了。
-            string layFile = DeskLayout.FileOf();
-            byte[] before = null;
-            try { if (File.Exists(layFile)) before = File.ReadAllBytes(layFile); } catch { }
-            try
-            {
-                DeskLayout.Clear();
-                DeskLayout.Put("cat|枪械", 0.4f, -0.1f);
-                PointF pt;
-                if (!DeskLayout.TryGet("cat|枪械", out pt) || Math.Abs(pt.X - 0.4f) > 0.001f || Math.Abs(pt.Y + 0.1f) > 0.001f)
-                { bad++; Core.Log("FAIL", "DESK 摆位存取对不上"); }
-                else Core.Log("INFO", "DESK 摆位存取正常 (0.4, -0.1)");
-                if (!File.Exists(layFile)) { bad++; Core.Log("FAIL", "DESK 摆位文件没写出来"); }
-            }
-            finally
-            {
-                try
-                {
-                    if (before == null) { if (File.Exists(layFile)) File.Delete(layFile); }
-                    else File.WriteAllBytes(layFile, before);
-                }
-                catch { }
-                DeskLayout.Reload();
-            }
-
-            // 4) 本地服务：起一个不带窗口的，真的发一次 HTTP 请求
-            DeskServer srv = new DeskServer(this, treeView);
-            try
-            {
-                srv.Start(false);
-
-                // 必须放到后台线程去请求：服务端要 Invoke 回 UI 线程取数据，
-                // 而这里正占着 UI 线程等响应 —— 直接在 UI 线程 DownloadString 会死锁
-                // （第一次就是这么卡了 100 秒，报“操作超时”）
-                Func<string, string> get = delegate(string url)
-                {
-                    string res = null; Exception err = null;
-                    Thread t = new Thread(delegate()
-                    {
-                        try
-                        {
-                            using (System.Net.WebClient wc = new System.Net.WebClient())
-                            {
-                                wc.Encoding = Encoding.UTF8;
-                                res = wc.DownloadString(url);
-                            }
-                        }
-                        catch (Exception ex) { err = ex; }
-                    });
-                    t.IsBackground = true;
-                    t.Start();
-                    DateTime until = DateTime.Now.AddSeconds(10);
-                    while (t.IsAlive && DateTime.Now < until) { Application.DoEvents(); Thread.Sleep(10); }
-                    if (t.IsAlive) throw new Exception("请求超时：" + url);
-                    if (err != null) throw err;
-                    return res;
-                };
-
-                string body = get(srv.Url + "api/state");
-                if (string.IsNullOrEmpty(body) || body.IndexOf("\"cards\"") < 0)
-                { bad++; Core.Log("FAIL", "DESK 服务端返回的 state 不对"); }
-                else Core.Log("INFO", "DESK 服务端 state OK（" + body.Length + " 字节）");
-
-                string page = get(srv.Url);
-                if (string.IsNullOrEmpty(page) || page.IndexOf("three.min.js") < 0)
-                { bad++; Core.Log("FAIL", "DESK 首页没把 three.js 引进来"); }
-                else Core.Log("INFO", "DESK 首页 %OK%（" + page.Length + " 字节）".Replace("%OK%", "OK"));
-                if (page == null || page.IndexOf("window.__DESK_TOKEN") < 0)
-                { bad++; Core.Log("FAIL", "DESK 首页没注入令牌，页面上的写操作会一律 403"); }
-                else Core.Log("INFO", "DESK 首页已注入写操作令牌");
-
-                // 写操作令牌：本机别的网页也能往 127.0.0.1 发 POST，所以没令牌必须 403。
-                // 默认打一个不存在的 api 路径，不会碰到任何真实数据。
-                Func<string, string, string, int> post = delegate(string apiPath, string tok, string payload)
-                {
-                    int code = -1; Exception err = null;
-                    Thread t = new Thread(delegate()
-                    {
-                        try
-                        {
-                            System.Net.HttpWebRequest req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(srv.Url + apiPath);
-                            req.Method = "POST";
-                            req.ContentType = "application/json";
-                            if (tok != null) req.Headers["X-Desk-Token"] = tok;
-                            byte[] data = Encoding.UTF8.GetBytes(payload ?? "{}");
-                            req.ContentLength = data.Length;
-                            using (Stream st = req.GetRequestStream()) st.Write(data, 0, data.Length);
-                            using (System.Net.HttpWebResponse r = (System.Net.HttpWebResponse)req.GetResponse()) code = (int)r.StatusCode;
-                        }
-                        catch (System.Net.WebException wex)
-                        {
-                            System.Net.HttpWebResponse r = wex.Response as System.Net.HttpWebResponse;
-                            if (r != null) code = (int)r.StatusCode; else err = wex;
-                        }
-                        catch (Exception ex) { code = -2; err = ex; }
-                    });
-                    t.IsBackground = true;
-                    t.Start();
-                    DateTime until = DateTime.Now.AddSeconds(10);
-                    while (t.IsAlive && DateTime.Now < until) { Application.DoEvents(); Thread.Sleep(10); }
-                    if (t.IsAlive) throw new Exception("请求超时：" + apiPath);
-                    if (err != null) throw err;
-                    return code;
-                };
-
-                if (post("api/__tokencheck", null, "{}") != 403) { bad++; Core.Log("FAIL", "DESK 写操作不带令牌也能过（本机网页就能装机）"); }
-                else Core.Log("INFO", "DESK 写操作无令牌被拒 403");
-                if (post("api/__tokencheck", "wrong-token", "{}") != 403) { bad++; Core.Log("FAIL", "DESK 写操作令牌错了也能过"); }
-                else Core.Log("INFO", "DESK 写操作错令牌被拒 403");
-                // 令牌对了就该进路由：这个假路径没有处理分支，会返回 404「no api」——
-                // 只要不是 403 就说明令牌这关过了（真接口走各自的 200）。
-                int okCode = post("api/__tokencheck", srv.Token, "{}");
-                if (okCode == 403 || okCode < 0) { bad++; Core.Log("FAIL", "DESK 写操作带对令牌反倒被拒（" + okCode + "）"); }
-                else Core.Log("INFO", "DESK 写操作带对令牌放行（路由返回 " + okCode + "，不是 403）");
-
-                // 拖拽位置：坐标解析不出来时必须 400，且不能把卡片挪到原点（以前带着 0,0 走还回 ok:true）
-                int badMove = post("api/move", srv.Token, "{\"key\":\"desk|selftest\",\"x\":\"abc\",\"z\":\"1\"}");
-                PointF mv;
-                bool movedAnyway = DeskLayout.TryGet("desk|selftest", out mv);
-                if (badMove != 400) { bad++; Core.Log("FAIL", "DESK 拖拽坐标无效却返回 " + badMove + "（应该 400）"); }
-                else if (movedAnyway) { bad++; Core.Log("FAIL", "DESK 拖拽坐标无效，卡片却被挪到 (" + mv.X + "," + mv.Y + ")"); }
-                else Core.Log("INFO", "DESK 拖拽坐标无效 → 400 且摆位没动");
-                // 坐标正常就该真的写进去
-                int okMove = post("api/move", srv.Token, "{\"key\":\"desk|selftest\",\"x\":\"0.75\",\"z\":\"-0.25\"}");
-                PointF mv2;
-                bool wrote = DeskLayout.TryGet("desk|selftest", out mv2)
-                             && Math.Abs(mv2.X - 0.75f) < 0.001f && Math.Abs(mv2.Y + 0.25f) < 0.001f;
-                if (okMove != 200 || !wrote) { bad++; Core.Log("FAIL", "DESK 拖拽坐标正常却没存住（状态 " + okMove + "）"); }
-                else Core.Log("INFO", "DESK 拖拽坐标正常 → 200 且摆位已存 (0.75, -0.25)");
-            }
-            catch (Exception ex)
-            {
-                bad++;
-                Core.Log("FAIL", "DESK 本地服务跑不通：" + ex.Message);
-            }
-            finally { srv.Dispose(); }
-
-            // 摆位文件还原：上面第 4 步的拖拽用例真的写过文件，这里把用户原来那份放回去，并核对一个字没变
-            try
-            {
-                if (before == null) { if (File.Exists(layFile)) File.Delete(layFile); }
-                else File.WriteAllBytes(layFile, before);
-                DeskLayout.Reload();
-                if (before == null)
-                {
-                    if (File.Exists(layFile)) { bad++; Core.Log("FAIL", "DESK 自检结束后凭空多出一个摆位文件"); }
-                }
-                else
-                {
-                    byte[] now = File.ReadAllBytes(layFile);
-                    bool same = now.Length == before.Length;
-                    for (int i = 0; same && i < before.Length; i++) if (now[i] != before[i]) same = false;
-                    if (!same) { bad++; Core.Log("FAIL", "DESK 自检把用户原来的摆位文件改了"); }
-                    else Core.Log("INFO", "DESK 自检结束，用户摆位文件原样还在（" + before.Length + " 字节）");
-                }
-            }
-            catch (Exception exl) { bad++; Core.Log("FAIL", "DESK 摆位还原核对出错：" + exl.Message); }
-
-            // 5) 左栏已撤（2026-11-24）：右栏永远顶到左边距，抽屉开关不再改变任何位置
-            SetDrawer(true);
-            if (gNow != null && gNow.Visible) { bad++; Core.Log("FAIL", "DESK 左栏已撤，却还被展开出来"); }
-            if (gMod.Left != Theme.M) { bad++; Core.Log("FAIL", "DESK 右栏没顶到左边: " + gMod.Left); }
-            SetDrawer(false);
-            if (gMod.Left != Theme.M) { bad++; Core.Log("FAIL", "DESK 收起后右栏位置变了: " + gMod.Left); }
-
-            Snap("desk-tree");
-            return bad;
-        }
-
-        private void Snap(string tag)
-        {
-            try
-            {
-                PerformLayout();
-                Application.DoEvents();
-                using (Bitmap b = new Bitmap(Size.Width, Size.Height))
-                {
-                    DrawToBitmap(b, new Rectangle(0, 0, Size.Width, Size.Height));
-                    b.Save(Path.Combine(Core.LogDir, tag + ".png"), System.Drawing.Imaging.ImageFormat.Png);
-                }
-            }
-            catch (Exception ex) { Core.Log("WARN", "截图失败: " + ex.Message); }
         }
 
         private bool TestWritable(string dir)
@@ -4784,7 +4140,7 @@ namespace Installer
             }
             catch { }
             sb.AppendLine("管理员    : " + (admin ? "是" : "否（写系统目录、装运行库会受限）"));
-            string root = txtGame.Text.Trim();
+            string root = gameRoot.Trim();
             sb.AppendLine("游戏可写  : " + (Core.TestGame(root) ? (TestWritable(root) ? "是" : "否（只读/占用/权限不足）") : "（还没选对目录）"));
             try
             {
@@ -4807,23 +4163,6 @@ namespace Installer
             LoadProfileIntoUi(p, true, false);
         }
 
-
-        private void AppendLog(string line)
-        {
-            // 只排队、不等界面线程。
-            // 原来用 Invoke：后台线程写一行日志就得等界面线程处理完。
-            // 现在扫库有互斥锁（Core.ScanMods），界面线程点删除时要等后台那次扫描结束，
-            // 后台又在等界面线程画日志 —— 两边互等，直接卡死。日志本来就不需要同步显示。
-            SafePost(delegate
-            {
-                if (++logLines > 1200) { txtLog.Clear(); logLines = 1; logWarnings = 0; }
-                if (line.IndexOf("] WARN", StringComparison.Ordinal) >= 0
-                    || line.IndexOf("] FAIL", StringComparison.Ordinal) >= 0) logWarnings++;
-                txtLog.AppendText(line + "\r\n");
-                if (gLog != null)
-                    gLog.Caption = logWarnings > 0 ? "日志 · " + logWarnings + " 条提醒" : "日志";
-            });
-        }
 
         /// <summary>把活排到界面线程，不等待（Invoke 是等，BeginInvoke 是排队）。</summary>
         private void SafePost(Action a)
@@ -4921,6 +4260,12 @@ namespace Installer
             OpGuard.Exit(longOpName);
             longOpName = null;
             QueuePrecheck();          // 长操作结束后按钮该亮回亮、该灭回灭
+            if (closeWhenIdle)
+            {
+                closeWhenIdle = false;
+                forceClose = true;
+                BeginInvoke((MethodInvoker)delegate { if (!IsDisposed) Close(); });
+            }
         }
 
         private void SetBusy(bool busy)
@@ -4930,7 +4275,6 @@ namespace Installer
             {
                 // 空闲时不要无条件点亮：前置条件没满足就保持灰的（刷新校验条会按最新状态重算）
                 btnInstall.Enabled = !busy && preOk;
-                btnRestore.Enabled = !busy;
                 btnLaunch.Enabled = !busy;
                 // 空闲时不摆一条空进度条：深色主题下它是一道白条，看着像没画完
                 if (bar != null) bar.Visible = busy;
@@ -4947,41 +4291,6 @@ namespace Installer
             btnCancel.Text = Lang.S("正在停止…");
             SetStatus("正在停止 · 当前步骤结束后不再继续");
             Core.Log("WARN", "用户请求停止后续安装；已写入的文件会保留，不会自动回滚");
-        }
-
-        private void DoRestore()
-        {
-            if (!EnterLongOp("还原")) return;
-            try { DoRestoreCore(); }
-            finally { ExitLongOp(); }
-        }
-
-        private void DoRestoreCore()
-        {
-            string root = txtGame.Text.Trim();
-            if (!Core.TestGame(root)) { MessageBox.Show("先选对游戏根目录。"); return; }
-            if (!TestWritable(root))
-            {
-                MessageBox.Show("这个游戏目录写不进去（可能只读、被占用或权限不足）。\r\n可以试试以管理员身份运行，或换一个有写权限的目录。", "目录不可写");
-                return;
-            }
-            if (GameRunning())
-            {
-                MessageBox.Show("游戏还开着，先完全退出再还原。", "游戏正在运行");
-                return;
-            }
-            if (MessageBox.Show("删掉装进游戏的文件（L4N / Skeeto / MQCam / dxvk 和装机记录里的 MOD）。\r\n\r\n"
-                + "平台文件删除前会尽量备份到 _装机记录\\还原备份；备份失败的文件会保留不删。\r\n"
-                + "原版 exe、addonlist、autoexec 没有备份，需要原版请用 Steam 校验文件。\r\n\r\n确定还原？",
-                "确认彻底还原", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning,
-                MessageBoxDefaultButton.Button2) != DialogResult.OK) return;
-            Log("--- 彻底还原 ---");
-            try
-            {
-                foreach (string l in Work.FullRestore(root)) Log("OK", l);
-                Log("OK", "还原完成，现在进的是原版游戏");
-            }
-            catch (Exception ex) { Log("FAIL", "还原失败: " + ex.Message); }
         }
 
         /// <summary>
@@ -5104,7 +4413,7 @@ namespace Installer
         internal bool ApplySwitches(Dictionary<string, bool> st)
         {
             if (st == null || st.Count == 0) return false;
-            string root = txtGame.Text.Trim();
+            string root = gameRoot.Trim();
             if (!Core.TestGame(root)) { MessageBox.Show("这个目录里没有 left4dead2.exe，先选对游戏根目录。", "路径不对"); return false; }
             if (!TestWritable(root))
             {
@@ -5416,7 +4725,7 @@ namespace Installer
             bool handed = false;
             try
             {
-                string root = txtGame.Text.Trim();
+                string root = gameRoot.Trim();
                 if (!Core.TestGame(root)) { MessageBox.Show("这个目录里没有 left4dead2.exe，先选对游戏根目录。", "路径不对"); return; }
                 InstallJob j = CollectInstallJob(root);
                 if (j == null) return;
@@ -5474,8 +4783,6 @@ namespace Installer
                     btnCancel.Enabled = true;
                     btnCancel.Text = Lang.S("停止剩余");
                     ExitLongOp();
-                    // 用户中途点过 ×：现在停在文件边界上了，替他关掉窗口（不再问第二遍）
-                    if (closeWhenIdle) { closeWhenIdle = false; forceClose = true; BeginInvoke(new MethodInvoker(Close)); }
                 });
                 // 不再无条件改回“就绪”：失败、部分完成、完成都应留在状态栏上，
                 // 这是用户离开安装按钮后唯一能确认结果的常驻反馈。
@@ -5628,7 +4935,7 @@ namespace Installer
                             try { AddonList.Write(j.Root, off); }
                             catch (Exception ex) { Core.Log("WARN", "取消安装后关闭开关失败: " + ex.Message); }
                         }
-                        SetStatus("已停止 · 文件已保留，可在「一键还原」里清理");
+                        SetStatus("已停止 · 文件已保留（清单见日志）");
                         Core.Log("WARN", "取消安装：本次复制的 " + j.Added.Count + " 个文件、"
                             + j.Plugins.Count + " 个插件已记入还原清单"
                             + (j.SwitchesWritten ? "（开关已写入，未改动）" : "，开关先设为关闭"));
@@ -5641,7 +4948,7 @@ namespace Installer
                         + "· 还没有复制完的 MOD 文件\r\n"
                         + "· 后续组件没有继续安装\r\n"
                         + (j != null && j.Platform.Count > 0
-                            ? "· 已写入的平台组件已记入还原清单，可用「一键还原」清理\r\n" : "")
+                            ? "· 已写入的平台组件已记入清单（见日志）\r\n" : "")
                         + "\r\n需要继续时，可以再点一次「开始装」。",
                         "安装已停止", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }

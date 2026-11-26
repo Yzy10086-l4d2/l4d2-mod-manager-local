@@ -129,7 +129,7 @@ namespace Installer
         // 窄的就一根线 —— 1px 的框在 18px 下只会糊成一坨灰。
 
         /// <summary>线宽（单位是 16 格网格；18px 下约 1.3px，32px 下约 2.3px）。</summary>
-        private const float LineUnit = 1.15f;
+        private const float LineUnit = 1.25f;
 
         /// <summary>开折线：不闭合，两端是圆头。</summary>
         private static void Open(GraphicsPath p, params PointF[] pts) { p.AddLines(pts); }
@@ -213,57 +213,47 @@ namespace Installer
                     return p;
 
                 // ---- 枪械小类
+                // 枪族在小尺寸下只靠「长短 + 一个特征」区分：描边一多就糊成一团。
                 case "rifle":
                     GunLine(p);
-                    Box(p, 4.6f, 2.4f, 5.2f, 2.2f, 0.9f);                       // 瞄准镜
-                    Seg(p, 6.0f, 4.6f, 6.0f, 5.4f);
-                    Seg(p, 8.4f, 4.6f, 8.4f, 5.4f);
+                    Box(p, 4.8f, 2.6f, 4.8f, 2.4f, 0.9f);                       // 瞄准镜
                     return p;
 
                 case "smg":
-                    Box(p, 2.6f, 6.0f, 7.0f, 3.2f, 1.0f);                       // 短机匣
-                    Seg(p, 9.6f, 7.6f, 11.6f, 7.6f);                            // 短枪管
-                    Loop(p, new PointF(4.6f, 9.2f), new PointF(7.2f, 9.2f), new PointF(6.6f, 14.0f), new PointF(5.0f, 14.0f));
-                    Open(p, new PointF(2.6f, 6.0f), new PointF(1.2f, 6.0f), new PointF(1.2f, 9.2f), new PointF(2.6f, 9.2f));   // 折叠托
+                    Box(p, 2.6f, 6.2f, 7.4f, 3.0f, 1.0f);                       // 短机匣
+                    Seg(p, 10.0f, 7.7f, 12.4f, 7.7f);                           // 短管
+                    Seg(p, 5.4f, 9.2f, 4.8f, 13.4f);                            // 握把
                     return p;
 
                 case "shotgun":
-                    Seg(p, 1.2f, 5.6f, 14.8f, 5.6f);                            // 上管
-                    Seg(p, 1.2f, 8.0f, 14.8f, 8.0f);                            // 下管
-                    Seg(p, 14.8f, 5.6f, 14.8f, 8.0f);                           // 枪口
-                    Seg(p, 1.2f, 5.6f, 1.2f, 8.0f);                             // 托尾
-                    Box(p, 5.0f, 8.0f, 4.8f, 2.6f, 0.8f);                       // 泵动护木
-                    Open(p, new PointF(9.8f, 8.0f), new PointF(10.2f, 9.8f), new PointF(9.4f, 13.0f));   // 握把
+                    Seg(p, 1.6f, 6.2f, 14.2f, 6.2f);                            // 上管
+                    Seg(p, 1.6f, 8.6f, 14.2f, 8.6f);                            // 下管
+                    Seg(p, 1.6f, 6.2f, 1.6f, 8.6f);                             // 托尾
+                    Box(p, 5.2f, 8.6f, 4.6f, 2.4f, 0.8f);                       // 泵动护木
                     return p;
 
                 case "sniper":
-                    Box(p, 3.8f, 6.4f, 6.4f, 2.8f, 1.0f);                       // 机匣
-                    Seg(p, 10.2f, 7.8f, 15.2f, 7.8f);                           // 长枪管
-                    Box(p, 4.6f, 2.6f, 5.6f, 2.2f, 0.9f);                       // 瞄准镜
-                    Seg(p, 6.2f, 4.8f, 6.2f, 6.4f);
-                    Seg(p, 8.6f, 4.8f, 8.6f, 6.4f);
-                    Loop(p, new PointF(5.6f, 9.2f), new PointF(7.6f, 9.2f), new PointF(7.1f, 13.0f), new PointF(5.9f, 13.0f));
-                    Open(p, new PointF(3.8f, 6.4f), new PointF(2.2f, 6.4f), new PointF(2.2f, 8.6f), new PointF(3.8f, 8.6f));
+                    Box(p, 2.6f, 6.4f, 11.8f, 2.6f, 1.0f);                      // 机匣 + 长管
+                    Box(p, 5.0f, 2.8f, 5.0f, 2.2f, 0.9f);                       // 瞄准镜
+                    Seg(p, 7.4f, 9.0f, 6.6f, 13.2f);                            // 握把
                     return p;
 
                 case "pistol":
-                    Box(p, 2.8f, 5.0f, 9.2f, 2.8f, 0.9f);                       // 套筒
-                    Seg(p, 12.0f, 6.4f, 14.6f, 6.4f);                           // 枪口
-                    Loop(p, new PointF(4.4f, 7.8f), new PointF(8.0f, 7.8f), new PointF(7.0f, 13.8f), new PointF(4.9f, 13.8f));   // 握把
-                    Seg(p, 4.4f, 10.4f, 6.4f, 10.4f);                           // 护圈
+                    Box(p, 2.8f, 5.4f, 9.0f, 2.8f, 0.9f);                       // 套筒
+                    Seg(p, 9.0f, 8.2f, 6.4f, 13.6f);                            // 握把
+                    Seg(p, 11.8f, 6.8f, 14.2f, 6.8f);                           // 枪口
                     return p;
 
                 case "launcher":
-                    Box(p, 1.8f, 5.4f, 9.4f, 4.4f, 1.2f);                       // 发射管
-                    Loop(p, new PointF(11.2f, 4.6f), new PointF(14.8f, 6.0f), new PointF(14.8f, 9.2f), new PointF(11.2f, 10.6f));  // 喇叭口
-                    Seg(p, 0.6f, 5.4f, 1.8f, 5.4f);
-                    Open(p, new PointF(5.6f, 9.8f), new PointF(7.4f, 9.8f), new PointF(7.0f, 13.6f));   // 握把
+                    Box(p, 1.8f, 5.6f, 9.0f, 4.4f, 1.4f);                       // 粗管
+                    Loop(p, new PointF(10.8f, 4.6f), new PointF(14.6f, 5.8f), new PointF(14.6f, 9.8f), new PointF(10.8f, 11.0f));  // 喇叭口
+                    Seg(p, 5.4f, 10.0f, 4.8f, 13.4f);                           // 握把
                     return p;
 
                 case "melee":
-                    Seg(p, 8.6f, 2.2f, 8.6f, 13.8f);                            // 柄（穿出斧头一截，才不像旗子）
-                    Loop(p, new PointF(8.6f, 3.4f), new PointF(12.8f, 2.6f), new PointF(14.2f, 5.0f),
-                              new PointF(12.8f, 7.2f), new PointF(8.6f, 6.4f));  // 斧头：刃口外鼓
+                    Seg(p, 9.4f, 3.0f, 6.2f, 13.6f);                            // 斜柄（穿出斧头一截，才不像旗子）
+                    Loop(p, new PointF(8.8f, 2.2f), new PointF(13.8f, 3.4f),
+                              new PointF(13.0f, 6.8f), new PointF(8.4f, 5.8f));  // 斧头：刃口外鼓
                     return p;
 
                 case "bottle":
@@ -309,10 +299,9 @@ namespace Installer
                     return p;
 
                 case "pills":
-                    Loop(p, new PointF(4.8f, 6.2f), new PointF(11.2f, 6.2f), new PointF(10.4f, 14.2f), new PointF(5.6f, 14.2f));  // 瓶身
-                    Box(p, 5.8f, 3.4f, 4.4f, 2.8f, 0.6f);                       // 瓶盖
-                    Seg(p, 6.4f, 8.8f, 9.6f, 8.8f);                             // 标签线
-                    Seg(p, 6.4f, 11.4f, 9.6f, 11.4f);
+                    // 横着的胶囊 + 中间一道斜分界。别画成「圆 + 斜线」—— 那是禁止符号。
+                    p.AddEllipse(2.2f, 5.4f, 11.6f, 5.2f);
+                    Seg(p, 5.9f, 5.9f, 10.1f, 10.1f);
                     return p;
 
                 // ---- 杂项 / 整套替换三栏
@@ -345,14 +334,11 @@ namespace Installer
             }
         }
 
-        /// <summary>线型步枪：机匣框 + 细枪管 + 下垂的弹匣 / 握把 + 枪托。</summary>
+        /// <summary>线型步枪：一根横的机匣+枪管 + 一根下垂的握把，只留两笔。</summary>
         private static void GunLine(GraphicsPath p)
         {
-            Box(p, 2.0f, 5.4f, 8.8f, 3.2f, 1.0f);                                  // 机匣
-            Seg(p, 10.8f, 7.0f, 14.8f, 7.0f);                                      // 枪管
-            Loop(p, new PointF(4.4f, 8.6f), new PointF(7.4f, 8.6f), new PointF(6.9f, 13.2f), new PointF(4.9f, 13.2f));    // 弹匣
-            Loop(p, new PointF(8.4f, 8.6f), new PointF(10.4f, 8.6f), new PointF(9.8f, 12.4f), new PointF(8.3f, 12.4f));   // 握把
-            Open(p, new PointF(2.0f, 5.4f), new PointF(1.0f, 6.8f), new PointF(1.0f, 8.6f), new PointF(2.0f, 8.6f));     // 枪托
+            Box(p, 1.8f, 5.8f, 11.8f, 3.0f, 1.0f);          // 机匣 + 枪管
+            Seg(p, 6.2f, 8.8f, 5.4f, 13.2f);                // 握把
         }
 
         /// <summary>

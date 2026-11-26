@@ -649,9 +649,14 @@ namespace Installer
         /// <summary>把插件快照放回游戏目录（取消安装 / 一键还原时用）。清单可能被手改，只认装机快照下面的。</summary>
         public static int RestorePluginBackups(string gameRoot, List<string> backups)
         {
+            return RestorePluginBackups(gameRoot, backups, null);
+        }
+
+        public static int RestorePluginBackups(string gameRoot, List<string> backups, List<string> report)
+        {
             if (backups == null || backups.Count == 0) return 0;
             string baseDir = Path.GetFullPath(Path.Combine(Core.LogDir, "装机快照")).TrimEnd('\\') + "\\";
-            int n = 0;
+            int n = 0, miss = 0, fail = 0;
             foreach (string raw in backups)
             {
                 string line = (raw ?? "").Trim();
@@ -667,14 +672,19 @@ namespace Installer
                     if (!src.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase)) continue;
                     string dst = Path.Combine(gameRoot, rel);
                     if (!Core.IsUnder(gameRoot, dst)) continue;
-                    if (!File.Exists(src)) { Core.Log("WARN", "插件旧版本快照不在了: " + snap); continue; }
+                    if (!File.Exists(src)) { miss++; Core.Log("WARN", "插件旧版本快照不在了: " + snap); continue; }
                     Core.CopyOne(src, dst);
                     n++;
                     try { File.Delete(src); } catch { }
                 }
-                catch (Exception ex) { Core.Log("WARN", "插件回填失败 " + rel + ": " + ex.Message); }
+                catch (Exception ex) { fail++; Core.Log("WARN", "插件回填失败 " + rel + ": " + ex.Message); }
             }
             if (n > 0) Core.Log("OK", "已把 " + n + " 个插件文件放回原版本");
+            if (report != null)
+            {
+                if (miss > 0) report.Add("未完成：有 " + miss + " 个插件旧版本快照已被清理，没能回填");
+                if (fail > 0) report.Add("未完成：有 " + fail + " 个插件旧版本回填失败（详见日志）");
+            }
             return n;
         }
 
@@ -793,8 +803,8 @@ namespace Installer
             if (report != null)
             {
                 if (n > 0) report.Add("已把 " + n + " 个被覆盖的旧版本放回 addons");
-                if (miss > 0) report.Add("有 " + miss + " 个旧版本快照已被清理，没能回填");
-                if (fail > 0) report.Add("有 " + fail + " 个旧版本回填失败（详见日志）");
+                if (miss > 0) report.Add("未完成：有 " + miss + " 个旧版本快照已被清理，没能回填");
+                if (fail > 0) report.Add("未完成：有 " + fail + " 个旧版本回填失败（详见日志）");
             }
             return n;
         }
@@ -925,15 +935,25 @@ namespace Installer
                 try { File.Delete(side); Core.Log("OK", "已删除伴随文件 " + side); }
                 catch (Exception ex) { Core.Log("WARN", "伴随文件删不掉 " + side + ": " + ex.Message); }
             }
+            string registrationError = null;
             if (addonListRoot != null && addonListRoot.Length > 0)
             {
                 try { AddonList.Remove(addonListRoot, new string[] { m.Name }); }
-                catch (Exception ex) { Core.Log("WARN", "从 addonlist 摘掉 " + m.Name + " 失败: " + ex.Message); }
+                catch (Exception ex)
+                {
+                    registrationError = "文件已删除，但 addonlist 清理失败：" + ex.Message;
+                    Core.Log("WARN", "从 addonlist 摘掉 " + m.Name + " 失败: " + ex.Message);
+                }
                 // vpk 没了 = 这套不开了，插件跟着收敛。Remove 写过时已经对齐过一次，这里是幂等的
                 // （没登记的手放 vpk 走不到上面那次写入）。
-                SyncFromSwitches(addonListRoot);
+                try { SyncFromSwitches(addonListRoot); }
+                catch (Exception ex)
+                {
+                    if (registrationError == null) registrationError = "文件已删除，但插件状态同步失败：" + ex.Message;
+                    Core.Log("WARN", "删除后同步插件状态失败: " + ex.Message);
+                }
             }
-            return null;
+            return registrationError;
         }
 
         public static string RenameMod(ModItem m, string newName)
@@ -1067,7 +1087,7 @@ namespace Installer
         }
 
         /// <summary>按清单真删。返回删掉的条目（给人的一句话说明）。</summary>
-        public static List<string> DeleteDuplicates(DupPlan plan)
+        public static List<string> DeleteDuplicates(DupPlan plan, List<string> failed)
         {
             List<string> done = new List<string>();
             List<ModItem> gone = new List<ModItem>();
@@ -1080,7 +1100,11 @@ namespace Installer
                     done.Add(m.Name + "  (" + m.Cat + " · " + m.Sub + ")");
                     gone.Add(m);
                 }
-                catch (Exception ex) { Core.Log("WARN", "清理 " + m.Name + " 失败: " + ex.Message); }
+                catch (Exception ex)
+                {
+                    if (failed != null) failed.Add(m.Name + "：" + ex.Message);
+                    Core.Log("WARN", "清理 " + m.Name + " 失败: " + ex.Message);
+                }
             }
             // 文件已经删掉，直接把它从内存列表里摘掉，不再花几秒重扫全库
             foreach (ModItem g in gone) { Core.ModList.Remove(g); Core.ByRel.Remove(g.Key); }
@@ -1279,8 +1303,11 @@ namespace Installer
             // 删之前先整份备份；备份失败就保留不删，宁可还原不彻底，也不能把用户文件弄丢。
             string backupRoot = Path.Combine(Core.LogDir, "还原备份", DateTime.Now.ToString("yyyyMMdd-HHmmss"));
             int del = 0, backed = 0, backupFail = 0, delFail = 0;
+            bool stopped = false;
+            List<string> targetFailed = new List<string>();
             foreach (string rel in targets)
             {
+                if (CancelRequested) { stopped = true; break; }
                 if (string.IsNullOrEmpty(rel)) continue;
                 string key = rel.TrimStart('\\');
                 if (!uniq.Add(key)) continue;
@@ -1294,6 +1321,7 @@ namespace Installer
                         if (!BackupBeforeDelete(full, key, backupRoot))
                         {
                             backupFail++;
+                            targetFailed.Add(key + "（备份失败，保留未删）");
                             Core.Log("WARN", "备份失败，保留未删: " + key);
                             continue;
                         }
@@ -1306,7 +1334,7 @@ namespace Installer
                     if (key.StartsWith("left4dead2\\addons\\", StringComparison.OrdinalIgnoreCase))
                         goneAddons.Add(Path.GetFileName(key));
                 }
-                catch (Exception ex) { delFail++; Core.Log("WARN", "删除 " + key + " 失败: " + ex.Message); }
+                catch (Exception ex) { delFail++; targetFailed.Add(key + "（" + ex.Message + "）"); Core.Log("WARN", "删除 " + key + " 失败: " + ex.Message); }
             }
             // 插件是跟平台文件同一个删除循环里走的，报数时得把它从「平台文件」里扣掉，
             // 否则一行「删掉平台文件 2 个」会让用户以为删了两个平台组件。
@@ -1341,10 +1369,12 @@ namespace Installer
 
             string l4d2 = Path.Combine(gameRoot, "left4dead2");
             string addons = Path.Combine(l4d2, "addons");
-            int moved = 0, bad = 0, failed = 0;
+            int moved = 0, bad = 0, failed = 0, addonIndex = 0;
             List<string> kept = new List<string>();
             foreach (string a in added)
             {
+                if (CancelRequested) { stopped = true; break; }
+                addonIndex++;
                 // 装机记录是纯文本，可能被手改过：只认「直接躺在 addons 下的单个文件名」。
                 // 带目录分隔符 / 盘符 / .. 的一律不删 —— 否则记录里写一行 ..\..\ 就能删到游戏目录外。
                 string name = (a ?? "").Trim();
@@ -1364,6 +1394,8 @@ namespace Installer
                 }
                 catch (Exception ex) { failed++; kept.Add(name); Core.Log("WARN", "删除 " + name + " 失败: " + ex.Message); }
             }
+            if (stopped)
+                for (int i = addonIndex; i < added.Count; i++) kept.Add(added[i]);
 
             // 删完本次装的，再把「安装前被覆盖的旧版本」放回去 —— 这是覆盖安装真正的回滚。
             // 不放回的话，一键还原会把用户自己原来那一版一起带走。
@@ -1381,10 +1413,11 @@ namespace Installer
                 }
             }
             int restored = mine == null ? 0 : RestoreBackups(gameRoot, addonBak, report);
-            int plugRestored = mine == null ? 0 : RestorePluginBackups(gameRoot, plugBak);
+            int plugRestored = mine == null ? 0 : RestorePluginBackups(gameRoot, plugBak, report);
             if (plugRestored > 0) report.Add("已把 " + plugRestored + " 个被覆盖的插件文件放回原版本");
 
             // 记录里已经删掉/本来就不存在的条目也一并摘掉，免得下次手放同名文件被误删。
+            bool recordSaveFailed = false;
             if (mine != null)
             {
                 mine.Added = kept;
@@ -1394,17 +1427,18 @@ namespace Installer
                 // 没回填成功的留着，下次还原还能再试一次。
                 mine.Backups.RemoveAll(delegate(string line) { return !SnapshotExists(line); });
                 // 平台文件都处理干净了才清组件记录；有删不掉/备份失败的留着，下次还原还能重试。
-                if (backupFail == 0 && delFail == 0)
+                if (!stopped && backupFail == 0 && delFail == 0)
                 {
                     mine.Platform.Clear();
                     // 老记录这次已经按包清单清过一遍了，升级成明记录：下次还原不再「不知道装了什么就照单全删」。
                     mine.Schema = ManifestSchema;
                 }
                 try { SaveManifest(mf, sections); }
-                catch (Exception ex) { Core.Log("WARN", "更新装机记录失败: " + ex.Message); }
+                catch (Exception ex) { recordSaveFailed = true; Core.Log("WARN", "更新装机记录失败: " + ex.Message); }
             }
             // 删掉的文件在 addonlist 里留了一条指向空气的开关：游戏读不到文件不会报错，
             // 但同一名字下次装回来时，这条旧的 0 会把它默默关掉。既然文件是我们删的，登记一起摘。
+            bool addonListFailed = false;
             if (goneAddons.Count > 0)
             {
                 try
@@ -1412,7 +1446,7 @@ namespace Installer
                     int cleared = AddonList.Remove(gameRoot, goneAddons);
                     if (cleared > 0) report.Add("addonlist 里指向这些文件的登记一并摘掉 " + cleared + " 条");
                 }
-                catch (Exception ex) { Core.Log("WARN", "还原时清理 addonlist 失败: " + ex.Message); }
+                catch (Exception ex) { addonListFailed = true; Core.Log("WARN", "还原时清理 addonlist 失败: " + ex.Message); }
             }
             if (added.Count > 0)
                 report.Add("装机记录里的 MOD 已删除 " + moved + " 个"
@@ -1423,6 +1457,17 @@ namespace Installer
                     ? "装机记录里没有 MOD 文件（这次只装了插件/组件）"
                     : "没有找到属于当前游戏目录的 MOD 装机记录，MOD 文件未动");
             report.Add("原版 exe / addonlist / autoexec 没有备份可还原，需要原版请用 Steam 校验文件");
+            List<string> unfinished = new List<string>();
+            if (stopped) unfinished.Add("已按用户请求停止，未处理项目已保留在装机记录中");
+            if (targetFailed.Count > 0) unfinished.Add("平台文件未处理 " + targetFailed.Count + " 个：" + string.Join("、", targetFailed.ToArray()));
+            if (kept.Count > 0) unfinished.Add("MOD 未删除 " + kept.Count + " 个：" + string.Join("、", kept.ToArray()));
+            if (recordSaveFailed) unfinished.Add("装机记录更新失败，下次启动可能无法准确识别剩余项目");
+            if (addonListFailed) unfinished.Add("addonlist 清理失败，可能残留已删除文件的开关");
+            int plugLeft = 0;
+            if (mine != null) foreach (string line in mine.Backups) if (SnapshotExists(line)) plugLeft++;
+            if (plugLeft > 0) unfinished.Add("旧版本快照仍有 " + plugLeft + " 个未回填");
+            if (bad > 0) unfinished.Add("跳过可疑记录 " + bad + " 条");
+            if (unfinished.Count > 0) report.Add("未完成：" + string.Join("；", unfinished.ToArray()));
             return report;
         }
 
@@ -1516,10 +1561,12 @@ namespace Installer
 
             foreach (string f in Directory.GetFiles(sourceDir, "*.vpk", SearchOption.AllDirectories))
             {
+                if (CancelRequested) { log.Add("已停止导入，后续文件未处理"); return log; }
                 string name = Path.GetFileName(f);
                 // 插件先收：move=true 会把源 vpk 删掉，删完就再也找不到旁边的 bin 了。
                 // 「库里已有、跳过」的那条也要收 —— vpk 在库、插件没记录，是最常见的一次性漏。
                 CollectPlugins(f, log);
+                if (CancelRequested) { log.Add("已停止导入，后续文件未处理"); return log; }
                 if (known.Contains(name)) { skipped++; continue; }
                 string relDir = ClassifyByName(name);
                 if (PutIntoLib(f, name, relDir, move, log)) { imported++; known.Add(name); }
@@ -1531,6 +1578,7 @@ namespace Installer
             {
                 foreach (string f in Directory.GetFiles(sourceDir, pat, SearchOption.AllDirectories))
                 {
+                    if (CancelRequested) { log.Add("已停止导入，后续文件未处理"); return log; }
                     string name = Path.GetFileName(f);
                     if (knownArc.Contains(name)) { skipped++; continue; }
                     string relDir = ClassifyArchive(f, name);
@@ -1555,6 +1603,7 @@ namespace Installer
             int n = 0, failed = 0;
             foreach (PluginFile f in p.Files)
             {
+                if (CancelRequested) { log.Add("已停止导入，插件 " + name + " 的后续文件未处理"); return; }
                 if (f.Inner != null) continue;      // Find 找出来的源一定在磁盘上
                 string dst = Path.Combine(dstRoot, f.Rel);
                 try
@@ -2638,27 +2687,58 @@ namespace Installer
             string tmp = Path.Combine(Path.GetTempPath(), "l4d2-addonlist-" + Guid.NewGuid().ToString("N").Substring(0, 6));
             string l4d2 = Path.Combine(tmp, "left4dead2");
             string addons = Path.Combine(l4d2, "addons");
+            string savedGameRoot = Core.Cfg.GameRoot, savedLogDir = Core.LogDir, savedMode = Core.Cfg.Mode;
+            string savedLog = savedLogDir, savedGame = savedGameRoot;
+            bool savedSelfTesting = Core.SelfTesting;
+            List<ModItem> savedItems = Core.ModList;
+            Dictionary<string, ModItem> savedByRel = Core.ByRel;
+            Dictionary<string, int> savedDirCount = Core.DirCount;
+            List<ModGroup> savedGroups = Catalog.Groups;
+            Dictionary<string, ModGroup> savedGroupByKey = Catalog.GroupByKey;
             try
             {
-                Directory.CreateDirectory(addons);
-                // 守门 + 外部改动：不依赖库，任何环境都要真跑（库里没 MOD 也不能被跳过）
                 bad += SelfTestAddonGate();
-                Core.ScanMods();
-                List<ModItem> pool = new List<ModItem>();
-                foreach (ModItem m in Core.ModList)
-                {
-                    if (string.IsNullOrEmpty(m.Name)) continue;
-                    pool.Add(m);
-                    if (pool.Count >= 3) break;
-                }
-                // 干净 runner / 刚装完的机器上库里没有 MOD：这是环境不足，不是功能坏了。
-                // 跟 tripane 一样明确跳过 —— 但要把已经跑出来的失败带出去：
-                // 以前这里写死 return 0，前面守门那组真挂了也会被这里吃掉，CI 照样绿。
-                if (pool.Count < 3) { Console.WriteLine("addonself skipped: 库里不到 3 个 MOD（守门那组已跑）"); return bad; }
+                Directory.CreateDirectory(addons);
+                File.WriteAllText(Path.Combine(tmp, "left4dead2.exe"), "selftest");
+                Core.Cfg.GameRoot = tmp;
+                Core.Cfg.Mode = "local";
+                Core.LogDir = Path.Combine(tmp, "_装机记录");
+                Directory.CreateDirectory(Core.LogDir);
+                Core.SelfTesting = true;
+                Core.ModList = new List<ModItem>();
+                Core.ByRel = new Dictionary<string, ModItem>(StringComparer.OrdinalIgnoreCase);
+                Core.DirCount = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                Catalog.Groups = new List<ModGroup>();
+                Catalog.GroupByKey = new Dictionary<string, ModGroup>(StringComparer.OrdinalIgnoreCase);
 
-                foreach (ModItem m in pool) File.WriteAllText(Path.Combine(addons, m.Name), "x");
+                string[] names = new string[] { "selftest_ak47.vpk", "selftest_mp5.vpk", "selftest_pistol.vpk" };
+                string[] models = new string[] { "v_rifle_ak47.mdl", "v_smg_mp5.mdl", "v_pistol.mdl" };
+                string[] subjects = new string[] { "AK-47", "MP5", "手枪" };
+                for (int i = 0; i < names.Length; i++)
+                {
+                    string src = Path.Combine(tmp, "src" + i);
+                    Directory.CreateDirectory(Path.Combine(src, "models", "v_models"));
+                    File.WriteAllText(Path.Combine(src, "models", "v_models", models[i]), "selftest");
+                    if (VpkPack.PackDir(src, Path.Combine(addons, names[i])) != 1)
+                        throw new IOException("合成 VPK 失败: " + names[i]);
+                }
+                Core.ScanMods();
+                if (Core.ModList.Count != 3) throw new IOException("合成库扫描数不对: " + Core.ModList.Count);
+                List<ModItem> pool = new List<ModItem>();
+                foreach (string name in names)
+                {
+                    ModItem found = null;
+                    foreach (ModItem m in Core.ModList) if (m.Name == name) { found = m; break; }
+                    if (found == null || found.Entries == 0) throw new IOException("扫描没读到合成 VPK: " + name);
+                    int expected = Array.IndexOf(names, name);
+                    if (found.Subject != subjects[expected]) throw new IOException("合成 VPK 识别错: " + name + " → " + found.Subject);
+                    pool.Add(found);
+                }
                 string mine = "我自己放的.vpk";
                 File.WriteAllText(Path.Combine(addons, mine), "x");
+                Dictionary<string, string> hashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (ModItem m in pool) hashes[m.Name] = Core.HashOf(m.FullPath);
+                hashes[mine] = Core.HashOf(Path.Combine(addons, mine));
 
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine("\"AddonList\"");
@@ -2678,14 +2758,18 @@ namespace Installer
                 bool d = st.ContainsKey(mine) && st[mine];           // 用户自己放的：没被关
                 int files = Directory.GetFiles(addons, "*.vpk").Length;
                 bool e = files == pool.Count + 1;                    // 文件一个没少
+                bool hashesSame = true;
+                foreach (KeyValuePair<string, string> kv in hashes)
+                    if (Core.HashOf(Path.Combine(addons, kv.Key)) != kv.Value) { hashesSame = false; break; }
 
                 if (!a) { bad++; Console.WriteLine("[FAIL] 这次选的没被打开: " + pool[0].Name); }
                 if (!b) { bad++; Console.WriteLine("[FAIL] 上一套的没被关掉: " + pool[1].Name); }
                 if (!c) { bad++; Console.WriteLine("[FAIL] 上一套的没被关掉: " + pool[2].Name); }
                 if (!d) { bad++; Console.WriteLine("[FAIL] 用户自己放的被改动了: " + mine); }
                 if (!e) { bad++; Console.WriteLine("[FAIL] addons 里文件数变了: " + files + " 个"); }
+                if (!hashesSame) { bad++; Console.WriteLine("[FAIL] 开关改动了一个 VPK 文件的内容"); }
                 Console.WriteLine("ADDON 挑一个装：打开 " + on + " / 关闭 " + off + " / 不认识的 " + keep
-                    + "，文件 " + files + " 个（原 " + (pool.Count + 1) + "）");
+                    + "，文件 " + files + " 个（原 " + (pool.Count + 1) + "），内容未变=" + hashesSame);
 
                 // 一个都不选 + 换整套 = 全关（用户自己的仍然不碰）
                 SwitchAddons(tmp, new List<ModItem>(), null, out on, out off, out keep);
@@ -2701,6 +2785,9 @@ namespace Installer
                 if (!f2) { bad++; Console.WriteLine("[FAIL] 一个都不选时，用户自己放的被关了"); }
                 int files2 = Directory.GetFiles(addons, "*.vpk").Length;
                 if (files2 != files) { bad++; Console.WriteLine("[FAIL] 全关时文件数变了"); }
+                foreach (KeyValuePair<string, string> kv in hashes)
+                    if (Core.HashOf(Path.Combine(addons, kv.Key)) != kv.Value) { hashesSame = false; break; }
+                if (!hashesSame) { bad++; Console.WriteLine("[FAIL] 全关时改了一个 VPK 文件的内容"); }
                 Console.WriteLine("ADDON 一个都不选：全关=" + f1 + "，用户自己的还开着=" + f2 + "，文件 " + files2 + " 个");
 
                 // 「已装 MOD 开关」窗口：只改开关不能重排顺序（顺序 = 覆盖优先级），真拖过才重排
@@ -2738,8 +2825,27 @@ namespace Installer
                 }
                 finally { try { Directory.Delete(tmp2, true); } catch { } }
 
+                // 导入取消：在第一个文件边界停下，源文件不能移动或复制。
+                string savedImportRoot = Core.ModRoot;
+                try
+                {
+                    string importSrc = Path.Combine(tmp, "待导入");
+                    Directory.CreateDirectory(importSrc);
+                    string importFile = Path.Combine(importSrc, "停止导入.vpk");
+                    File.WriteAllText(importFile, "x");
+                    Core.ModRoot = Path.Combine(tmp, "导入库");
+                    CancelRequested = true;
+                    int stopImported = -1, stopSkipped = -1;
+                    List<string> stopLog = ImportVpks(importSrc, true, out stopImported, out stopSkipped);
+                    bool importKept = stopImported == 0 && File.Exists(importFile);
+                    bool importStopped = stopLog.Exists(delegate(string l) { return l != null && l.Contains("已停止导入"); });
+                    if (!importKept) { bad++; Console.WriteLine("[FAIL] 取消导入仍然处理了源文件"); }
+                    if (!importStopped) { bad++; Console.WriteLine("[FAIL] 取消导入没有明确报告停止"); }
+                    Console.WriteLine("ADDON 取消导入：源文件保留=" + importKept + "，停止反馈=" + importStopped);
+                }
+                finally { CancelRequested = false; Core.ModRoot = savedImportRoot; }
+
                 // 本地模式：从游戏 addons 删一项 → 文件真删掉、addonlist 里那条登记一起摘掉
-                string savedMode = Core.Cfg.Mode, savedLog = Core.LogDir, savedGame = Core.Cfg.GameRoot;
                 try
                 {
                     Core.Cfg.Mode = "local";
@@ -2763,6 +2869,31 @@ namespace Installer
                     Core.Cfg.GameRoot = savedGame;
                     Core.LogDir = savedLog;
                 }
+
+                // 还原取消必须停在文件边界，并把未处理项目留在装机记录里供下次重试。
+                try
+                {
+                    Core.Cfg.Mode = "local";
+                    Core.Cfg.GameRoot = tmp;
+                    Core.LogDir = Path.Combine(tmp, "_装机记录");
+                    string keepA = "取消还原A.vpk", keepB = "取消还原B.vpk";
+                    File.WriteAllText(Path.Combine(addons, keepA), "x");
+                    File.WriteAllText(Path.Combine(addons, keepB), "x");
+                    File.WriteAllText(Path.Combine(tmp, "d3d9.dll"), "x");
+                    WriteManifest(tmp, new List<string> { keepA, keepB }, new List<string> { "Dxvk" });
+                    CancelRequested = true;
+                    List<string> stoppedReport = FullRestore(tmp);
+                    bool filesKept = File.Exists(Path.Combine(addons, keepA)) && File.Exists(Path.Combine(addons, keepB))
+                        && File.Exists(Path.Combine(tmp, "d3d9.dll"));
+                    string stoppedManifest = File.ReadAllText(Path.Combine(Core.LogDir, "最近一次.ini"), Encoding.UTF8);
+                    bool manifestKept = stoppedManifest.Contains(keepA) && stoppedManifest.Contains(keepB) && stoppedManifest.Contains("Dxvk");
+                    bool stopReported = stoppedReport.Exists(delegate(string l) { return l != null && l.StartsWith("未完成："); });
+                    if (!filesKept) { bad++; Console.WriteLine("[FAIL] 取消还原仍然删掉了未处理的 MOD"); }
+                    if (!manifestKept) { bad++; Console.WriteLine("[FAIL] 取消还原把未处理项目从装机记录里弄丢了"); }
+                    if (!stopReported) { bad++; Console.WriteLine("[FAIL] 取消还原没有报告未完成状态"); }
+                    Console.WriteLine("ADDON 取消还原：文件保留=" + filesKept + "，记录保留=" + manifestKept + "，未完成反馈=" + stopReported);
+                }
+                finally { CancelRequested = false; }
 
                 // 彻底还原：删掉的 vpk 不能把 addonlist 里的登记留成「幽灵开关」
                 // （留着的 0 会在下次装回同名 MOD 时把它默默关掉，用户以为装了却没生效）
@@ -3030,6 +3161,16 @@ namespace Installer
             }
             finally
             {
+                Core.Cfg.GameRoot = savedGameRoot;
+                Core.Cfg.Mode = savedMode;
+                Core.LogDir = savedLogDir;
+                Core.SelfTesting = savedSelfTesting;
+                Core.ModList = savedItems;
+                Core.ByRel = savedByRel;
+                Core.DirCount = savedDirCount;
+                Catalog.Groups = savedGroups;
+                Catalog.GroupByKey = savedGroupByKey;
+                ModIdentify.ResetCacheForSelfTest();
                 try { Directory.Delete(tmp, true); } catch { }
             }
             return bad;

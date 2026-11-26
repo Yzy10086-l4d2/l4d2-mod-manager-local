@@ -17,7 +17,7 @@ namespace Installer
     internal sealed class SettingsForm : Form
     {
         private readonly MainForm owner;
-        private Segmented segAppearance, segLang, segName;
+        private Segmented segSkin, segLang, segName;
         private Toggle tglMotion;
         private ComboBox cboGame;
         private Label lblKeyState;
@@ -26,22 +26,23 @@ namespace Installer
         private CheckBox chkUpd;
         private UpdateInfo foundUpdate;       // 已经查到的新版本（null = 没有）
         private CheckBox chkSteam, chkGb;
+        private CheckBox chkAutoSync;
         private TextBox txtApiKey;
         private FlatButton btnGameBrowse, btnGameFind, btnSave;
         private FlatButton btnImport;
         private Label lblGameState, lblCfg, lblLog;
         private bool syncing = true;
 
-        internal bool WantReduceMotion { get { return tglMotion != null && tglMotion.Checked; } }
-        /// <summary>true = 用包内 addoninfo 的标题当显示名；false = 用 vpk 文件名。</summary>
-        internal bool WantNameByTitle { get { return segName != null && segName.SelectedIndex == 1; } }
-        /// <summary>自测用：模拟在设置窗口里点「外观」分段（走的是真实的点击 + SelectedIndexChanged 路径）。</summary>
+        /// <summary>自测用：模拟在设置窗口里点「外观」分段（走真实的点击 + SelectedIndexChanged 路径）。</summary>
         internal void PreviewAppearance(ThemeMode m)
         {
             syncing = false;
-            segAppearance.PickIndex((int)m);
+            segSkin.PickIndex((int)m);
         }
 
+        internal bool WantReduceMotion { get { return tglMotion != null && tglMotion.Checked; } }
+        /// <summary>true = 用包内 addoninfo 的标题当显示名；false = 用 vpk 文件名。</summary>
+        internal bool WantNameByTitle { get { return segName != null && segName.SelectedIndex == 1; } }
 
         /// <summary>输入框里的游戏根目录（已去空格和尾部反斜杠）。空串表示用户没填。</summary>
         internal string WantGameRoot
@@ -70,7 +71,8 @@ namespace Installer
             Font = Theme.UI;
             BackColor = Theme.Bg;
             ForeColor = Theme.Ink;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
+            // 自绘窗框（跟主窗口一套做法）：系统那条老式对话框标题栏去掉，右上角自己给一个关闭键。
+            FormBorderStyle = FormBorderStyle.None;
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
@@ -84,6 +86,23 @@ namespace Installer
             title.ForeColor = Theme.Ink;
             title.BackColor = Color.Transparent;
             Controls.Add(title);
+
+            // 无边框后要自己补三件事：关闭键、拖动、投影
+            CaptionButton capClose = new CaptionButton();
+            capClose.Button = CaptionButton.Kind.Close;
+            capClose.SetBounds(ClientSize.Width - 44, 0, 44, 30);
+            capClose.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+            Controls.Add(capClose);
+            capClose.BringToFront();
+            title.MouseDown += delegate(object s2, MouseEventArgs e2)
+            {
+                if (e2.Button == MouseButtons.Left) Native.DragMove(Handle);
+            };
+            MouseDown += delegate(object s2, MouseEventArgs e2)
+            {
+                if (e2.Button == MouseButtons.Left && e2.Y < Dpi.S(44)) Native.DragMove(Handle);
+            };
+            Shown += delegate { Native.AddShadow(Handle); };
 
             BuildGeneral();
             BuildGameDir();
@@ -170,38 +189,39 @@ namespace Installer
 
             s.Separate(64);
 
-            // 外观：纯粹的显示开关，没有「生效代价」，所以点了就立刻应用并落配置。
-            // 不跟着「保存设置」走 —— 用户点完看到颜色变了，关掉窗口却又变回去，会当成 bug。
+            // 外观＝三套深色底盘（石墨 / 蓝黑 / 暖黑）。点了立刻换、立刻落盘：
+            // 不跟「保存设置」走 —— 点完看到颜色变了、关掉又变回去，会当成 bug。
             RowTitle(s, Lang.S("外观"), 16, 72, 220);
-            RowNote(s, Lang.S("跟随系统 = 跟 Windows 走；选了立即生效"), 16, 92, 310);
+            // 宽度必须压在控件左边界（332）之内：Label 是「透明」背景，实际会把卡片底色重画一遍，
+            // 只要框够宽压到右边的分段控件，就会把那一段连同字一起盖掉（2026-11-27 用户实测到「石墨」被挡）。
+            RowNote(s, Lang.S("三套深色底盘，选了立即生效；浅色已移除"), 16, 92, 300);
 
-            segAppearance = new Segmented();
-            segAppearance.Items = new string[] { "跟随系统", "浅色", "深色" };
-            segAppearance.SetBounds(332, 76, 232, 32);
-            segAppearance.SelectedIndex = (int)Theme.Mode;
-            segAppearance.SelectedIndexChanged += delegate
+            segSkin = new Segmented();
+            segSkin.Items = new string[] { Lang.S("石墨"), Lang.S("蓝黑"), Lang.S("暖黑") };
+            segSkin.SetBounds(332, 76, 232, 32);
+            segSkin.SelectedIndex = (int)Theme.Mode;
+            segSkin.SelectedIndexChanged += delegate
             {
                 if (syncing) return;
-                Theme.SetMode((ThemeMode)segAppearance.SelectedIndex);
+                Theme.SetMode((ThemeMode)segSkin.SelectedIndex);
                 Theme.ApplyToOpenForms();
                 try
                 {
-                    // 模式键一定要落盘：从「跟随系统」切到「浅色」时配色可能一模一样，
-                    // 但配置里存的键不一样，下次启动的行为也会不一样。
                     Core.Cfg.Appearance = Theme.ModeKey;
                     Core.SaveConfig();
                     Core.Log("INFO", "设置：外观→" + Theme.ModeLabel);
                 }
                 catch { }
             };
-            s.Controls.Add(segAppearance);
+            s.Controls.Add(segSkin);
+            segSkin.BringToFront();   // 同一行里还有标题/说明两个 Label，控件必须压在它们上面
 
             s.Separate(116);
 
             // 语言：和外观一样「点了就生效」，但它必须重建界面（控件文案是构造时定下的），
             // 所以这里只落配置 + 打标记，由主窗口关掉自己、Program 那边重建一次。
             RowTitle(s, Lang.S("语言 / Language"), 16, 124, 240);
-            RowNote(s, Lang.S("切换后界面立即重建，其它设置不会丢"), 16, 144, 320);
+            RowNote(s, Lang.S("切换后界面立即重建，其它设置不会丢"), 16, 144, 300);
 
             segLang = new Segmented();
             segLang.Items = new string[] { "中文", "English" };
@@ -223,7 +243,7 @@ namespace Installer
             // MOD 名称：只影响显示和搜索，一个文件都不动。两种来源库里都现成：
             //   文件名 = vpk 原名；标题 = 包内 addoninfo 的 AddonTitle（工坊名那种）。
             RowTitle(s, Lang.S("MOD 名称"), 16, 176, 220);
-            RowNote(s, Lang.S("文件名 = vpk 原名；标题 = 包内 addoninfo 的名字"), 16, 196, 320);
+            RowNote(s, Lang.S("文件名 = vpk 原名；标题 = 包内 addoninfo 的名字"), 16, 196, 300);
 
             segName = new Segmented();
             segName.Items = new string[] { Lang.S("文件名"), Lang.S("标题") };
@@ -636,7 +656,7 @@ namespace Installer
             sb.AppendLine("游戏目录有效: " + Core.TestGame(WantGameRoot));
             sb.AppendLine("减少动效: " + (WantReduceMotion ? "开" : "关"));
             sb.AppendLine("MOD 名称: " + (WantNameByTitle ? "包内标题" : "文件名"));
-            sb.AppendLine("外观: " + Theme.ModeLabel + "（当前渲染: " + (Theme.IsDark ? "深色" : "浅色") + "）");
+            sb.AppendLine("外观: " + Theme.ModeLabel);
             sb.AppendLine("附加库目录: " + (Core.Cfg.ModDirs == null ? 0 : Core.Cfg.ModDirs.Count) + " 个");
             sb.AppendLine("配置路径: " + Core.CfgPath);
             sb.AppendLine("日志路径: " + Core.LogDir);
@@ -652,7 +672,7 @@ namespace Installer
         /// </summary>
         private void BuildUpdate()
         {
-            Card s = AddGroup(Lang.S("程序更新"), 806, 96);
+            Card s = AddGroup(Lang.S("程序更新"), 806, 124);
 
             lblUpd = new Label();
             lblUpd.SetBounds(16, 8, 548, 16);
@@ -676,6 +696,16 @@ namespace Installer
             chkUpd.Checked = Core.Cfg.UpdateCheck;
             chkUpd.CheckedChanged += delegate { Core.Cfg.UpdateCheck = chkUpd.Checked; Core.SaveConfig(); };
             s.Controls.Add(chkUpd);
+
+            // 启动时对齐：扫完库后按游戏 addons + addonlist.txt 回填勾选。
+            // 以前这个开关在已撤掉的左栏里，功能还在，入口挪到设置。
+            chkAutoSync = new CheckBox();
+            chkAutoSync.Text = Lang.S("启动时自动回填");
+            chkAutoSync.SetBounds(16, 66, 548, 22);
+            chkAutoSync.Font = Theme.UISmall;
+            chkAutoSync.Checked = Core.Cfg.AutoSync;
+            chkAutoSync.CheckedChanged += delegate { Core.Cfg.AutoSync = chkAutoSync.Checked; Core.SaveConfig(); };
+            s.Controls.Add(chkAutoSync);
 
             foundUpdate = owner == null ? null : owner.PendingUpdate;
             if (foundUpdate != null) ShowFound(foundUpdate);
@@ -806,9 +836,10 @@ namespace Installer
         internal int UiTestTheme()
         {
             int bad = 0;
+            // 三套底盘轮流切，每一步都要真的换过去
             ThemeMode[] seq = new ThemeMode[]
             {
-                ThemeMode.Light, ThemeMode.Dark, ThemeMode.System, ThemeMode.Dark, ThemeMode.Light
+                ThemeMode.Graphite, ThemeMode.Blue, ThemeMode.Warm
             };
             using (SettingsForm f = new SettingsForm(this))
             {
@@ -840,7 +871,8 @@ namespace Installer
                             DrawToBitmap(b, new Rectangle(0, 0, ms.Width, ms.Height));
                             b.Save(Path.Combine(Core.LogDir, tag + "_main.png"), System.Drawing.Imaging.ImageFormat.Png);
                         }
-                        Core.Log("INFO", "THEME " + i + " → " + Theme.ModeLabel + "（渲染 " + (Theme.IsDark ? "深色" : "浅色") + "）");
+                        if (Theme.Mode != seq[i]) { bad++; Core.Log("FAIL", "THEME " + i + " 请求 " + seq[i] + " 后底盘没换过去"); }
+                        Core.Log("INFO", "THEME " + i + " → " + Theme.ModeLabel);
                     }
                     catch (Exception ex)
                     {
@@ -941,13 +973,12 @@ namespace Installer
             }
         }
 
-        /// <summary>设置窗口改了游戏目录后，同步顶部输入框，别让界面还显示旧路径。</summary>
+        /// <summary>设置窗口改了游戏目录后，同步界面使用的目录，别让装机还按旧路径。</summary>
         private void SetGameRootText(string root)
         {
-            if (txtGame == null) return;
-            txtGame.Text = root;
-            txtGame.SelectionStart = txtGame.Text.Length;
-            txtGame.SelectionLength = 0;
+            gameRoot = root ?? "";
+            ProbeWritable(gameRoot);
+            QueuePrecheck();
             UpdateBrandLine();          // 顶栏那行「当前游戏目录」跟着换
         }
 
@@ -1036,7 +1067,7 @@ namespace Installer
             Font = Theme.UI;
             BackColor = Theme.Bg;
             ForeColor = Theme.Ink;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
+            Theme.BorderlessChrome(this);
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
@@ -1045,7 +1076,7 @@ namespace Installer
             KeyPreview = true;
 
             lblTitle = new Label();
-            lblTitle.SetBounds(Pad, 24, W - Pad * 2, 32);
+            lblTitle.SetBounds(Pad, 24, W - Pad * 2 - 44, 32);   // 右边让出关闭键的位置
             lblTitle.Font = Theme.H1;
             Theme.Dress(lblTitle);
             lblTitle.ForeColor = Theme.Ink;

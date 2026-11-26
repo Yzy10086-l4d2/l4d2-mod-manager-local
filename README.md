@@ -67,11 +67,11 @@ build.bat
 
 ```
 L4D2LocalSetup.exe --treeself --layoutself --recogself --addonself --dupself \
-                   --safeself --workshopself --launchself --gallerself --deskself --imgself
+                   --safeself --workshopself --launchself --gallerself --imgself
 ```
 
 加环境变量 `L4D2_LOG_CONSOLE=1` 可以把日志同时打到控制台，排查用。
-CI（`.github/workflows/build.yml`）在 push 到 main 时跑前 10 组，任一组非 0 直接 fail。
+CI（`.github/workflows/build.yml`）在 push 到 main 时跑前 9 组，任一组非 0 直接 fail。
 
 ## 已验证（2026-11-15，真实网络 + 真实游戏目录）
 
@@ -87,7 +87,7 @@ CI（`.github/workflows/build.yml`）在 push 到 main 时跑前 10 组，任一
 | 工坊详情 | 标题/大小/直链/正文清洗（1744 字 → 1280 字） |
 | 中文翻译 | MyMemory 分块翻，实测输出 471 字中文 |
 | 下载 + 自动改名 | 9,391,149 B 下载完整、VPK 魔数对、按 addoninfo 改名 |
-| 离线自检 | 11 组全绿（treeself / layoutself / recogself / addonself / dupself / safeself / workshopself / launchself / gallerself / deskself / imgself） |
+| 离线自检 | 10 组全绿（treeself / layoutself / recogself / addonself / dupself / safeself / workshopself / launchself / gallerself / imgself） |
 
 ## 已知限制
 

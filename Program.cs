@@ -72,9 +72,7 @@ namespace Installer
             bool mapSelf = false;
             bool scanRace = false;
             string uiSelect = null;
-            bool uiDrawer = false;
             bool uiDragPrev = false;
-            bool uiLogOpen = false;
             string uiDrag = null;
             string uiDragCat = null;
             string uiDragReal = null;
@@ -87,9 +85,6 @@ namespace Installer
             string wsNet = null;
             string wsSearch = null;
             bool uiGallery = false;
-            int deskServe = 0;
-            bool deskSelf = false;
-            bool deskLaunch = false;
             string uiFix = null;
             string uiParts = null;
             bool uiLaunch = false;
@@ -147,19 +142,15 @@ namespace Installer
                 else if (string.Equals(a, "--treeself", StringComparison.OrdinalIgnoreCase)) { mapSelf = true; uiTest = true; }
                 else if (string.Equals(a, "--scanrace", StringComparison.OrdinalIgnoreCase)) { scanRace = true; uiTest = true; }
                 else if (a.StartsWith("--uiselect=", StringComparison.OrdinalIgnoreCase)) uiSelect = a.Substring(11);
-                // 诊断截图：展开左栏抽屉（装什么 / 安装选项 / 日志），看台面视图的排版
-                else if (string.Equals(a, "--drawer", StringComparison.OrdinalIgnoreCase)) uiDrawer = true;
                 // 诊断截图：未归类页假装拖拽悬停，验证落点行填色与跟随标签
                 else if (string.Equals(a, "--dragpreview", StringComparison.OrdinalIgnoreCase)) uiDragPrev = true;
-                // 诊断截图：把左栏日志一并展开（默认是收起的）
-                else if (string.Equals(a, "--logopen", StringComparison.OrdinalIgnoreCase)) uiLogOpen = true;
                 else if (a.StartsWith("--uidrag=", StringComparison.OrdinalIgnoreCase)) uiDrag = a.Substring(9);
                 else if (a.StartsWith("--uidragcat=", StringComparison.OrdinalIgnoreCase)) uiDragCat = a.Substring(12);
                 else if (a.StartsWith("--uidragreal=", StringComparison.OrdinalIgnoreCase)) uiDragReal = a.Substring(13);
                 else if (a.StartsWith("--mousedrag=", StringComparison.OrdinalIgnoreCase)) mouseDrag = a.Substring(12);
                 else if (string.Equals(a, "--uisetcat", StringComparison.OrdinalIgnoreCase)) uiSetCat = true;
                 else if (string.Equals(a, "--uicatform", StringComparison.OrdinalIgnoreCase)) { uiCatForm = true; uiTest = true; }
-                else if (string.Equals(a, "--uiaddons", StringComparison.OrdinalIgnoreCase)) uiAddons = true;
+                else if (string.Equals(a, "--uiaddons", StringComparison.OrdinalIgnoreCase)) { uiAddons = true; uiTest = true; }
                 else if (string.Equals(a, "--uikeys", StringComparison.OrdinalIgnoreCase)) { uiKeys = true; uiTest = true; }
                 // 工坊自检：只测解析/文件名/JSON，不联网
                 else if (string.Equals(a, "--workshopself", StringComparison.OrdinalIgnoreCase)) wsSelf = true;
@@ -171,9 +162,6 @@ namespace Installer
                 else if (string.Equals(a, "--gallerself", StringComparison.OrdinalIgnoreCase)) { gallerySelf = true; uiTest = true; }
                 else if (a.StartsWith("--galdetail=", StringComparison.OrdinalIgnoreCase)) { galDetailId = a.Substring(12).Trim('"'); uiTest = true; }
                 else if (string.Equals(a, "--langself", StringComparison.OrdinalIgnoreCase)) { langSelf = true; uiTest = true; }
-                else if (a.StartsWith("--deskserve=", StringComparison.OrdinalIgnoreCase)) { int.TryParse(a.Substring(12), out deskServe); uiTest = true; }
-                else if (string.Equals(a, "--deskself", StringComparison.OrdinalIgnoreCase)) { deskSelf = true; uiTest = true; }
-                else if (string.Equals(a, "--desklaunch", StringComparison.OrdinalIgnoreCase)) { deskLaunch = true; uiTest = true; }
                 else if (a.StartsWith("--uifix=", StringComparison.OrdinalIgnoreCase)) uiFix = a.Substring(8).Trim('"');
                 else if (a.StartsWith("--parts=", StringComparison.OrdinalIgnoreCase)) uiParts = a.Substring(8);
                 else if (string.Equals(a, "--launch", StringComparison.OrdinalIgnoreCase)) uiLaunch = true;
@@ -363,6 +351,28 @@ namespace Installer
                     foreach (float k in scales) bad += lf.LayoutSelfTest(k, 1120, 740);
                     bad += lf.TriPaneSelfTest();          // 右半并排：树 / 候选 / 扩展 三栏
                     bad += lf.WorkshopSmoke();            // 工坊窗口：构造 + 填样例 + 换尺寸
+                    // 主窗口要真的显示过才算「可见」，否则子控件 Visible 全是 false，审计等于空跑
+                    lf.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                    lf.Location = new System.Drawing.Point(-4000, -4000);
+                    lf.Show();
+                    System.Windows.Forms.Application.DoEvents();
+                    bad += lf.AuditLayout(lf, "主窗口 1440x940");
+                    lf.ClientSize = new System.Drawing.Size(Dpi.S(1120), Dpi.S(740));
+                    System.Windows.Forms.Application.DoEvents();
+                    bad += lf.AuditLayout(lf, "主窗口 1120x740");
+                    lf.ClientSize = new System.Drawing.Size(Dpi.S(1440), Dpi.S(940));
+                    System.Windows.Forms.Application.DoEvents();
+                    lf.Hide();
+                    // 设置窗口是绝对坐标堆出来的：说明文字宽一点就可能压住右边的控件，肉眼很难发现。
+                    using (SettingsForm sf = new SettingsForm(lf))
+                    {
+                        sf.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                        sf.Location = new System.Drawing.Point(-4000, -4000);
+                        sf.Show();
+                        System.Windows.Forms.Application.DoEvents();
+                        bad += lf.AuditLayout(sf, "设置");
+                        sf.Close();
+                    }
                     Console.WriteLine("layoutself failures = " + bad);
                     return bad == 0 ? 0 : 1;
                 }
@@ -825,27 +835,6 @@ namespace Installer
                         Console.WriteLine("paintself failures = " + badp);
                         return badp == 0 ? 0 : 1;
                     }
-                    if (deskServe > 0)
-                    {
-                        // 只把桌面服务起起来，不弹浏览器：给无头截图用
-                        f.DeskServe(deskServe);
-                        return 0;
-                    }
-                    if (deskLaunch)
-                    {
-                        // 真开一次桌面窗口：起没起来、重复点、关掉退没退
-                        int badl = f.DeskLaunchTest();
-                        System.Windows.Forms.Application.DoEvents();
-                        return badl == 0 ? 0 : 1;
-                    }
-                    if (deskSelf)
-                    {
-                        // 台面回归：建卡 / 拖动落位 / 折叠 / 重启后还记得位置。结束时还原 台面布局.ini。
-                        int badd = f.DeskSelfTest();
-                        System.Windows.Forms.Application.DoEvents();
-                        Console.WriteLine("deskself failures = " + badd);
-                        return badd == 0 ? 0 : 1;
-                    }
                     if (uiKeys)
                     {
                         // 键盘路径回归：只按方向键 / Enter / 空格，不看鼠标。失败条数当退出码。
@@ -857,8 +846,6 @@ namespace Installer
                     if (uiParts != null) { f.UiTestParts(uiParts); System.Windows.Forms.Application.DoEvents(); }
                     if (uiLaunch) { f.UiTestLaunch(); System.Windows.Forms.Application.DoEvents(); }
                     if (uiDup) { f.UiTestDup(); System.Windows.Forms.Application.DoEvents(); }
-                    // --logopen 单独就能生效：截图要看「日志展开时左栏怎么排」，不该非得先进抽屉自检
-                    if (uiLogOpen && !uiDrawer) { f.SetLogOpen(true); System.Windows.Forms.Application.DoEvents(); }
                     if (mapShot) { f.OverviewShot(); System.Windows.Forms.Application.DoEvents(); return 0; }
                     if (loadShot) { f.LoadingShot(); System.Windows.Forms.Application.DoEvents(); return 0; }
                     if (downsShot) { f.DownsShot(); System.Windows.Forms.Application.DoEvents(); return 0; }
@@ -872,7 +859,6 @@ namespace Installer
                     }
                     if (uiTree) { f.UiTestTree(); System.Windows.Forms.Application.DoEvents(); }
                     if (uiSelect != null) { f.UiTestSelect(uiSelect); System.Windows.Forms.Application.DoEvents(); }
-                    if (uiDrawer) { f.UiTestDrawer(uiLogOpen); System.Windows.Forms.Application.DoEvents(); }
                     if (uiDragPrev) { f.UiTestDragHover(); System.Windows.Forms.Application.DoEvents(); }
                     if (uiDrag != null) { f.UiTestDrag(uiDrag); System.Windows.Forms.Application.DoEvents(); }
                     if (uiDragCat != null)
@@ -895,7 +881,13 @@ namespace Installer
                     }
                     if (uiSetCat) { f.UiTestSetCat(); System.Windows.Forms.Application.DoEvents(); }
                     if (uiCatForm) { f.UiTestCatForm(); System.Windows.Forms.Application.DoEvents(); }
-                    if (uiAddons) { f.UiTestAddonSwitch(); System.Windows.Forms.Application.DoEvents(); }
+                    if (uiAddons)
+                    {
+                        int badAddon = f.UiTestAddonSwitch();
+                        System.Windows.Forms.Application.DoEvents();
+                        Console.WriteLine("addonswitch failures = " + badAddon);
+                        return badAddon == 0 ? 0 : 1;
+                    }
                     if (uiFix != null) { f.UiFixProfile(uiFix); System.Windows.Forms.Application.DoEvents(); }
                             if (uiSettings) { f.UiTestSettings(); System.Windows.Forms.Application.DoEvents(); }
                     if (uiTheme)

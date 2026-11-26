@@ -1334,6 +1334,8 @@ namespace Installer
         private ListView lv;
         private Label lbl;
         private bool orderDirty;            // 用户在这个窗口里真的上移/下移过：只有这时才重排 addonlist
+        private bool dirty;
+        private bool loadingItems;
         private Dictionary<string, bool> state = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         public int Deleted;                 // 这个窗口里删掉（真删）的个数，关窗后主窗口据此决定要不要重扫
 
@@ -1350,6 +1352,20 @@ namespace Installer
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
             Theme.DressForm(this);
+            FormClosing += delegate(object s, FormClosingEventArgs e)
+            {
+                if (!dirty || e.CloseReason != CloseReason.UserClosing) return;
+                DialogResult answer = MessageBox.Show(this,
+                    "还有未写入 addonlist 的开关或顺序。\r\n\r\n是：写入并关闭\n否：放弃修改\n取消：继续编辑",
+                    "修改尚未写入", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button1);
+                if (answer == DialogResult.Cancel) { e.Cancel = true; return; }
+                if (answer == DialogResult.Yes)
+                {
+                    if (!ApplyQuiet()) { e.Cancel = true; return; }
+                    DialogResult = DialogResult.OK;
+                }
+                else DialogResult = DialogResult.Cancel;
+            };
 
             int cw = ClientSize.Width;
 
@@ -1361,6 +1377,7 @@ namespace Installer
             hint.AutoSize = false;
             hint.AutoEllipsis = true;
             hint.SetBounds(Theme.M - 2, Dpi.S(12), cw - 2 * Theme.M + 4, Dpi.S(18));
+            hint.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             Controls.Add(hint);
 
             state = AddonList.Read(gameRoot);
@@ -1380,6 +1397,7 @@ namespace Installer
             {
                 if (e.Item.SubItems.Count > 1)
                     e.Item.SubItems[1].Text = e.Item.Checked ? "启用" : "关闭";
+                if (!loadingItems) dirty = true;
             };
             // 窗口拉宽时名称列跟着长，别只在右边留空白
             lv.SizeChanged += delegate
@@ -1421,9 +1439,18 @@ namespace Installer
             dn.SetBounds(x + 96, ySort, 88, Theme.H); dn.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
             dn.Click += delegate { MoveItem(1); }; Controls.Add(dn);
             Label tip = new Label(); tip.Text = Lang.S("按住 Ctrl / Shift 可多选，右键可删除");
-            tip.Font = Theme.UISmall; tip.ForeColor = Theme.Ink3;
-            tip.SetBounds(x + 196, ySort + 7, 300, 20); tip.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            tip.Font = Theme.UISmall; tip.ForeColor = Theme.Ink3; tip.AutoEllipsis = true;
+            tip.SetBounds(x + 196, ySort + 7, 160, 20); tip.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
             Controls.Add(tip);
+            FlatButton park = new FlatButton(); park.Text = Lang.S("清理关着的"); park.Soft = true;
+            park.SetBounds(cw - Theme.M + 2 - 104, ySort, 104, Theme.H); park.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
+            park.Click += delegate { Park(); }; Controls.Add(park);
+            Resize += delegate
+            {
+                int tipLeft = x + 196;
+                int tipRight = park.Left - Dpi.S(8);
+                tip.Width = Math.Max(Dpi.S(60), tipRight - tipLeft);
+            };
 
             FlatButton all = new FlatButton(); all.Text = Lang.S("全开"); all.Soft = true;
             all.SetBounds(x, yAct, 80, Theme.H); all.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
@@ -1432,11 +1459,13 @@ namespace Installer
             none.SetBounds(x + 88, yAct, 80, Theme.H); none.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
             none.Click += delegate { SetAll(false); }; Controls.Add(none);
             FlatButton collect = new FlatButton(); collect.Text = Lang.S("收回新 MOD"); collect.Soft = true;
-            collect.SetBounds(x + 176, yAct, 108, Theme.H); collect.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            collect.SetBounds(x + 176, yAct, 96, Theme.H); collect.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
             collect.Click += delegate { Collect(); }; Controls.Add(collect);
-            FlatButton park = new FlatButton(); park.Text = Lang.S("清理关着的"); park.Soft = true;
-            park.SetBounds(x + 292, yAct, 104, Theme.H); park.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
-            park.Click += delegate { Park(); }; Controls.Add(park);
+            FlatButton cancel = new FlatButton(); cancel.Text = Lang.S("取消"); cancel.Soft = true;
+            cancel.SetBounds(x + 280, yAct, 72, Theme.H); cancel.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            cancel.DialogResult = DialogResult.Cancel;
+            cancel.Click += delegate { dirty = false; }; Controls.Add(cancel);
+            CancelButton = cancel;
             // 这两个都是「往 U 盘库搬东西」：本地模式没有库，搬过去只会进一个不参与扫描的目录，
             // 同时把游戏 addons 里那份删掉 —— MOD 于是在本地模式列表里凭空消失。按模式锁死。
             if (Core.IsLocal)
@@ -1451,6 +1480,7 @@ namespace Installer
             ok.SetBounds(cw - Theme.M + 2 - 128, yAct, 128, Theme.H);
             ok.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
             ok.Click += delegate { Apply(); }; Controls.Add(ok);
+            AcceptButton = ok;
             lbl = new Label(); lbl.Text = "";
             lbl.Font = Theme.UISmall; lbl.ForeColor = Theme.Ink3;
             lbl.SetBounds(x, ClientSize.Height - Dpi.S(24), cw - 2 * Theme.M, Dpi.S(18));
@@ -1497,6 +1527,7 @@ namespace Installer
                 MessageBoxDefaultButton.Button2) != DialogResult.OK) return;
             string addons = Path.Combine(Path.Combine(gameRoot, "left4dead2"), "addons");
             int n = 0;
+            List<string> failed = new List<string>();
             foreach (string name in names)
             {
                 try
@@ -1505,23 +1536,30 @@ namespace Installer
                     m.Name = name;
                     m.FullPath = Path.Combine(addons, name);
                     m.FromGame = true;
-                    if (Work.DeleteGameMod(m, gameRoot) == null) n++;
+                    string why = Work.DeleteGameMod(m, gameRoot);
+                    if (why == null) n++;
+                    else { failed.Add(name + "：" + why); Core.Log("WARN", "删除 " + name + " 失败: " + why); }
                 }
-                catch (Exception ex) { Core.Log("WARN", "删除 " + name + " 失败: " + ex.Message); }
+                catch (Exception ex) { failed.Add(name + "：" + ex.Message); Core.Log("WARN", "删除 " + name + " 失败: " + ex.Message); }
             }
             Deleted += n;
             Core.Log("OK", "已装 MOD 开关：从游戏 addons 删掉 " + n + " 个");
             state = AddonList.Read(gameRoot);
             LoadItems();
-            lbl.Text = "已删除 " + n + " 个";
+            lbl.Text = failed.Count == 0 ? "已删除 " + n + " 个" : "删了 " + n + " 个，" + failed.Count + " 个没删掉";
+            if (failed.Count > 0)
+                MessageBox.Show(this, "以下 " + failed.Count + " 个未删除：\r\n\r\n  · "
+                    + string.Join("\r\n  · ", failed.ToArray()), "删除未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         private void LoadItems()
         {
+            loadingItems = true;
+            dirty = false;
             lv.BeginUpdate();
             lv.Items.Clear();
             string addons = Path.Combine(Path.Combine(gameRoot, "left4dead2"), "addons");
-            if (!Directory.Exists(addons)) { lv.EndUpdate(); lbl.Text = Lang.S("游戏里没有 addons 目录"); return; }
+            if (!Directory.Exists(addons)) { lv.EndUpdate(); loadingItems = false; lbl.Text = Lang.S("游戏里没有 addons 目录"); return; }
             string[] files = Directory.GetFiles(addons, "*.vpk");
 
             // 行的顺序就是 addonlist 里的顺序（= 覆盖优先级）。以前这里是按文件名排序，
@@ -1556,6 +1594,7 @@ namespace Installer
                 lv.Items.Add(li);
             }
             lv.EndUpdate();
+            loadingItems = false;
             lbl.Text = "共 " + files.Length + " 个已装 MOD";
         }
 
@@ -1570,6 +1609,7 @@ namespace Installer
             lv.Items.Insert(j, it);
             it.Selected = true;
             orderDirty = true;
+            dirty = true;
             lv.Focus();
         }
 
@@ -1582,6 +1622,7 @@ namespace Installer
                 li.SubItems[1].Text = on ? "启用" : "关闭";
             }
             lv.EndUpdate();
+            dirty = true;
         }
 
         private void Collect()
@@ -1673,7 +1714,6 @@ namespace Installer
                     MessageBox.Show("开关没写进去（addonlist.txt 写不动，可能被占用或权限不足）。\r\n\r\n窗口不会关闭，避免看起来已经保存成功。", "没写进去");
                     return false;
                 }
-                orderDirty = false;
                 int on = 0;
                 foreach (KeyValuePair<string, bool> kv in changes) if (kv.Value) on++;
                 Core.Log("OK", "addonlist 已更新：" + on + " 个启用 / " + (changes.Count - on) + " 个关闭"
@@ -1702,6 +1742,7 @@ namespace Installer
                             : "可以试试以管理员身份运行，或先退出占用这个文件的程序。"),
                         "回读不一致", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
+                else { orderDirty = false; dirty = false; }
                 AddonList.ShowPluginNote();
                 return true;
             }

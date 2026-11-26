@@ -50,12 +50,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="*.cs" />
-    <EmbeddedResource Include="desk\index.html">
-      <LogicalName>desk.html</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="desk\three.min.js">
-      <LogicalName>three.js</LogicalName>
-    </EmbeddedResource>
     <None Include="app.ico" />
     <None Include="build.bat" />
     <None Include="README.md" />

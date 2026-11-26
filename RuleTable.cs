@@ -140,6 +140,14 @@ namespace Installer
             {"skybox",           "天空盒"},
         };
 
+        // 同一件霰弹枪的视角/世界模型成对出现时，世界模型不再另算一个主体。
+        // 不改变裸 world model 的既有映射，只消除包内成对证据造成的假「附带」。
+        internal static readonly string[,] OfficialModelPairs = new string[,]
+        {
+            {"v_pumpshotgun", "w_shotgun", "木喷"},
+            {"v_shotgun_chrome", "w_pumpshotgun_a", "铁喷"}
+        };
+
         // ============ 第 2 刀：规则行的显式匹配方式与优先级 ============
         // 以前「行顺序 = 优先级」只写在注释里，增删一行靠手动插队；现在每行都带显式的
         // MatchMode 与 Priority，Feature/Lookup 按 Priority 升序遍历。

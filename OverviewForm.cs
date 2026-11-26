@@ -22,7 +22,9 @@ namespace Installer
             BackColor = Theme.Bg;
             Font = Theme.UI;
             ShowInTaskbar = true;
+            KeyPreview = true;
             Theme.DressForm(this);
+            Icon = Theme.WindowIcon("grid");   // 任务栏单独一个图标（四宫格），跟工坊/下载区分开
 
             canvas = new OverviewCanvas(owner);
             canvas.Dock = DockStyle.Fill;
@@ -33,6 +35,22 @@ namespace Installer
         internal void RefreshPicks()
         {
             try { canvas.RefreshPicks(); } catch { }
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                Close();
+                e.Handled = true;
+                return;
+            }
+            base.OnKeyDown(e);
+        }
+
+        internal void TestEscape()
+        {
+            OnKeyDown(new KeyEventArgs(Keys.Escape));
         }
     }
 }

@@ -8,7 +8,8 @@ using System.Windows.Forms;
 
 namespace Installer
 {
-    internal enum ThemeMode { System = 0, Light = 1, Dark = 2 }
+    /// <summary>三套深色底盘。名字沿用 ThemeMode，语义是「底盘色调」，不是明暗。</summary>
+    internal enum ThemeMode { Graphite = 0, Blue = 1, Warm = 2 }
 
     /// <summary>
     /// 一套配色。浅色、深色各一份，字段同名，界面代码只认 Theme.Xxx，不关心当前是哪套。
@@ -17,7 +18,6 @@ namespace Installer
     /// </summary>
     internal sealed class Palette
     {
-        public bool IsDark;
         public Color Bg, Surface, SurfaceAlt, BtnHover, BtnDown;
         public Color Chip, ChipHover, ChipDown;
         public Color Line, LineSoft;
@@ -32,65 +32,31 @@ namespace Installer
 
         private static Color C(int r, int g, int b) { return Color.FromArgb(r, g, b); }
 
-        public static readonly Palette Light = new Palette
+        /// <summary>复制一份再改几个值：三套底盘共用同一批文字/主色/状态色，改一处三套都跟。
+        /// 用 MemberwiseClone 而不是手抄 40 行，免得以后加字段时三份漏改。</summary>
+        public Palette With(Action<Palette> f)
         {
-            IsDark = false,
-            Bg = C(238, 240, 244),
-            Surface = C(255, 255, 255),
-            SurfaceAlt = C(246, 248, 250),
-            BtnHover = C(245, 247, 249),
-            BtnDown = C(236, 239, 243),
-            Chip = C(239, 242, 245),
-            ChipHover = C(232, 236, 241),
-            ChipDown = C(224, 229, 235),
-            Line = C(226, 231, 237),
-            LineSoft = C(238, 241, 244),
-            Ink = C(19, 23, 28),
-            Ink2 = C(79, 89, 102),
-            Ink3 = C(111, 122, 135),
-            // 主按钮＝品牌红（白字 5.4:1）。以前是近黑实心，和「设置」「刷新」这类次要按钮
-            // 只差一个深浅，主操作淹没在顶栏里（2026-11-24 设计稿 v1 定的方向）。
-            Primary = C(200, 64, 42),
-            PrimaryHover = C(216, 69, 47),
-            PrimaryDown = C(150, 48, 32),
-            PrimaryInk = C(255, 255, 255),
-            Mark = C(28, 32, 36),
-            Accent = C(179, 38, 30),
-            AccentHover = C(156, 31, 25),
-            AccentDown = C(135, 26, 21),
-            DangerHover = C(255, 244, 243),
-            DangerDown = C(250, 235, 234),
-            Warn = C(168, 111, 20),          // 对 RowOff 底色 5.1:1（原来 169,97,0 只有 4.44，差一点）
-            Ok = C(31, 157, 99),
-            Info = C(42, 111, 214),         // 对 RowGame 底色 5.2:1（原来 2,119,189 只有 4.41）
-            RowOn = C(238, 247, 238),
-            RowOff = C(253, 246, 231),
-            RowGame = C(240, 246, 252),
-            CardEdge = C(226, 231, 237),
-            SegTrack = C(239, 242, 245),
-            SegEdge = C(207, 214, 222),
-            TrackOff = C(233, 233, 235),
-            TrackEdge = C(140, 145, 152),   // 对白卡 3.17:1：开关「关」态的边界要够 3:1（WCAG 1.4.11）
-            ThumbOn = C(255, 255, 255),
-            TreeBg = C(247, 249, 251),
-            TreeSel = C(250, 240, 237),
-            TreeHover = C(242, 245, 248),
-            TreeBranch = C(198, 206, 215),
-        };
+            Palette c = (Palette)MemberwiseClone();
+            f(c);
+            return c;
+        }
 
-        public static readonly Palette Dark = new Palette
+        // 2026-11-27：浅色那一套整块删掉。它在真实窗口里怎么调都不成立（总览的暖白字、白底上
+        // 三层结构糊成一片），留半套代码只会让人以为还支持浅色。深色是唯一一套；
+        // 老的 light / system 配置在 Theme.Parse 里被钳成深色，不做迁移。
+
+        public static readonly Palette Graphite = new Palette
         {
-            IsDark = true,
-            Bg = C(14, 16, 19),          // 再压暗一档：卡片和画布的亮度差拉开了，才有"浮起来"的层级
-            Surface = C(21, 24, 28),
-            SurfaceAlt = C(27, 31, 36),
-            BtnHover = C(36, 41, 47),
-            BtnDown = C(44, 50, 57),
-            Chip = C(32, 37, 43),
-            ChipHover = C(41, 46, 53),
-            ChipDown = C(50, 56, 64),
-            Line = C(38, 43, 49),
-            LineSoft = C(27, 31, 36),
+            Bg = C(18, 18, 18),          // 再压暗一档：卡片和画布的亮度差拉开了，才有"浮起来"的层级
+            Surface = C(26, 26, 26),
+            SurfaceAlt = C(32, 32, 32),
+            BtnHover = C(40, 40, 40),
+            BtnDown = C(48, 48, 48),
+            Chip = C(36, 36, 36),
+            ChipHover = C(45, 45, 45),
+            ChipDown = C(54, 54, 54),
+            Line = C(42, 42, 42),
+            LineSoft = C(32, 32, 32),
             Ink = C(233, 236, 239),
             Ink2 = C(167, 176, 186),
             Ink3 = C(139, 149, 162),      // 对卡片 5.97:1；对选中行底(TreeSel) 4.61:1、对胶囊 5.04:1
@@ -112,18 +78,60 @@ namespace Installer
             RowOn = C(27, 42, 31),
             RowOff = C(44, 39, 24),
             RowGame = C(27, 38, 50),
-            CardEdge = C(38, 43, 49),
-            SegTrack = C(32, 37, 43),
-            SegEdge = C(51, 58, 66),
-            TrackOff = C(51, 56, 64),
+            CardEdge = C(42, 42, 42),
+            SegTrack = C(36, 36, 36),
+            SegEdge = C(56, 56, 56),
+            TrackOff = C(55, 55, 55),
             TrackEdge = C(110, 116, 124),   // 对卡片 3.42:1：轨道本身太暗，靠这一圈 1px 边交代「这是个可点的开关」
             ThumbOn = C(22, 25, 29),
         
-            TreeBg = C(18, 20, 24),
+            TreeBg = C(22, 22, 22),
             TreeSel = C(45, 30, 31),
-            TreeHover = C(30, 33, 38),
+            TreeHover = C(34, 34, 34),
             TreeBranch = C(72, 78, 88),
         };
+
+        /// <summary>蓝黑：偏藏青的底盘，其余色沿用石墨。</summary>
+        public static readonly Palette Blue = Graphite.With(delegate(Palette p)
+        {
+            p.Bg = C(11, 16, 23);
+            p.Surface = C(18, 24, 34);
+            p.SurfaceAlt = C(24, 31, 42);
+            p.BtnHover = C(33, 42, 55);
+            p.BtnDown = C(41, 51, 66);
+            p.Chip = C(29, 37, 50);
+            p.ChipHover = C(38, 47, 62);
+            p.ChipDown = C(47, 57, 74);
+            p.Line = C(35, 45, 60);
+            p.LineSoft = C(24, 31, 42);
+            p.CardEdge = C(35, 45, 60);
+            p.SegTrack = C(29, 37, 50);
+            p.SegEdge = C(48, 59, 76);
+            p.TrackOff = C(48, 57, 70);
+            p.TreeBg = C(15, 21, 30);
+            p.TreeHover = C(27, 35, 47);
+        });
+
+        /// <summary>暖黑：偏棕的底盘，其余色沿用石墨。</summary>
+        public static readonly Palette Warm = Graphite.With(delegate(Palette p)
+        {
+            p.Bg = C(18, 15, 12);
+            p.Surface = C(26, 22, 18);
+            p.SurfaceAlt = C(33, 28, 23);
+            p.BtnHover = C(42, 36, 30);
+            p.BtnDown = C(51, 44, 37);
+            p.Chip = C(38, 33, 27);
+            p.ChipHover = C(47, 41, 34);
+            p.ChipDown = C(57, 50, 42);
+            p.Line = C(44, 38, 32);
+            p.LineSoft = C(33, 28, 23);
+            p.CardEdge = C(44, 38, 32);
+            p.SegTrack = C(38, 33, 27);
+            p.SegEdge = C(58, 51, 43);
+            p.TrackOff = C(57, 50, 43);
+            p.TreeBg = C(22, 19, 15);
+            p.TreeHover = C(35, 30, 25);
+        });
     }
 
     /// <summary>
@@ -133,9 +141,9 @@ namespace Installer
     internal static class Theme
     {
         // ---- 调色板：浅 / 深两套。字段名一个不改，界面代码照旧写 Theme.Bg ----
-        private static Palette pal = Palette.Light;
-        private static Palette prevPal = Palette.Light;
-        private static ThemeMode mode = ThemeMode.System;
+        private static Palette pal = Palette.Graphite;
+        private static Palette prevPal = Palette.Graphite;
+        private static ThemeMode mode = ThemeMode.Graphite;
         private static Color[] mapFrom = new Color[0];
         private static Color[] mapTo = new Color[0];
         private static int version = 1;
@@ -151,16 +159,24 @@ namespace Installer
         /// </summary>
         public static Color SkeletonFill
         {
-            get { return pal.IsDark ? Color.FromArgb(46, 50, 58) : Color.FromArgb(232, 236, 242); }
+            get { return Lift(pal.SurfaceAlt, 18); }   // 跟着底盘走：蓝黑/暖黑那两套不会再闪一下冷灰
         }
 
         public static Color SkeletonBar
         {
-            get { return pal.IsDark ? Color.FromArgb(62, 67, 77) : Color.FromArgb(213, 220, 229); }
+            get { return Lift(pal.SurfaceAlt, 34); }
+        }
+
+        private static Color Lift(Color c, int d)
+        {
+            return Color.FromArgb(Math.Min(255, c.R + d), Math.Min(255, c.G + d), Math.Min(255, c.B + d));
         }
         public static Color BtnHover { get { return pal.BtnHover; } }
         public static Color BtnDown { get { return pal.BtnDown; } }
         // 浅灰胶囊按钮（iOS 的 gray tinted 次要操作）
+        /// <summary>分段控件里被选中那一段的底色。必须比轨道亮一档 —— 用 Surface 的话它和卡片同色，
+        /// 看起来就像轨道被挖掉一块、选中项掉到控件外面去了。</summary>
+        public static Color SegThumb { get { return Lift(pal.SegTrack, 14); } }
         public static Color Chip { get { return pal.Chip; } }
         public static Color ChipHover { get { return pal.ChipHover; } }
         public static Color ChipDown { get { return pal.ChipDown; } }
@@ -203,7 +219,6 @@ namespace Installer
         public static Color RowOff { get { return pal.RowOff; } }    // 已装·关
         public static Color RowGame { get { return pal.RowGame; } }  // 游戏里本来就有
 
-        public static bool IsDark { get { return pal.IsDark; } }
         public static ThemeMode Mode { get { return mode; } }
 
         /// <summary>
@@ -218,47 +233,33 @@ namespace Installer
             mode = Parse(Core.Cfg == null ? "" : Core.Cfg.Appearance);
             pal = Resolve(mode);
             prevPal = pal;
-            Native.SetAppMode(pal.IsDark);
+            Native.SetAppMode(true);
         }
 
+        /// <summary>三条键：graphite / blue / warm。老配置里的 light、system、dark 都落到默认那套，
+        /// 不迁移、不报错。</summary>
         public static ThemeMode Parse(string s)
         {
-            if (string.Equals(s, "dark", StringComparison.OrdinalIgnoreCase)) return ThemeMode.Dark;
-            if (string.Equals(s, "light", StringComparison.OrdinalIgnoreCase)) return ThemeMode.Light;
-            return ThemeMode.System;
+            if (string.Equals(s, "blue", StringComparison.OrdinalIgnoreCase)) return ThemeMode.Blue;
+            if (string.Equals(s, "warm", StringComparison.OrdinalIgnoreCase)) return ThemeMode.Warm;
+            return ThemeMode.Graphite;
         }
 
         public static string ModeKey
         {
-            get { return mode == ThemeMode.Dark ? "dark" : (mode == ThemeMode.Light ? "light" : "system"); }
+            get { return mode == ThemeMode.Blue ? "blue" : (mode == ThemeMode.Warm ? "warm" : "graphite"); }
         }
 
         public static string ModeLabel
         {
-            get { return mode == ThemeMode.Dark ? "深色" : (mode == ThemeMode.Light ? "浅色" : "跟随系统"); }
+            get { return mode == ThemeMode.Blue ? "蓝黑" : (mode == ThemeMode.Warm ? "暖黑" : "石墨"); }
         }
 
         private static Palette Resolve(ThemeMode m)
         {
-            if (m == ThemeMode.Dark) return Palette.Dark;
-            if (m == ThemeMode.Light) return Palette.Light;
-            return SystemPrefersDark() ? Palette.Dark : Palette.Light;
-        }
-
-        /// <summary>系统「应用模式」是深色吗。读不到就当浅色，不让主题拖垮启动。</summary>
-        public static bool SystemPrefersDark()
-        {
-            try
-            {
-                using (Microsoft.Win32.RegistryKey k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
-                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
-                {
-                    object v = k == null ? null : k.GetValue("AppsUseLightTheme");
-                    if (v is int) return (int)v == 0;
-                }
-            }
-            catch { }
-            return false;
+            if (m == ThemeMode.Blue) return Palette.Blue;
+            if (m == ThemeMode.Warm) return Palette.Warm;
+            return Palette.Graphite;
         }
 
         /// <summary>只切调色板并记下旧的一套（给 Remap 用）。写配置由调用方负责。</summary>
@@ -272,8 +273,8 @@ namespace Installer
             pal = next;
             version++;
             BuildMap();
-            Native.SetAppMode(pal.IsDark);
-            try { Core.Log("INFO", "THEME 切到 " + ModeLabel + "（" + (pal.IsDark ? "深色" : "浅色") + "）"); } catch { }
+            Native.SetAppMode(true);
+            try { Core.Log("INFO", "THEME 切到 " + ModeLabel); } catch { }
             return old != m;
         }
 
@@ -325,15 +326,11 @@ namespace Installer
             add(prevPal.TrackEdge, pal.TrackEdge);
             add(prevPal.ThumbOn, pal.ThumbOn);
             // 切回浅色时，「白」不能变成别的颜色。
-            // 深色那套里 PrimaryHover 是纯白，于是映射表里会有一条「白 → 浅色主按钮悬停色」；
-            // 界面里凡是没被换过色的控件（原生列表、只读日志框）底色本来就是白，
-            // 走一遍映射就被改成深灰 (48,54,61)，浅色主题下变成一块块黑底 —— 这就是「切主题后一片黑」的来源。
             mapFrom = new Color[n];
             mapTo = new Color[n];
             int k = 0;
             for (int i = 0; i < n; i++)
             {
-                if (!pal.IsDark && a[i].ToArgb() == Color.White.ToArgb() && b[i].ToArgb() != Color.White.ToArgb()) continue;
                 mapFrom[k] = a[i];
                 mapTo[k] = b[i];
                 k++;
@@ -394,7 +391,7 @@ namespace Installer
         {
             FormCollection fs = Application.OpenForms;
             for (int i = 0; i < fs.Count; i++) ApplyTo(fs[i]);
-            Native.SetAppMode(pal.IsDark);      // 进程级深浅先定下来，下面的主题句柄才跟着走
+            Native.SetAppMode(true);      // 进程级深浅先定下来，下面的主题句柄才跟着走
             for (int i = 0; i < fs.Count; i++) { ApplyChrome(fs[i]); DeepNative(fs[i]); }
             // 主题句柄刚换过，原生控件不会自己知道要重刷，整窗强推一次
             for (int i = 0; i < fs.Count; i++)
@@ -420,11 +417,154 @@ namespace Installer
             f.AutoScaleMode = AutoScaleMode.Dpi;
         }
 
+        /// <summary>
+        /// 把独立窗口换成主窗口那套自绘窗框：去掉系统标题栏，右上角一个关闭键，
+        /// 窗口顶部 44px 可拖动，Shown 时补 DWM 投影（无边框窗口默认没有阴影）。
+        /// 只用于固定尺寸的对话框；可缩放窗口还要自己处理四条边，别直接套。
+        /// </summary>
+        public static void BorderlessChrome(Form f)
+        {
+            if (f == null) return;
+            f.FormBorderStyle = FormBorderStyle.None;
+            CaptionButton close = new CaptionButton();
+            close.Button = CaptionButton.Kind.Close;
+            close.SetBounds(f.ClientSize.Width - 44, 0, 44, 30);
+            close.Click += delegate { f.Close(); };
+            f.Controls.Add(close);
+            f.Resize += delegate { close.Left = f.ClientSize.Width - 44; };   // 可缩放窗口跟着右边缘走
+            f.MouseDown += delegate(object s, MouseEventArgs e)
+            {
+                if (e.Button == MouseButtons.Left && e.Y < Dpi.S(44)) Native.DragMove(f.Handle);
+            };
+            f.Shown += delegate
+            {
+                close.BringToFront();
+                Native.AddShadow(f.Handle);
+            };
+        }
+
+        /// <summary>同上，但窗口自带一条 34px 标题条（标题文字 + 底部 1px 线）。内容要自己整体下移 34px。</summary>
+        public static void BorderlessChrome(Form f, bool withTitle, bool withMax = false)
+        {
+            BorderlessChrome(f);
+            if (withMax)
+            {
+                CaptionButton max = new CaptionButton();
+                max.Button = CaptionButton.Kind.Max;
+                max.SetBounds(f.ClientSize.Width - 88, 0, 44, 30);
+                max.Click += delegate
+                {
+                    f.WindowState = f.WindowState == FormWindowState.Maximized
+                        ? FormWindowState.Normal : FormWindowState.Maximized;
+                };
+                f.Controls.Add(max);
+                max.BringToFront();
+                f.Resize += delegate { max.Left = f.ClientSize.Width - 88; };
+            }
+            if (!withTitle) return;
+            Label t = new Label();
+            t.Text = f.Text;
+            t.Font = Theme.UI;
+            t.ForeColor = Theme.Ink;
+            t.BackColor = Color.Transparent;
+            t.TextAlign = ContentAlignment.MiddleLeft;
+            t.SetBounds(Dpi.S(16), 0, Math.Max(120, f.ClientSize.Width - Dpi.S(200)), Dpi.S(33));
+            t.MouseDown += delegate(object s, MouseEventArgs e)
+            {
+                if (e.Button == MouseButtons.Left) Native.DragMove(f.Handle);
+            };
+            f.Controls.Add(t);
+            Panel line = new Panel();
+            line.BackColor = Theme.Line;
+            line.SetBounds(0, Dpi.S(33), f.ClientSize.Width, 1);
+            f.Controls.Add(line);
+            f.Resize += delegate
+            {
+                t.Width = Math.Max(120, f.ClientSize.Width - Dpi.S(200));
+                line.Width = f.ClientSize.Width;
+            };
+        }
+
+        /// <summary>
+        /// 独立窗口的任务栏图标：红底圆角方块 + 白色符号，跟主界面徽标一路。
+        /// 32×32 画，Windows 缩到 16 也认得出；不新增 .ico 文件，改符号只改这里。
+        /// </summary>
+        public static Icon WindowIcon(string kind)
+        {
+            using (Bitmap b = new Bitmap(32, 32))
+            {
+                using (Graphics g = Graphics.FromImage(b))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    g.Clear(Color.Transparent);
+                    using (GraphicsPath p = Round(new Rectangle(1, 1, 30, 30), 8))
+                    using (SolidBrush bg = new SolidBrush(Primary)) g.FillPath(bg, p);
+                    using (Pen pen = new Pen(Color.White, 2.6f))
+                    {
+                        pen.StartCap = LineCap.Round;
+                        pen.EndCap = LineCap.Round;
+                        if (kind == "down")
+                        {
+                            g.DrawLine(pen, 16, 8, 16, 20);       // 向下箭头
+                            g.DrawLine(pen, 10, 14, 16, 21);
+                            g.DrawLine(pen, 22, 14, 16, 21);
+                            g.DrawLine(pen, 9, 25, 23, 25);       // 托盘
+                        }
+                        else if (kind == "grid")
+                        {
+                            using (Pen gp = new Pen(Color.White, 2.0f))   // 四宫格：方案总览
+                            {
+                                gp.LineJoin = LineJoin.Round;
+                                g.DrawRectangle(gp, 8, 8, 6.6f, 6.6f);
+                                g.DrawRectangle(gp, 17.4f, 8, 6.6f, 6.6f);
+                                g.DrawRectangle(gp, 8, 17.4f, 6.6f, 6.6f);
+                                g.DrawRectangle(gp, 17.4f, 17.4f, 6.6f, 6.6f);
+                            }
+                        }
+                        else
+                        {
+                            g.DrawEllipse(pen, 8, 8, 12, 12);     // 放大镜
+                            g.DrawLine(pen, 19, 19, 24, 24);
+                        }
+                    }
+                }
+                IntPtr h = b.GetHicon();
+                try
+                {
+                    using (Icon tmp = Icon.FromHandle(h)) return (Icon)tmp.Clone();
+                }
+                finally { DestroyIcon(h); }
+            }
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyIcon(IntPtr h);
+
+        /// <summary>无边框窗口的四边拉伸：在 WndProc 里调，返回 true 表示已处理。</summary>
+        public static bool ResizeHit(Form f, ref Message m)
+        {
+            if (m.Msg != 0x0084 || f.WindowState != FormWindowState.Normal) return false;
+            int sx = unchecked((short)(long)m.LParam);
+            int sy = unchecked((short)((long)m.LParam >> 16));
+            Point p = f.PointToClient(new Point(sx, sy));
+            int b = Dpi.S(6);
+            bool l = p.X <= b, r = p.X >= f.ClientSize.Width - b;
+            bool t = p.Y <= b, bo = p.Y >= f.ClientSize.Height - b;
+            int hit = 0;
+            if (t && l) hit = 13; else if (t && r) hit = 14;
+            else if (bo && l) hit = 16; else if (bo && r) hit = 17;
+            else if (l) hit = 10; else if (r) hit = 11;
+            else if (t) hit = 12; else if (bo) hit = 15;
+            if (hit == 0) return false;
+            m.Result = (IntPtr)hit;
+            return true;
+        }
+
         /// <summary>标题栏跟主题走 + Win11 圆角。Win10 上这两个属性会静默失败，不影响功能。</summary>
         public static void ApplyChrome(Form f)
         {
             if (f == null || f.IsDisposed || !f.IsHandleCreated) return;
-            Native.DarkTitleBar(f.Handle, pal.IsDark);
+            Native.DarkTitleBar(f.Handle, true);
             Native.RoundCorners(f.Handle);
         }
 
@@ -558,7 +698,7 @@ namespace Installer
             if (root is ComboBox) AttachComboArrow((ComboBox)root);
             if (root.IsHandleCreated && root is ComboBox)
             {
-                Native.DarkCombo(root.Handle, pal.IsDark);
+                Native.DarkCombo(root.Handle, true);
                 Native.RepaintFrame(root.Handle);
             }
             else if (root.IsHandleCreated && root is ListView)
@@ -567,24 +707,24 @@ namespace Installer
                 ListView lvv = (ListView)root;
                 if (lvv.BackColor == SystemColors.Window) lvv.BackColor = Surface;
                 if (lvv.ForeColor == SystemColors.WindowText) lvv.ForeColor = Ink;
-                Native.DarkList(root.Handle, pal.IsDark);      // 不用 Explorer：它会给列画竖线
+                Native.DarkList(root.Handle, true);      // 不用 Explorer：它会给列画竖线
             }
             else if (root.IsHandleCreated
                 && (root is TextBox || root is RichTextBox
                     || root is TreeView || root is ProgressBar || root is NumericUpDown))
             {
-                Native.DarkControl(root.Handle, pal.IsDark);
+                Native.DarkControl(root.Handle, true);
                 if (root is TextBox)
                 {
                     SetEdge(root, InputEdgeIdle);            // 换主题后边线跟着换色
-                    Native.DarkScroll(root.Handle, pal.IsDark);   // 多行正文框的竖滚动条
+                    Native.DarkScroll(root.Handle, true);   // 多行正文框的竖滚动条
                 }
                 if (root is RichTextBox)
                 {
                     // 详情正文那个框：底白 + 亮滚动条，在深色页面上像贴了张纸
                     if (root.BackColor == SystemColors.Window) root.BackColor = Surface;
                     if (root.ForeColor == SystemColors.WindowText) root.ForeColor = Ink;
-                    Native.DarkScroll(root.Handle, pal.IsDark);
+                    Native.DarkScroll(root.Handle, true);
                 }
             }
             else if (root.IsHandleCreated && root is ListBox)
@@ -592,18 +732,18 @@ namespace Installer
                 // ListBox 自己不带主题：不给底色就永远是系统白，深色窗口里像贴了张纸。
                 if (root.BackColor.A == 255) root.BackColor = Surface;
                 if (root.ForeColor.A == 255) root.ForeColor = Ink;
-                Native.DarkControl(root.Handle, pal.IsDark);
-                Native.DarkScroll(root.Handle, pal.IsDark);         // 竖滚动条
+                Native.DarkControl(root.Handle, true);
+                Native.DarkScroll(root.Handle, true);         // 竖滚动条
             }
             // 滚动面板的滚动条是系统画的，要单独打招呼；列表的表头同理
             if (root.IsHandleCreated && root is ScrollableControl && !(root is TextBox))
             {
-                Native.DarkControl(root.Handle, pal.IsDark);
+                Native.DarkControl(root.Handle, true);
                 // 面板的滚动条属于「非客户区」，由 DWM 画，光换主题不管用，还得打上深色暗标记
-                Native.DarkTitleBar(root.Handle, pal.IsDark);
+                Native.DarkTitleBar(root.Handle, true);
             }
             if (root.IsHandleCreated && root is ListView)
-                Native.DarkHeader(root.Handle, pal.IsDark);
+                Native.DarkHeader(root.Handle, true);
             for (int i = 0; i < root.Controls.Count; i++) DeepNative(root.Controls[i]);
         }
 
@@ -634,25 +774,25 @@ namespace Installer
         /// <summary>卡片顶部的 1px 高光：深色下让卡片"有厚度"，浅色下几乎看不见（白卡不需要高光）。</summary>
         public static Color SurfaceHi
         {
-            get { return pal.IsDark ? Color.FromArgb(16, 255, 255, 255) : Color.FromArgb(0, 255, 255, 255); }
+            get { return Color.FromArgb(16, 255, 255, 255); }
         }
 
         /// <summary>卡片投影：浅色下才用（深色的层级靠亮度差，投影会被背景吃掉，反而显脏）。</summary>
         public static Color CardShadow
         {
-            get { return pal.IsDark ? Color.FromArgb(0, 0, 0, 0) : Color.FromArgb(14, 0, 0, 0); }
+            get { return Color.FromArgb(0, 0, 0, 0); }
         }
 
         /// <summary>顶栏底色：比画布略深/略亮一档，让"标题栏"和内容区分开，不再靠一条线硬切。</summary>
         public static Color TopBar
         {
-            get { return pal.IsDark ? Color.FromArgb(21, 24, 28) : Color.FromArgb(255, 255, 255); }
+            get { return Color.FromArgb(21, 24, 28); }
         }
 
         /// <summary>底栏（开始安装那一排）底色，和顶栏成对。</summary>
         public static Color BottomBar
         {
-            get { return pal.IsDark ? Color.FromArgb(19, 22, 26) : Color.FromArgb(252, 252, 253); }
+            get { return Color.FromArgb(19, 22, 26); }
         }
         public static Color SegTrack { get { return pal.SegTrack; } }   // 分段控件底
         public static Color SegEdge { get { return pal.SegEdge; } }
@@ -703,13 +843,13 @@ namespace Installer
         /// </summary>
         public static Color InputEdge
         {
-            get { return pal.IsDark ? Color.FromArgb(96, 103, 113) : Color.FromArgb(168, 175, 184); }
+            get { return Lift(pal.Line, 60); }
         }
 
         /// <summary>输入框常态边线：深色下是结构线，浅色下要比结构线深一点，不然白底上等于没有边。</summary>
         public static Color InputEdgeIdle
         {
-            get { return pal.IsDark ? Color.FromArgb(51, 56, 64) : Color.FromArgb(202, 207, 214); }
+            get { return Color.FromArgb(51, 56, 64); }
         }
 
         /// <summary>
@@ -1378,19 +1518,28 @@ namespace Installer
             {
                 using (GraphicsPath sp = Theme.Round(new Rectangle(thumb.X, thumb.Y + 1, thumb.Width, thumb.Height), Math.Max(2, rr - 2)))
                 {
-                    using (SolidBrush shade = new SolidBrush(Color.FromArgb(Theme.IsDark ? 90 : 20, 0, 0, 0))) g.FillPath(shade, sp);
+                    using (SolidBrush shade = new SolidBrush(Color.FromArgb(90, 0, 0, 0))) g.FillPath(shade, sp);
                 }
-                using (SolidBrush b2 = new SolidBrush(Theme.Surface)) g.FillPath(b2, p);
+                using (SolidBrush b2 = new SolidBrush(Theme.SegThumb)) g.FillPath(b2, p);
                 using (Pen pen = new Pen(Theme.SegEdge)) g.DrawPath(pen, p);
             }
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
             for (int i = 0; i < items.Length; i++)
             {
                 Rectangle cell = new Rectangle(2 + i * segW, 0, segW, Height);
                 Font f = i == index ? Theme.UIBold : Theme.UI;
                 Color ink = !Enabled ? Theme.Ink3 : (i == index ? Theme.Ink : Theme.Ink2);
-                TextRenderer.DrawText(g, items[i], f, cell, ink,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
-                    | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+                // 文字按整格居中画（留出内边距），不再依赖 TextRenderer 的 NoPadding + VerticalCenter：
+                // 2026-11-27 收到过「标签被裁掉半截」的截图，那种写法一旦行高超出格高就会把字切掉。
+                using (StringFormat sf = new StringFormat())
+                {
+                    sf.Alignment = StringAlignment.Center;
+                    sf.LineAlignment = StringAlignment.Center;
+                    sf.FormatFlags = StringFormatFlags.NoWrap;
+                    sf.Trimming = StringTrimming.EllipsisCharacter;
+                    using (SolidBrush b = new SolidBrush(ink))
+                        g.DrawString(items[i], f, b, new RectangleF(cell.X, cell.Y, cell.Width, cell.Height), sf);
+                }
             }
             if (Focused && ShowFocusCues)
                 ControlPaint.DrawFocusRectangle(g, new Rectangle(3, 3, Width - 8, Height - 8), Theme.Ink, Theme.SegTrack);
@@ -1483,7 +1632,7 @@ namespace Installer
 
             int d = Height - 6;
             int x = 2 + (int)Math.Round(pos * (Width - d - 4));
-            using (SolidBrush sh = new SolidBrush(Color.FromArgb(Theme.IsDark ? 90 : 32, 0, 0, 0)))
+            using (SolidBrush sh = new SolidBrush(Color.FromArgb(90, 0, 0, 0)))
                 g.FillEllipse(sh, x, 4, d, d);
             using (SolidBrush b = new SolidBrush(Enabled ? Theme.ThumbOn : Theme.SurfaceAlt))
                 g.FillEllipse(b, x, 3, d, d);

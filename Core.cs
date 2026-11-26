@@ -75,7 +75,7 @@ namespace Installer
         public bool EffectsOnlyVeto = false; // C1.6 类型否决：默认关；开启后只否决"纯特效包"的主体误判
         public bool DpiAware = true;        // true = 自己按 DPI 缩放界面（高 DPI 下不再模糊）；false = 老样子交给系统拉伸
         public string Mode = "local";       // 工作模式：local = 游戏目录 addons 当库（默认，单 exe 下载的人只有这一种）；usb = 拿 U 盘去装机
-        public string Appearance = "system";  // 外观：system = 跟随系统（默认）/ light / dark
+        public string Appearance = "graphite"; // 外观＝深色底盘：graphite / blue / warm；老的 system、light、dark 都落到 graphite
         public string LibraryRoot = "";     // U 盘模式的主库根；空 = 跟随程序所在盘
         /// <summary>
         /// 组件包目录（L4N / Skeeto / MQCam / dxvk / 素材包 所在的那一层）。
@@ -84,7 +84,6 @@ namespace Installer
         public string PkgRoot = "";
         public string WsApiKey = "";          // 工坊 API key（用户自己填，留空就走网页）
         public bool SteamEnabled = true;      // 「来源」里 Steam 这一项的总开关
-        public bool DrawerOpen = false;     // 左栏默认收起：主界面就是三列（方案树 / 候选 / 详情），要看现状再点「面板」
         public int TreeW = 0;               // 方案树宽度（设计像素，0 = 自动）
         public int DetailW = 0;             // 右侧详情宽度（设计像素，0 = 自动）
         // 启动时如果一条勾选都没有（换机器、U 盘配置是空的），就按游戏 addons + addonlist.txt
@@ -572,7 +571,6 @@ namespace Installer
                     else if (k == "PkgRoot") Cfg.PkgRoot = v;
                     else if (k == "WsApiKey") Cfg.WsApiKey = v;
                     else if (k == "SteamEnabled") Cfg.SteamEnabled = (v != "0");
-                    else if (k == "Drawer") Cfg.DrawerOpen = (v != "0");
                     else if (k == "TreeW") { int n; if (int.TryParse(v, out n)) Cfg.TreeW = n; }
                     else if (k == "DetailW") { int n; if (int.TryParse(v, out n)) Cfg.DetailW = n; }
                     else if (k == "AutoSync") Cfg.AutoSync = (v != "0");
@@ -611,7 +609,6 @@ namespace Installer
                 sb.AppendLine("WsApiKey=" + (Cfg.WsApiKey ?? ""));
                 sb.AppendLine("SteamEnabled=" + (Cfg.SteamEnabled ? "1" : "0"));
                 sb.AppendLine("PkgRoot=" + Cfg.PkgRoot);
-                sb.AppendLine("Drawer=" + (Cfg.DrawerOpen ? "1" : "0"));
                 sb.AppendLine("TreeW=" + Cfg.TreeW);
                 sb.AppendLine("DetailW=" + Cfg.DetailW);
                 sb.AppendLine("AutoSync=" + (Cfg.AutoSync ? "1" : "0"));
