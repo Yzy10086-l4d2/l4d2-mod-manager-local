@@ -22,6 +22,9 @@ jobs:
       - name: Self-test (offline, hard gate)
         shell: pwsh
         run: |
+          chcp 65001 | Out-Null
+          $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+          [Console]::OutputEncoding = $OutputEncoding
           $flags = @('treeself','layoutself','recogself','addonself','dupself','safeself','workshopself','launchself','gallerself')
           $bad = 0
           foreach ($f in $flags) {
@@ -30,6 +33,21 @@ jobs:
             if ($p.ExitCode -ne 0) { Write-Output "FAILED: --$f (exit $($p.ExitCode))"; $bad++ }
           }
           if ($bad -gt 0) { throw "$bad self-test group(s) failed" }
+
+      - name: Collect self-test logs
+        if: always()
+        shell: pwsh
+        run: |
+          $src = Join-Path $env:APPDATA 'L4D2Local\_本地版记录'
+          New-Item -ItemType Directory -Force selftest-logs | Out-Null
+          if (Test-Path $src) { Copy-Item (Join-Path $src '*') selftest-logs -Recurse -Force }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest-logs
+          path: selftest-logs
+          if-no-files-found: ignore
 
       - name: Hash
         shell: pwsh

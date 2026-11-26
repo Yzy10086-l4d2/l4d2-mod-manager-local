@@ -2734,7 +2734,8 @@ namespace Installer
                     if (found.Subject != subjects[expected]) throw new IOException("合成 VPK 识别错: " + name + " → " + found.Subject);
                     pool.Add(found);
                 }
-                string mine = "我自己放的.vpk";
+                // addonlist 按系统 ANSI 代码页读写；英文 CI 上中文名会变成问号，键就对不上。
+                string mine = "user_own.vpk";
                 File.WriteAllText(Path.Combine(addons, mine), "x");
                 Dictionary<string, string> hashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 foreach (ModItem m in pool) hashes[m.Name] = Core.HashOf(m.FullPath);
