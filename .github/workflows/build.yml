@@ -19,6 +19,59 @@ jobs:
         shell: cmd
         run: cmd /c build.bat
 
+      - name: Set display 1920x1080
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -TypeDefinition @"
+          using System;
+          using System.Runtime.InteropServices;
+          public static class DisplayMode {
+            [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+            public struct DEVMODE {
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+              public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+              public int dmFields;
+              public int dmPositionX, dmPositionY;
+              public int dmDisplayOrientation, dmDisplayFixedOutput;
+              public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+              public short dmLogPixels;
+              public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+              public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+            }
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+            public static extern bool EnumDisplaySettings(string dev, int mode, ref DEVMODE dm);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+            public static extern int ChangeDisplaySettings(ref DEVMODE dm, int flags);
+            public static string Set(int w, int h) {
+              DEVMODE probe = new DEVMODE();
+              probe.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+              int best = -1, bestHz = 0;
+              for (int i = 0; ; i++) {
+                DEVMODE m = new DEVMODE(); m.dmSize = probe.dmSize;
+                if (!EnumDisplaySettings(null, i, ref m)) break;
+                if (m.dmPelsWidth == w && m.dmPelsHeight == h && m.dmBitsPerPel == 32 && m.dmDisplayFrequency >= bestHz) {
+                  best = i; bestHz = m.dmDisplayFrequency;
+                }
+              }
+              if (best < 0) return "no " + w + "x" + h + " mode";
+              DEVMODE mode = new DEVMODE(); mode.dmSize = probe.dmSize;
+              EnumDisplaySettings(null, best, ref mode);
+              mode.dmFields = 0x40000 | 0x80000 | 0x100000 | 0x400000;
+              int r = ChangeDisplaySettings(ref mode, 0);
+              if (r != 0) {
+                mode.dmFields = 0x80000 | 0x100000;
+                r = ChangeDisplaySettings(ref mode, 0);
+              }
+              return "mode#" + best + " " + mode.dmPelsWidth + "x" + mode.dmPelsHeight + "@" + mode.dmDisplayFrequency + " result=" + r;
+            }
+          }
+          "@
+          $r = [DisplayMode]::Set(1920, 1080)
+          Start-Sleep -Seconds 2
+          Write-Output "display: $r / $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
+
       - name: Self-test (offline, hard gate)
         shell: pwsh
         run: |
