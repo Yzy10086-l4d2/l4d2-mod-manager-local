@@ -4079,7 +4079,9 @@ namespace Installer
             int treeW = treeWpx > 0 ? treeWpx : (W >= Dpi.S(1360) ? Dpi.S(288) : Dpi.S(260));
             treeW = Math.Min(Math.Max(treeW, Dpi.S(200)), Math.Max(Dpi.S(220), W / 2));
             curTreeW = treeW;
-            if (scroll != null) scroll.SetBounds(0, Dpi.S(TreeHeadH), treeW, Math.Max(40, H - Dpi.S(TreeHeadH)));
+            // 分隔条盖在树的右边缘 3px 上：滚动区让出这三像素，布局审计里就不会报「重叠」
+            int scrollW = Math.Max(Dpi.S(40), treeW - Dpi.S(3));
+            if (scroll != null) scroll.SetBounds(0, Dpi.S(TreeHeadH), scrollW, Math.Max(40, H - Dpi.S(TreeHeadH)));
             if (splitA != null) splitA.SetBounds(Math.Max(0, treeW - Dpi.S(3)), 0, Dpi.S(6), H);
             // Dock 让树体宽度自动跟着可视区走（含竖直滚动条出现/消失），不然右边「n 个」会被裁掉
             if (scroll != null) scroll.Relayout();

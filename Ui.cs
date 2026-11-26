@@ -3922,8 +3922,9 @@ namespace Installer
             foreach (System.Windows.Forms.Control c in parent.Controls) if (c.Visible) kids.Add(c);
 
             // 开了滚动的容器：内容超出可视区是正常行为（滚动条就是干这个的），不算出界
+            // ScrollHost 自己管滚动（不是 AutoScroll），树体故意比可视区高
             System.Windows.Forms.ScrollableControl sc = parent as System.Windows.Forms.ScrollableControl;
-            bool scrollable = sc != null && sc.AutoScroll;
+            bool scrollable = (sc != null && sc.AutoScroll) || parent is ScrollHost;
             foreach (System.Windows.Forms.Control c in kids)
             {
                 Rectangle b = c.Bounds;
