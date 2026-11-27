@@ -86,6 +86,12 @@ namespace Installer
             new Row { Sub = "特感", Name = "Spitter", En = "Spitter", Aliases = new string[0] },
             new Row { Sub = "特感", Name = "Tank", En = "Tank", Aliases = new string[0] },
             new Row { Sub = "特感", Name = "Witch", En = "Witch", Aliases = new string[0] },
+            // Tank 扔出的混凝土块：不是地图里的碎块，也不是可搬道具；
+            // 它是「石头」位置，在树上作为 Tank 的子行显示（僵尸 → 特感 → Tank → 石头）。
+            // 模型证据：concrete_chunk01a（投掷本体）+ concrete_spawnchunk001a-f（落点碎块）。
+            new Row { Sub = "特感", Name = "石头", En = "Tank Rock", Aliases = new string[] {
+                "Tank的石头", "坦克石头", "坦克的石头", "坦克扔的石头",
+                "tank rock", "tank_rock", "tankrock", "concrete_spawnchunk", "concrete_chunk01a" } },
             new Row { Sub = "小僵尸", Name = "普通感染者", En = "Common infected", Aliases = new string[0] },
             // 非普通感染者（L4D2 那七种「特殊小僵尸」）各占一个位置：换的就是这一个，别挤在一个槽里互相顶
             new Row { Sub = "小僵尸", Name = "防暴警察", En = "Riot", Aliases = new string[] { "riot", "防暴" } },

@@ -2384,7 +2384,7 @@ namespace Installer
                 case "可乐": return A("汽水|soda");
                 case "特效套装": return A("特效|particle");
                 case "音效套装": return A("音效|sound");
-                case "石头": return A("rock");
+                case "石头": return A("Tank 石头|tank rock|rock");
                 default: return new string[0];
             }
         }

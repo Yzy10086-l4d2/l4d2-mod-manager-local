@@ -200,6 +200,7 @@ namespace Installer
 
             // ---------- 小分类 ----------
             Add(d, "小僵尸", "Common infected");
+            Add(d, "石头", "Tank rock");
             Add(d, "步枪", "Rifles");
             Add(d, "冲锋枪", "SMGs");
             Add(d, "霰弹枪", "Shotguns");
@@ -209,6 +210,7 @@ namespace Installer
             Add(d, "暂时增益", "Temporary buffs");
             Add(d, "其他药品", "Other medical");
             Add(d, "可搬道具", "Carryables");
+            Add(d, "未识别杂项", "Unrecognized misc");
             Add(d, "其他杂项", "Other misc");
             Add(d, "一代", "L4D1");
             Add(d, "二代", "L4D2");

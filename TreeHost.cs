@@ -216,6 +216,23 @@ namespace Installer
             Pump(300);
             Shot(overviewWindow, "overview-window");
             if (!overviewWindow.Visible) { Core.Log("FAIL", "OVSELF 独立总览窗没有显示"); bad++; }
+
+            // 独立窗口开着时，主界面的内嵌画布可能还没创建（map == null）。
+            // 用户就是这样点的：SyncPicks 以前直接摸 map，空引用。
+            OverviewCanvas savedMap = map;
+            map = null;
+            try
+            {
+                SyncPicks();
+                Core.Log("INFO", "OVSELF 独立总览 SyncPicks：正常");
+            }
+            catch (Exception ex)
+            {
+                bad++;
+                Core.Log("FAIL", "OVSELF 独立总览 SyncPicks 异常: " + ex.Message);
+            }
+            finally { map = savedMap; }
+
             if (want != null)
             {
                 ShowSlotInTree(want);
@@ -399,9 +416,28 @@ namespace Installer
         internal void SyncPicks()
         {
             if (treeView != null && treeView.Visible) treeView.Sync();
-            if (OverviewOpen) map.RefreshPicks();
+            RefreshOverviews();
             UpdateSel();
+            RefreshGameNow();            // 顶栏「已装」和未识别胶囊也跟勾选一起动
             UpdateModCaption();          // 台面标题上的「已选 N」也要跟着动
+        }
+
+        /// <summary>
+        /// 总览有内嵌画布和独立窗口两种形态，哪边开着就刷哪边。
+        /// 以前这里直接摸 map：只开独立总览窗时 map 还是 null，一点候选就空引用。
+        /// </summary>
+        private void RefreshOverviews()
+        {
+            if (map != null && !map.IsDisposed && map.Visible)
+            {
+                try { map.RefreshPicks(); }
+                catch (Exception ex) { Core.Log("WARN", "总览画布刷新失败: " + ex.Message); }
+            }
+            if (overviewWindow != null && !overviewWindow.IsDisposed && overviewWindow.Visible)
+            {
+                try { overviewWindow.RefreshPicks(); }
+                catch (Exception ex) { Core.Log("WARN", "总览窗口刷新失败: " + ex.Message); }
+            }
         }
 
         /// <summary>右栏标题栏：几个位置、已选几个。</summary>

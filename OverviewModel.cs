@@ -23,6 +23,8 @@ namespace Installer
 
         public bool Empty;                   // 库里压根没有这个位置的 MOD
         public bool Pile;                    // 能同时装好几个（地图 / 自建分支）
+        public bool IsPileItem;              // 这一行是 Pile 里的一个候选（地图逐张列出来）
+        public ModGroup Item;                // IsPileItem 时对应的候选
         public int Parts;                    // 勾中的 vpk 个数
         public int AllParts;                 // 这些套装一共几个 vpk
         public long Size;                    // 勾中的 vpk 合计字节
@@ -100,6 +102,36 @@ namespace Installer
                     m.Cats.Add(oc);
                 }
 
+                // Pile 是一个容器，不是一张「位置」：地图 / 喷漆 / 平台 / 脚本 / 分支
+                // 在总览里要逐项列出来，否则 8 张地图只显示「第一张 +7」。
+                if (s.Pile && s.Items.Count > 0)
+                {
+                    bool anyOn = false;
+                    foreach (ModGroup g in s.Items)
+                    {
+                        OvSlot item = new OvSlot();
+                        item.Slot = s;
+                        item.Cat = cat;
+                        item.Sub = string.IsNullOrEmpty(s.Sub) ? "其他" : s.Sub;
+                        item.Name = g.Name;
+                        item.Empty = false;
+                        item.Pile = true;
+                        item.IsPileItem = true;
+                        item.Item = g;
+                        if (counted(g) > 0) item.On.Add(g);
+                        AddParts(item, g, counted, partOn);
+                        item.ModText = ModTextOf(item);
+                        oc.Slots.Add(item);
+                        oc.Total++;
+                        if (item.HasMod) { oc.On++; anyOn = true; }
+                        m.Parts += item.Parts;
+                        m.Size += item.Size;
+                    }
+                    m.SlotsTotal++;
+                    if (anyOn) m.SlotsOn++;
+                    continue;
+                }
+
                 OvSlot o = new OvSlot();
                 o.Slot = s;
                 o.Cat = cat;
@@ -140,6 +172,8 @@ namespace Installer
         /// <summary>右侧那行字：装了哪个 / 原版 / 库里还没有。</summary>
         private static string ModTextOf(OvSlot o)
         {
+            // Pile 的候选行名称已经在左列，右列不再重复一遍
+            if (o.IsPileItem) return o.HasMod ? "" : "未装";
             if (o.On.Count == 0 && o.Extra.Count == 0)
                 return o.Empty ? "库里还没有" : "原版";
 

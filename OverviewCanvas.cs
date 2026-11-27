@@ -701,6 +701,12 @@ namespace Installer
         /// </summary>
         private void Toggle(OvSlot s, Point at)
         {
+            // 展开后的 Pile 行：开关只翻这一项，别把整堆都关掉
+            if (s.IsPileItem && s.Item != null)
+            {
+                mf.ApplyGroupPick(s.Item, mf.CountChecked(s.Item) == 0);
+                return;
+            }
             if (!s.HasMod)
             {
                 ModGroup back;
@@ -884,6 +890,18 @@ namespace Installer
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
             sb.Append(s.Cat).Append(" · ").Append(s.Sub).Append(" · ").Append(s.Name).Append("\r\n");
 
+            if (s.IsPileItem)
+            {
+                if (s.Item != null)
+                {
+                    sb.Append(s.Item.Name).Append("（").Append(s.Item.Parts.Count).Append(" 个 vpk）\r\n");
+                    foreach (ModItem p in s.Item.Parts) sb.Append("　· [").Append(p.Role).Append("] ").Append(p.Name).Append("\r\n");
+                }
+                sb.Append(s.HasMod ? "已装，点开关关掉这一项" : "未装，点开关装上这一项");
+                sb.Append("\r\n点名字：换一个同类项");
+                return sb.ToString();
+            }
+
             if (!s.HasMod)
             {
                 sb.Append(s.Empty ? "库里还没有这个位置的 MOD。" : "这个位置用的是原版（没装 MOD）。");
@@ -912,13 +930,9 @@ namespace Installer
 
         internal int SlotCount
         {
-            get
-            {
-                if (model == null) return 0;
-                int n = 0;
-                foreach (OvCat c in model.Cats) n += c.Slots.Count;
-                return n;
-            }
+            // 总览里的 Pile 会展开成多行候选；这里返回的是「位置数」，
+            // 要和方案树的 SlotCount 对得上，不能数展开后的行。
+            get { return model == null ? 0 : model.SlotsTotal; }
         }
 
         internal int SlotsOn { get { return model == null ? 0 : model.SlotsOn; } }

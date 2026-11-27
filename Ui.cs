@@ -1196,6 +1196,13 @@ namespace Installer
         /// 不落盘的话重开程序会回到「默认部件」—— 用户 2026-11-21 实测：知更鸟那套有两个 vpk，
         /// 挑完其中一个、关掉再开，选择又变回默认那个。
         /// </summary>
+        internal void SaveChecksNow()
+        {
+            // 自检会故意改勾选再还原，不能把测试状态写进用户配置。
+            if (Core.SelfTesting) return;
+            SaveChecks();
+        }
+
         private void SaveChecks()
         {
             // 「整组一个都不勾」= 这套不装，也要记住（用户 2026-11-21 定），用 #off:组键 标出来。
@@ -1641,11 +1648,8 @@ namespace Installer
             UpdateModCaption();
             RefreshGameNow();
             // 方案总览窗口是树的快照：树里换了 MOD / 开关一变，这边也得重读，
-            // 否则窗口开着就是一张旧图（用户实测过）。
-            if (overviewWindow != null && !overviewWindow.IsDisposed && overviewWindow.Visible)
-            {
-                try { overviewWindow.RefreshPicks(); } catch { }
-            }
+            // 否则窗口开着就是一张旧图（用户实测过）。内嵌画布和独立窗口统一刷新。
+            RefreshOverviews();
             // 空库那句引导只在真的空着时成立：下完/装完第一个 MOD 就换回常规状态
             if (emptyStatusShown && Core.ModList.Count > 0) SetPackIdleStatus();
         }
@@ -2636,9 +2640,10 @@ namespace Installer
             if (on) CheckGroupDefault(g); else UncheckGroup(g);
             Dictionary<string, bool> st = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (ModItem p in g.Parts) if (p.FromGame || p.Installed) st[p.Name] = on;
-            if (st.Count == 0) { SyncPicks(); return true; }      // 库里只读的，没有开关可写
+            if (st.Count == 0) { SyncPicks(); SaveChecksNow(); return true; }      // 库里只读的，没有开关可写
             bool ok = ApplySwitches(st);
             SyncPicks();
+            SaveChecksNow();             // 关掉程序再开也要保留这次开关，不只靠 AutoSync
             return ok;
         }
 

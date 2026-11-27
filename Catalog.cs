@@ -2344,6 +2344,14 @@ namespace Installer
                     "冲锋枪图标归冲锋枪");
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/icon_tank.vtf" }, "僵尸", "特感"),
                     "特感图标归特感");
+                {
+                    ModIdentify.Result rt = ModIdentify.AnalyzePaths(new List<string>(
+                        new string[] { "models/props_debris/concrete_chunk01a.mdl" }));
+                    Positions.Row tr = Positions.Find(rt.Subject);
+                    bad += RecogCheck(rt.Subject == "石头" && tr != null && tr.Sub == "特感"
+                        && SlotIndex.CatOfSub(tr.Sub) == "僵尸",
+                        "Tank 扔的石头认出位置（僵尸 / 特感 / 石头）");
+                }
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/health.vtf", "materials/vgui/hud/scoreboard.vtf" }, "杂项", "UI 界面"),
                     "整套 HUD 仍归界面");
                 bad += RecogCheck(Classified(new string[] { "materials/vgui/hud/health.vtf", "materials/vgui/hud/icon_rifle.vtf" }, "杂项", "UI 界面"),

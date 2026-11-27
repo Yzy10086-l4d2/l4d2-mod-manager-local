@@ -24,9 +24,12 @@ namespace Installer
         public string Cat;                       // 大类：枪械 / 医疗 / 人物 …
         public string Sub = "其他";              // 小分类：步枪 / 霰弹枪 / 一代 / 医疗包 …
         public bool Manual;                      // 这个位置是人工指定出来的（可能还要并回自动的同名位置）
-        // 「一堆」而不是「一个位置」：地图 / 喷漆 / 用户自建分支 —— 里面能同时开好几个，
-        // 点一行是开 / 关，不是把别的替换掉。Items 里装的就是这一堆的全部候选。
+        // 「一堆」而不是「一个位置」：地图 / 喷漆 / 平台 / 脚本 / 用户自建分支 ——
+        // 里面能同时开好几个，点一行是开 / 关，不是把别的替换掉。Items 里装的就是这一堆的全部候选。
         public bool Pile;
+        // 第四级子位置：挂在另一个位置下面（目前 Tank → 石头）。
+        // 只影响树的缩进，排序 / 识别仍然把它当一个普通槽位。
+        public string ParentKey;
         // 库里还没有 MOD 的「标准位置」：照常占一行，让人看出还缺什么。
         // 它没有任何候选（Items 空着），点开只有「留原版」。
         public bool Empty;
@@ -160,7 +163,58 @@ namespace Installer
                 string ov = CatPrefs.SubOverride(s.Cat, s.Name);
                 if (ov.Length > 0) s.Sub = ov;
             }
+            // 平台 / 脚本不是「二选一」的替换位，而是能同时开好几个的容器：
+            // 跟地图一样归成一个 Pile，点候选就是单独开关，不会把同组别的顶掉。
+            CollapseContainer(list, "平台", "平台");
+            CollapseContainer(list, "脚本", "脚本");
+            LinkTankRock(list);
             return list;
+        }
+
+        /// <summary>
+        /// Tank 扔的石头是 Tank 的子位置：树上挂到 Tank 下面，形成
+        /// 僵尸 → 特感 → Tank → 石头 这一层；识别和开关仍然按独立槽位走。
+        /// </summary>
+        private static void LinkTankRock(List<Slot> list)
+        {
+            Slot tank = null, rock = null;
+            foreach (Slot s in list)
+            {
+                if (s.Cat != "僵尸") continue;
+                if (s.Name == "Tank") tank = s;
+                else if (s.Name == "石头") rock = s;
+            }
+            if (tank != null && rock != null && rock.Sub == tank.Sub) rock.ParentKey = tank.Key;
+        }
+
+        /// <summary>
+        /// 把整个大类并成一个「一堆」容器。平台组件 / 脚本之间是协作关系，
+        /// 不是同一把枪的两套模型；留着普通槽位会让用户以为只能选一个。
+        /// </summary>
+        private static void CollapseContainer(List<Slot> list, string cat, string name)
+        {
+            Slot pile = null;
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                Slot s = list[i];
+                if (s.Cat != cat) continue;
+                if (pile == null)
+                {
+                    pile = new Slot();
+                    pile.Key = "#pile:" + cat;
+                    pile.Name = name;
+                    pile.Cat = cat;
+                    pile.Sub = string.IsNullOrEmpty(s.Sub) ? name : s.Sub;
+                    pile.Pile = true;
+                    pile.Empty = true;
+                    list.Add(pile);
+                }
+                foreach (ModGroup g in s.Items)
+                    if (!pile.Items.Contains(g)) pile.Items.Add(g);
+                if (!s.Empty) pile.Empty = false;
+                if (s.Manual) pile.Manual = true;
+                list.RemoveAt(i);
+            }
         }
 
         /// <summary>
@@ -289,7 +343,7 @@ namespace Installer
             }
             string s = (gsub ?? "").Trim();
             if (s.Length > 0 && s != "其他") return s;
-            return "其他杂项";
+            return "未识别杂项";
         }
 
         /// <summary>是不是 PosOrder 里登记过的「可搬道具」。</summary>
@@ -376,7 +430,10 @@ namespace Installer
             "治疗与复活", "暂时增益", "其他药品",
             // 杂项里的「整套替换」三栏排在最前：它们的包通常十几件，比零散道具更该先看到
             "UI 界面", "特效", "音效", "弹道",
-            "可搬道具", "特效杂项", "其他杂项", "平台"
+            "可搬道具", "特效杂项", "未识别杂项", "其他杂项", "平台",
+            // 场景 / 脚本各自只有一层，但序号也写死：否则只能靠插入顺序，
+            // 以后位置表一调整，这几行就跟着换位置。
+            "天空盒", "地面细节", "场景贴图", "脚本", "其他"
         };
 
         public static int SubRank(string sub)
@@ -483,7 +540,7 @@ namespace Installer
                 case "弹药升级": return "弹药升级";
                 case "治疗与复活": case "暂时增益": case "其他药品":
                     return "药品";
-                case "可搬道具": case "其他杂项": case "弹道":
+                case "可搬道具": case "未识别杂项": case "其他杂项": case "弹道":
                     return "杂项";
                 case "特感": case "小僵尸": case "普通感染者": case "非普通感染者":
                     return "僵尸";
@@ -587,12 +644,9 @@ namespace Installer
 
         /// <summary>
         /// 识别得出、但故意不给空位的名字，后面写理由。
-        /// 有了这张豁免表，核对就能做到「整张识别表 100% 有着落」，同时不往树里塞没意义的空行。
+        /// 目前所有识别名都有标准位置；保留这张表，给以后确实不适合占行的名字用。
         /// </summary>
-        private static readonly string[] NoSlotNames =
-        {
-            "石头",   // concrete_spawnchunk：地图里碎混凝土块的共用模型，不是一个能单独换的道具
-        };
+        private static readonly string[] NoSlotNames = new string[0];
 
         /// <summary>位置表里有没有这个名字（不管在哪个小分类下）。</summary>
         private static bool HasPosition(string nm)
@@ -780,17 +834,9 @@ namespace Installer
         {
             List<Slot> slots = Build();
             List<string> order = CatOrder(slots);
-            slots.Sort(delegate(Slot a, Slot b)
-            {
-                int ia = order.IndexOf(a.Cat), ib = order.IndexOf(b.Cat);
-                if (ia != ib) return ia.CompareTo(ib);
-                int sa = SubRank(a.Sub), sb2 = SubRank(b.Sub);
-                if (sa != sb2) return sa.CompareTo(sb2);
-                int na = NameRank(a.Sub, a.Name), nb = NameRank(b.Sub, b.Name);
-                if (na != nb) return na.CompareTo(nb);
-                int c = string.Compare(a.Name, b.Name, StringComparison.CurrentCulture);
-                return c != 0 ? c : string.Compare(a.Key, b.Key, StringComparison.Ordinal);
-            });
+            // 和界面走同一套排序：手工拖过的优先，再按「有 MOD → 空位」和游戏内顺序。
+            // 以前这里自己写了一份，导出结果和界面对不上，排查分类时反而添乱。
+            SortForTree(slots, null);
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
             foreach (string cat in order)
             {
@@ -798,18 +844,63 @@ namespace Installer
                 foreach (Slot s in slots) if (s.Cat == cat) inCat.Add(s);
                 if (inCat.Count == 0) continue;
                 sb.AppendLine();
+                // 和界面一样：整个大类只有一个「一堆」时，类标题本身就是容器，不再画子行。
+                if (inCat.Count == 1 && inCat[0].Pile)
+                {
+                    sb.AppendLine("【" + cat + "】（容器，" + inCat[0].Items.Count + " 个）");
+                    continue;
+                }
                 sb.AppendLine("【" + cat + "】");
-                // 只有一层分组的大类不画那行标题，跟界面里一致
-                int subCount = 0;
-                string prev = null;
-                foreach (Slot s in inCat) if (s.Sub != prev) { prev = s.Sub; subCount++; }
-                bool showSub = subCount > 1;
+                // 和界面一样：只有一个分组的大类不画分组标题；只有一个位置的分组，
+                // 位置行本身就是那一级标题，不再先画一行空标题。
+                Dictionary<string, int> perSub = new Dictionary<string, int>(StringComparer.Ordinal);
+                foreach (Slot s in inCat)
+                {
+                    string k = s.Sub ?? "";
+                    int n;
+                    perSub.TryGetValue(k, out n);
+                    perSub[k] = n + 1;
+                }
+                bool showSub = perSub.Count > 1;
+                // 和界面一样，第四级子位置紧跟父行并缩进（目前只有 Tank → 石头）
+                Dictionary<string, Slot> keyed = new Dictionary<string, Slot>(StringComparer.Ordinal);
+                foreach (Slot s in inCat) if (!string.IsNullOrEmpty(s.Key)) keyed[s.Key] = s;
+                Dictionary<string, List<Slot>> childOf = new Dictionary<string, List<Slot>>(StringComparer.Ordinal);
+                HashSet<Slot> isChild = new HashSet<Slot>();
+                foreach (Slot s in inCat)
+                {
+                    Slot parent;
+                    if (string.IsNullOrEmpty(s.ParentKey) || !keyed.TryGetValue(s.ParentKey, out parent)) continue;
+                    List<Slot> kids;
+                    if (!childOf.TryGetValue(s.ParentKey, out kids)) { kids = new List<Slot>(); childOf[s.ParentKey] = kids; }
+                    kids.Add(s);
+                    isChild.Add(s);
+                }
                 string lastSub = null;
                 foreach (Slot s in inCat)
                 {
-                    if (showSub && s.Sub != lastSub) { sb.AppendLine("  〈" + s.Sub + "〉"); lastSub = s.Sub; }
-                    sb.AppendLine("    " + s.Name + "  (" + s.Items.Count + " 个)"
-                        + (s.Manual ? " [人工]" : ""));
+                    if (isChild.Contains(s)) continue;
+                    string sk = s.Sub ?? "";
+                    bool onePos = perSub[sk] <= 1;
+                    if (showSub && sk != lastSub)
+                    {
+                        lastSub = sk;
+                        if (!onePos) sb.AppendLine("  〈" + s.Sub + "〉");
+                    }
+                    // 单位置分组在界面上显示的是小分类名（「八人包」「特效」），不是位置名；
+                    // 这里跟着界面走，位置名不一样时用括号补出来，排查时两个都看得到。
+                    string label = showSub && onePos && (s.Sub ?? "").Length > 0 ? s.Sub : s.Name;
+                    string pos = label == s.Name ? "" : "（位置：" + s.Name + "）";
+                    sb.AppendLine("    " + label + pos + "  (" + s.Items.Count + " 个)"
+                        + (s.Pile ? " [容器]" : "")
+                        + (s.Empty ? " [空位]" : "")
+                        + (s.Manual ? " [人工]" : "")
+                        + (showSub && onePos ? " [小分类]" : ""));
+                    List<Slot> kids2;
+                    if (s.Key != null && childOf.TryGetValue(s.Key, out kids2))
+                        foreach (Slot ch in kids2)
+                            sb.AppendLine("      └ " + ch.Name + "  (" + ch.Items.Count + " 个)"
+                                + (ch.Empty ? " [空位]" : ""));
                 }
             }
             string f = System.IO.Path.Combine(Core.LogDir, "方案树.txt");
@@ -817,10 +908,11 @@ namespace Installer
             return f;
         }
 
-        /// <summary>树里的大类顺序：跟着分类顺序走，地图/喷漆不进树。</summary>
         /// <summary>
-        /// 方案树 / 总览共用的排序：大类 → 小分类 → 手工拖过的位置 → 名字。
-        /// isOn 只是平局时让已装的排前面，传 null 表示不看勾选状态。
+        /// 方案树 / 总览共用的排序：大类 → 小分类 → 手工拖过的位置 → 有 MOD 的位置 → 名字。
+        /// 空位是「这里还缺什么」的提示，统一沉到小分类末尾；不让它们把能用的位置冲散。
+        /// 手工拖过的位置永远按用户排的来（空位也一样），自动规则只在没拖过时生效。
+        /// isOn 只在最后平局时让已装的靠前，传 null 表示不看勾选状态。
         /// </summary>
         public static void SortForTree(List<Slot> slots, Func<Slot, bool> isOn)
         {
@@ -831,11 +923,17 @@ namespace Installer
                 if (ia != ib) return ia.CompareTo(ib);
                 int sa = CatTree.SubSortKey(a), sb = CatTree.SubSortKey(b);
                 if (sa != sb) return sa.CompareTo(sb);
+                // 父子位置永远父在前，子行由 BuildRows 紧跟在父行下面
+                if (a.ParentKey != null && a.ParentKey == b.Key) return 1;
+                if (b.ParentKey != null && b.ParentKey == a.Key) return -1;
                 int pa = CatTree.PosSortKey(a), pbb = CatTree.PosSortKey(b);
                 bool ha = pa >= 0, hb = pbb >= 0;
                 if (ha != hb) return ha ? -1 : 1;
                 if (ha && pa != pbb) return pa.CompareTo(pbb);
                 if (a.Rank != b.Rank) return a.Rank.CompareTo(b.Rank);
+                // 没手排过的位置：库里真有 MOD 的排在空位前面。
+                // 不按「勾没勾」排 —— 点一下开关就整棵树重排，用户会瞬间找不到刚才那一行。
+                if (a.Empty != b.Empty) return a.Empty ? 1 : -1;
                 int na = NameRank(a.Sub, a.Name), nb = NameRank(b.Sub, b.Name);
                 if (na != nb) return na.CompareTo(nb);
                 int ra = CatPrefs.SlotRank(a.Cat, a.Name), rb = CatPrefs.SlotRank(b.Cat, b.Name);
@@ -850,14 +948,63 @@ namespace Installer
             });
         }
 
-        public static List<string> CatOrder(List<Slot> slots)        {
-            List<string> order = new List<string>();
+        public static List<string> CatOrder(List<Slot> slots)
+        {
+            // 先按配置 / 目录 / 实际槽位得到候选顺序，再拆成「普通分类」和「容器」两段。
+            // 容器（地图 / 喷漆 / 平台 / 脚本 / 我的分支）统一沉到最后，普通分类按
+            // 「二级分类数 + 三级位置数」从多到少排；同分先看位置多的，再看二级多的，
+            // 最后才回退到配置顺序 —— 这样大类顺序跟树的复杂度走，不再依赖旧手排。
+            List<string> baseOrder = new List<string>();
             foreach (string c in CatPrefs.Cats())
-                if (c != "地图" && c != "喷漆" && !order.Contains(c)) order.Add(c);
+                if (c != "地图" && c != "喷漆" && !baseOrder.Contains(c)) baseOrder.Add(c);
             foreach (string c in Catalog.Cats)
-                if (c != "地图" && c != "喷漆" && !order.Contains(c)) order.Add(c);
-            foreach (Slot s in slots) if (!order.Contains(s.Cat)) order.Add(s.Cat);
-            return order;
+                if (c != "地图" && c != "喷漆" && !baseOrder.Contains(c)) baseOrder.Add(c);
+            foreach (Slot s in slots) if (!baseOrder.Contains(s.Cat)) baseOrder.Add(s.Cat);
+
+            List<string> normal = new List<string>();
+            List<string> boxes = new List<string>();
+            foreach (string c in baseOrder)
+                (IsContainerCat(c, slots) ? boxes : normal).Add(c);
+
+            normal.Sort(delegate(string a, string b)
+            {
+                int sa, pa, sb, pb;
+                CatStats(slots, a, out sa, out pa);
+                CatStats(slots, b, out sb, out pb);
+                int scoreA = sa + pa, scoreB = sb + pb;
+                if (scoreA != scoreB) return scoreB.CompareTo(scoreA);
+                if (pa != pb) return pb.CompareTo(pa);              // 三级位置多的优先
+                if (sa != sb) return sb.CompareTo(sa);              // 二级小分类多的优先
+                return baseOrder.IndexOf(a).CompareTo(baseOrder.IndexOf(b));
+            });
+            normal.AddRange(boxes);
+            return normal;
+        }
+
+        /// <summary>这个大类是不是整类都由「一堆」组成（地图 / 喷漆 / 平台 / 脚本 / 我的分支）。</summary>
+        private static bool IsContainerCat(string cat, List<Slot> slots)
+        {
+            bool any = false;
+            foreach (Slot s in slots)
+            {
+                if (s.Cat != cat) continue;
+                if (!s.Pile) return false;
+                any = true;
+            }
+            return any;
+        }
+
+        private static void CatStats(List<Slot> slots, string cat, out int subCount, out int slotCount)
+        {
+            HashSet<string> subs = new HashSet<string>(StringComparer.Ordinal);
+            slotCount = 0;
+            foreach (Slot s in slots)
+            {
+                if (s.Cat != cat) continue;
+                slotCount++;
+                if (!string.IsNullOrEmpty(s.Sub)) subs.Add(s.Sub);
+            }
+            subCount = subs.Count;
         }
     }
 
@@ -866,6 +1013,7 @@ namespace Installer
     {
         public bool IsCat;
         public bool IsSub;       // 小分类标题：枪械 →「步枪」
+        public bool IsChild;     // 第四级：挂在另一个位置下面（Tank → 石头）
         public string Cat;
         public string Sub;
         public Slot Slot;
@@ -1060,7 +1208,7 @@ namespace Installer
                 ModGroup g = li.Tag as ModGroup;
                 if (selKey == "#search") { RevealGroup(g); return; }        // 搜索结果：跳回它在树里的位置
                 Slot cur = Current;
-                if (cur != null && cur.Pile) { TogglePile(g); return; }     // 地图 / 我的分支：开 / 关，不替换
+                if (cur != null && cur.Pile) { TogglePile(g); return; }     // 地图 / 平台 / 脚本 / 分支：开 / 关，不替换
                 if (IsMulti(cur)) { ToggleMulti(cur, g); return; }          // 允许多选：点一下开、再点一下关
                 Choose(g);
             };
@@ -1792,9 +1940,25 @@ namespace Installer
                     perSub[kSub] = cSub + 1;
                 }
                 bool showSub = perSub.Count > 1;
+                // 第四级子行（Tank → 石头）：先把父子关系理出来，子行不单独走主循环，
+                // 统一紧跟在父行后面，缩进画在 SlotTree 里。
+                Dictionary<string, Slot> keyed = new Dictionary<string, Slot>(StringComparer.Ordinal);
+                foreach (Slot s in inCat) if (!string.IsNullOrEmpty(s.Key)) keyed[s.Key] = s;
+                Dictionary<string, List<Slot>> childOf = new Dictionary<string, List<Slot>>(StringComparer.Ordinal);
+                HashSet<Slot> isChild = new HashSet<Slot>();
+                foreach (Slot s in inCat)
+                {
+                    Slot parent;
+                    if (string.IsNullOrEmpty(s.ParentKey) || !keyed.TryGetValue(s.ParentKey, out parent)) continue;
+                    List<Slot> kids;
+                    if (!childOf.TryGetValue(s.ParentKey, out kids)) { kids = new List<Slot>(); childOf[s.ParentKey] = kids; }
+                    kids.Add(s);
+                    isChild.Add(s);
+                }
                 string lastSub = null;
                 foreach (Slot s in inCat)
                 {
+                    if (isChild.Contains(s)) continue;     // 由父行带出来
                     string sk = s.Sub ?? "";
                     bool onePos = perSub[sk] <= 1;      // 这个分组底下只有一个位置：省掉那行标题
                     if (showSub && sk != lastSub)
@@ -1814,6 +1978,16 @@ namespace Installer
                     // 和大类标题行当容器同一个套路 —— IsSub 管长相，Slot 管点下去选谁。
                     if (showSub && onePos) r.IsSub = true;
                     rows.Add(r);
+                    List<Slot> kids;
+                    if (s.Key != null && childOf.TryGetValue(s.Key, out kids))
+                    {
+                        foreach (Slot ch in kids)
+                        {
+                            TreeRow cr = new TreeRow();
+                            cr.Slot = ch; cr.Cat = cat; cr.Sub = ch.Sub; cr.IsChild = true;
+                            rows.Add(cr);
+                        }
+                    }
                 }
             }
             // 未归类的包不再在树里占一行（用户 2026-11-16 要求）：
@@ -1852,6 +2026,7 @@ namespace Installer
             if (on) mf.UncheckGroup(g); else mf.CheckGroupDefault(g);
             if (st.Count > 0) mf.ApplySwitches(st);
             mf.AfterTreePick();
+            mf.SaveChecksNow();
             if (lblFoot != null)
                 lblFoot.Text = "「" + s.Name + "」：" + g.Name + (on ? " 已关" : " 已开") + "（多选模式，同位置别的没动）";
             FillDetail();
@@ -1871,7 +2046,7 @@ namespace Installer
             return null;
         }
 
-        // ---------------- 「一堆」：地图 / 喷漆 / 我的分支 ----------------
+        // ---------------- 「一堆」：地图 / 喷漆 / 平台 / 脚本 / 我的分支 ----------------
 
         /// <summary>点「一堆」里的行：开着的关掉，关着的打开 —— 同堆别的照旧，不顶掉。</summary>
         internal void TogglePile(ModGroup g)
@@ -3373,6 +3548,16 @@ namespace Installer
                 string t = s.Cat;
                 if (!string.IsNullOrEmpty(s.Sub) && s.Sub != s.Cat)
                     t = string.IsNullOrEmpty(t) ? s.Sub : t + " › " + s.Sub;
+                // 第四级子位置：面包屑也要带上父位置（僵尸 › 特感 › Tank › 石头）
+                if (!string.IsNullOrEmpty(s.ParentKey))
+                {
+                    foreach (Slot p in slots)
+                        if (p.Key == s.ParentKey)
+                        {
+                            if (!string.IsNullOrEmpty(p.Name)) t = t + " › " + p.Name;
+                            break;
+                        }
+                }
                 if (!string.IsNullOrEmpty(s.Name))
                     t = string.IsNullOrEmpty(t) ? s.Name : t + " › " + s.Name;
                 return t;
@@ -3415,6 +3600,10 @@ namespace Installer
             if (!mf.ApplySwitches(st)) return;
             if (target) mf.CheckGroupDefault(g); else mf.UncheckGroup(g);   // 勾选跟着走，否则树里还挂着「选中的那套」
             RefreshSwitchCells();
+            // ApplySwitches 里的 RefreshMods 发生在上面的勾选更新之前，总览 / 树看到的是旧状态；
+            // 这里再对齐一次，主窗开关和两款总览才是同一份勾选。
+            mf.SyncPicks();
+            mf.SaveChecksNow();          // 主窗开关也要落盘，重开时不用只靠 AutoSync 猜
             lblFoot.Text = target ? "已开启（写进 addonlist，进游戏生效）" : "已关闭（写进 addonlist，进游戏生效）";
         }
 
@@ -3853,6 +4042,9 @@ namespace Installer
         {
             Slot s = Current;
             if (s == null) return;
+            // 容器不是「二选一」：右键「用这个替换」/ 自动启用时只能保证它开着，
+            // 不能走下面的单选清空逻辑，否则会顺手把同容器里别的关掉。
+            if (s.Pile) { ChooseInSlot(s, g); FillDetail(); return; }
             // 再点一次已经选中的那一套 = 把它关掉，这个位置回到「没选」。
             // 以前必须点「留原版」那一行才能清空，用户嫌多一个选项。
             if (g != null && g == ChosenOf(s))
@@ -3879,6 +4071,14 @@ namespace Installer
         internal void ChooseInSlot(Slot s, ModGroup g)
         {
             if (s == null) return;
+            if (s.Pile)
+            {
+                // 容器：选一个 = 把它开着，别的照旧；清空 = 整个容器都关掉。
+                if (g != null) mf.ApplyGroupPick(g, true);
+                else foreach (ModGroup o in s.Items) mf.ApplyGroupPick(o, false);
+                mf.AfterTreePick();
+                return;
+            }
             if (IsMulti(s)) { ToggleMulti(s, g); return; }   // 多选位置：只翻这一套，不清别的
             foreach (ModGroup o in s.Items) mf.UncheckGroup(o);
             if (g != null) mf.CheckGroupDefault(g);
@@ -3903,9 +4103,11 @@ namespace Installer
                 // 一条都没算出来：说明这个位置的 vpk 既没被标成「已在游戏里」也没标成「库里来的」，
                 // 写开关无从下手。记一笔，排查时不用猜（用户看到的就是「点了没反应」）。
                 Core.Log("WARN", "点选未写入：位置「" + s.Name + "」的候选没有已装标记（FromGame/Installed 全 false）");
+                mf.SaveChecksNow();
                 return;
             }
             if (!mf.ApplySwitches(st)) return;
+            mf.SaveChecksNow();
             bool running = false;
             try { running = System.Diagnostics.Process.GetProcessesByName("left4dead2").Length > 0; } catch { }
             if (lblFoot != null)
@@ -5197,11 +5399,28 @@ namespace Installer
                         TextRenderer.DrawText(g, Lang.S(r.Cat), Theme.UIBold, new Rectangle(44, y, W - 108, RowH), Theme.Ink,
                             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
                         // 计数按整个大类算，不受折叠影响 —— 收起来只是看不见行，
-                        // 位置数不该跟着变（桌面上那张卡写的也是这个数）
-                        int n = 0;
-                        if (all != null) foreach (Slot sl in all) if (sl.Cat == r.Cat) n++;
-                        string num = Lang.F("{0} 个", r.Cat == "未归类" ? owner.Unmatched : n);
-                        TextRenderer.DrawText(g, num, Theme.UISmall, new Rectangle(W - 62, y, 50, RowH), Theme.Ink3,
+                        // 「已装/共」不该跟着变。先看已装，再看这一级总共多少位置。
+                        int n = 0, on = 0;
+                        // 「一堆」的大类（地图 / 我的分支）按堆里的 MOD 数算，不按槽位数算 ——
+                        // 否则地图永远显示 1/1，看不出实际开了几张图。
+                        bool pileOnly = true;
+                        int pileAll = 0, pileOn = 0;
+                        if (all != null)
+                            foreach (Slot sl in all)
+                            {
+                                if (sl.Cat != r.Cat) continue;
+                                n++;
+                                int cg = owner.CheckedGroups(sl);
+                                if (cg > 0) on++;
+                                if (sl.Pile) { pileAll += sl.Items.Count; pileOn += cg; }
+                                else pileOnly = false;
+                            }
+                        string num = r.Cat == "未归类"
+                            ? Lang.F("{0} 个", owner.Unmatched)
+                            : pileOnly && n > 0
+                                ? Lang.F("{0}/{1}", pileOn, pileAll)
+                                : Lang.F("{0}/{1}", on, n);
+                        TextRenderer.DrawText(g, num, Theme.UISmall, new Rectangle(W - 70, y, 58, RowH), Theme.Ink3,
                             TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
                         continue;
                     }
@@ -5224,8 +5443,10 @@ namespace Installer
                         TextRenderer.DrawText(g, Lang.S(r.Sub), Theme.UIBold, new Rectangle(64, y, W - 128, RowH), Theme.Ink2,
                             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding
                             | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-                        int k = 0;
-                        if (all != null) foreach (Slot sl in all) if (sl.Cat == r.Cat && sl.Sub == r.Sub) k++;
+                        int k = 0, on = 0;
+                        if (all != null)
+                            foreach (Slot sl in all)
+                                if (sl.Cat == r.Cat && sl.Sub == r.Sub) { k++; if (owner.CheckedGroups(sl) > 0) on++; }
                         if (merged)
                         {
                             // 这一行就是位置：右边给状态点 + 候选数，和位置行完全一致
@@ -5241,8 +5462,8 @@ namespace Installer
                         }
                         else
                         {
-                            string num = Lang.F("{0} 个", k);
-                            TextRenderer.DrawText(g, num, Theme.UISmall, new Rectangle(W - 62, y, 50, RowH), Theme.Ink3,
+                            string num = Lang.F("{0}/{1}", on, k);
+                            TextRenderer.DrawText(g, num, Theme.UISmall, new Rectangle(W - 70, y, 58, RowH), Theme.Ink3,
                                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
                             // 往下连一小段，免得和位置行的竖线断开
                             if (open && k > 0) g.DrawLine(branch, 39, y + RowH / 2, 39, y + RowH);
@@ -5277,6 +5498,8 @@ namespace Installer
                     int bx = 39;
                     // 子分支按层级往右缩进：父子关系一眼看得出来，不用点开猜
                     if (CatTree.IsBranchSlot(s)) bx += MyBranch.Depth(s.Name) * 12;
+                    // 第四级子位置（Tank → 石头）：再缩进一格，和普通位置分开
+                    if (r.IsChild) bx += Dpi.S(18);
                     g.DrawLine(branch, bx, y, bx, y + (nextSame ? RowH : RowH / 2 + 1));
                     g.DrawLine(branch, bx, y + RowH / 2, bx + 9, y + RowH / 2);
 
